@@ -1,0 +1,11 @@
+[package]
+name = "vidEditor"
+version = "0.1.0"
+authors = ["Fareed Hussain <fareedsharhussain@gmail.com>"]
+edition = "2021"
+
+[dependencies]
+relm4 = { version = "0.8.1", features = ["libadwaita", "gnome_46"] }
+gst = { package = "gstreamer", version = "0.22.5" }
+gst_video = { package = "gstreamer-video", version = "0.22.5" }
+gtk4 = { version = "0.8.2", features = ["v4_14"] }
