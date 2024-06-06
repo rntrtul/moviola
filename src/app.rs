@@ -4,9 +4,11 @@ use gtk::prelude::{
     ApplicationExt, GtkWindowExt, OrientableExt, WidgetExt};
 use gtk::{glib};
 use super::ui::video_player::VideoPlayerModel;
+use super::ui::edit_controls::EditControlsModel;
 
 pub(super) struct App {
     video_player: Controller<VideoPlayerModel>,
+    edit_controls: Controller<EditControlsModel>,
 }
 
 #[derive(Debug)]
@@ -42,13 +44,10 @@ impl SimpleComponent for App {
 
                     #[name="stack"]
                     adw::ViewStack {
-                        add_titled: (&adw::StatusPage::builder()
-                            .title("TTT")
-                            .description("noVideoHEre")
-                            .build(), Some("TTT"), "t"),
-                        
                         add_titled: (&adw::StatusPage::builder().title("FFF").description("HERE").build(), Some("FFF"), "f"),
+                        add_titled_with_icon: (model.edit_controls.widget(), Some("Edit"), "Edit", "cut")
                     },
+
                 },
 
                 #[name="switchBar"]
@@ -70,7 +69,15 @@ impl SimpleComponent for App {
                 .launch(2)
                 .detach();
 
-        let model = Self { video_player };
+        let edit_controls: Controller<EditControlsModel> =
+            EditControlsModel::builder()
+                .launch(())
+                .detach();
+
+        let model = Self {
+            video_player,
+            edit_controls,
+        };
 
         let widgets = view_output!();
 
