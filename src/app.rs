@@ -1,13 +1,13 @@
-use relm4::{adw, gtk, main_application, ComponentParts, ComponentSender, SimpleComponent};
+use relm4::{adw, gtk, main_application, ComponentParts, ComponentSender, SimpleComponent, Controller, Component, ComponentController};
 
 use gtk::prelude::{
-    ApplicationExt, GtkWindowExt, OrientableExt, WidgetExt, BoxExt,
-};
+    ApplicationExt, GtkWindowExt, OrientableExt, WidgetExt};
 use gtk::{glib};
-use gst::prelude::*;
-use relm4::adw::gdk;
+use super::ui::video_player::VideoPlayerModel;
 
-pub(super) struct App {}
+pub(super) struct App {
+    video_player: Controller<VideoPlayerModel>,
+}
 
 #[derive(Debug)]
 pub(super) enum AppMsg {
@@ -38,10 +38,7 @@ impl SimpleComponent for App {
                 gtk::Box{
                     set_orientation: gtk::Orientation::Vertical,
 
-                    #[name = "pic_frame"]
-                    gtk::Box {
-                        set_orientation: gtk::Orientation::Vertical,
-                    },
+                    model.video_player.widget(),
 
                     #[name="stack"]
                     adw::ViewStack {
@@ -68,34 +65,14 @@ impl SimpleComponent for App {
         root: Self::Root,
         sender: ComponentSender<Self>,
     ) -> ComponentParts<Self> {
-        let model = Self {};
-        gst::init().unwrap();
+        let video_player: Controller<VideoPlayerModel> =
+            VideoPlayerModel::builder()
+                .launch(2)
+                .detach();
+
+        let model = Self { video_player };
 
         let widgets = view_output!();
-
-        let gtk_sink = gst::ElementFactory::make("gtk4paintablesink")
-            .build()
-            .unwrap();
-
-
-        let playbin = gst::ElementFactory::make("playbin")
-            .name("playbin")
-            .property("uri", "file:///home/fareed/Videos/mp3e1.mkv")
-            .build()
-            .unwrap();
-
-        playbin.set_property("video-sink", &gtk_sink);
-
-        let paintable = gtk_sink.property::<gdk::Paintable>("paintable");
-        let picture = gtk::Picture::new();
-
-        picture.set_paintable(Some(&paintable));
-
-        let offload = gtk4::GraphicsOffload::new(Some(&picture));
-        offload.set_enabled(gtk::GraphicsOffloadEnabled::Enabled);
-        widgets.pic_frame.append(&offload);
-
-        playbin.set_state(gst::State::Playing).unwrap();
 
         widgets.switchBar.set_reveal(true);
         widgets.switchBar.set_stack(Some(&widgets.stack));
