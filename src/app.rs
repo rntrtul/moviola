@@ -19,12 +19,10 @@ impl SimpleComponent for App {
     type Init = u8;
     type Input = AppMsg;
     type Output = ();
-    type Widgets = AppWidgets;
-
     view! {
         main_window = adw::ApplicationWindow::new(&main_application()) {
             set_visible: true,
-            set_default_height: 360,
+            set_default_height: 480,
             set_default_width: 640,
 
             connect_close_request[sender] => move |_| {
@@ -32,22 +30,38 @@ impl SimpleComponent for App {
                 glib::Propagation::Stop
             },
 
+            #[name="ToolBarview"]
+            adw::ToolbarView {
+                add_top_bar = &adw::HeaderBar {},
 
-            gtk::Box {
-                set_orientation: gtk::Orientation::Vertical,
-                adw::HeaderBar {
-                    pack_end = &gtk::MenuButton {
-                        set_icon_name: "open-menu-symbolic",
-                    }
-                },
-
-                #[name = "pic_frame"]
-                gtk::Box {
+                #[name = "content"]
+                gtk::Box{
                     set_orientation: gtk::Orientation::Vertical,
+
+                    #[name = "pic_frame"]
+                    gtk::Box {
+                        set_orientation: gtk::Orientation::Vertical,
+                    },
+
+                    #[name="stack"]
+                    adw::ViewStack {
+                        add_titled: (&adw::StatusPage::builder()
+                            .title("TTT")
+                            .description("noVideoHEre")
+                            .build(), Some("TTT"), "t"),
+                        
+                        add_titled: (&adw::StatusPage::builder().title("FFF").description("HERE").build(), Some("FFF"), "f"),
+                    },
                 },
+
+                #[name="switchBar"]
+                add_bottom_bar = &adw::ViewSwitcherBar{},
             }
+
         }
     }
+
+    type Widgets = AppWidgets;
 
     fn init(
         _: Self::Init,
@@ -74,7 +88,7 @@ impl SimpleComponent for App {
 
         let paintable = gtk_sink.property::<gdk::Paintable>("paintable");
         let picture = gtk::Picture::new();
-        
+
         picture.set_paintable(Some(&paintable));
 
         let offload = gtk4::GraphicsOffload::new(Some(&picture));
@@ -82,6 +96,10 @@ impl SimpleComponent for App {
         widgets.pic_frame.append(&offload);
 
         playbin.set_state(gst::State::Playing).unwrap();
+
+        widgets.switchBar.set_reveal(true);
+        widgets.switchBar.set_stack(Some(&widgets.stack));
+        widgets.ToolBarview.set_content(Some(&widgets.content));
 
         ComponentParts { model, widgets }
     }
