@@ -1,5 +1,5 @@
-use gtk4::prelude::ButtonExt;
-use relm4::{adw, ComponentParts, ComponentSender, gtk, SimpleComponent};
+use gtk4::prelude::{BoxExt, ButtonExt, OrientableExt, WidgetExt};
+use relm4::{ComponentParts, ComponentSender, gtk, RelmWidgetExt, SimpleComponent};
 
 pub struct EditControlsModel {}
 
@@ -14,9 +14,61 @@ impl SimpleComponent for EditControlsModel {
 
     view! {
         gtk::Box {
-            gtk::Button {
-                set_label: "Export Frame",
-            }
+            set_orientation: gtk::Orientation::Vertical,
+
+            set_halign: gtk::Align::Center,
+            set_valign: gtk::Align::Center,
+            set_spacing: 20,
+
+            gtk::Box {
+                set_spacing: 10,
+
+                gtk::Button {
+                    set_label: "Play"
+                },
+
+                gtk::Box{
+                    set_width_request: 200,
+                    inline_css: "background-color: grey"
+                },
+
+                gtk::Button {
+                    set_label: "Mute Video"
+                },
+            },
+
+            gtk::Box {
+                set_spacing: 10,
+
+                gtk::Button {
+                    set_label: "Crop",
+                },
+
+                gtk::Button {
+                    set_label: "Rotate CW",
+                },
+
+                gtk::Button {
+                    set_label: "Rotate CCW",
+                },
+
+                gtk::Button {
+                    set_label: "Flip Horizontally"
+                },
+
+                gtk::Button {
+                    set_label: "Flip Vertical"
+                },
+            },
+
+            gtk::Box{
+                set_halign: gtk::Align::End,
+                gtk::Button {
+                    set_label: "Export Frame",
+                },
+            },
+
+
         }
     }
 

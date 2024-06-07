@@ -23,6 +23,7 @@ impl SimpleComponent for VideoPlayerModel {
     view! {
         gtk::Box {
             set_orientation: gtk::Orientation::Vertical,
+            inline_css: "margin: 20px",
 
             #[name = "vid_frame"]
             gtk::Box {
@@ -62,6 +63,7 @@ impl SimpleComponent for VideoPlayerModel {
         widgets.vid_frame.append(&offload);
 
         playbin.set_state(gst::State::Playing).unwrap();
+        playbin.set_state(gst::State::Paused).unwrap();
 
         let model = VideoPlayerModel {
             playbin,

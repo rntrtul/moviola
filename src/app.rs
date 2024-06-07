@@ -32,7 +32,7 @@ impl SimpleComponent for App {
                 glib::Propagation::Stop
             },
 
-            #[name="ToolBarview"]
+            #[name="tool_bar_view"]
             adw::ToolbarView {
                 add_top_bar = &adw::HeaderBar {},
 
@@ -44,13 +44,12 @@ impl SimpleComponent for App {
 
                     #[name="stack"]
                     adw::ViewStack {
-                        add_titled: (&adw::StatusPage::builder().title("FFF").description("HERE").build(), Some("FFF"), "f"),
-                        add_titled_with_icon: (model.edit_controls.widget(), Some("Edit"), "Edit", "cut")
+                        add_titled_with_icon: (model.edit_controls.widget(), Some("Edit"), "Edit", "cut"),
+                        add_titled: (&adw::StatusPage::builder().title("FFF").description("HERE").build(), Some("Convert"), "Convert"),
                     },
-
                 },
 
-                #[name="switchBar"]
+                #[name="switch_bar"]
                 add_bottom_bar = &adw::ViewSwitcherBar{},
             }
 
@@ -81,9 +80,9 @@ impl SimpleComponent for App {
 
         let widgets = view_output!();
 
-        widgets.switchBar.set_reveal(true);
-        widgets.switchBar.set_stack(Some(&widgets.stack));
-        widgets.ToolBarview.set_content(Some(&widgets.content));
+        widgets.switch_bar.set_reveal(true);
+        widgets.switch_bar.set_stack(Some(&widgets.stack));
+        widgets.tool_bar_view.set_content(Some(&widgets.content));
 
         ComponentParts { model, widgets }
     }
