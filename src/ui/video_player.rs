@@ -1,5 +1,5 @@
 use gst::prelude::*;
-use gtk4::prelude::{OrientableExt, BoxExt};
+use gtk4::prelude::{OrientableExt, BoxExt, WidgetExt};
 use relm4::*;
 use relm4::adw::gdk;
 
@@ -23,7 +23,9 @@ impl SimpleComponent for VideoPlayerModel {
     view! {
         gtk::Box {
             set_orientation: gtk::Orientation::Vertical,
-            inline_css: "margin: 20px",
+            set_width_request: 670,
+            set_height_request: 390,
+            inline_css: "margin: 15px",
 
             #[name = "vid_frame"]
             gtk::Box {

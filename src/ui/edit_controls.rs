@@ -22,18 +22,20 @@ impl SimpleComponent for EditControlsModel {
 
             gtk::Box {
                 set_spacing: 10,
+                add_css_class: "toolbar",
 
                 gtk::Button {
-                    set_label: "Play"
+                    set_icon_name: "play",
                 },
 
                 gtk::Box{
-                    set_width_request: 200,
+                    set_width_request: 300,
+                    set_hexpand: true,
                     inline_css: "background-color: grey"
                 },
 
                 gtk::Button {
-                    set_label: "Mute Video"
+                     set_icon_name: "audio-volume-muted",
                 },
             },
 
@@ -41,23 +43,27 @@ impl SimpleComponent for EditControlsModel {
                 set_spacing: 10,
 
                 gtk::Button {
-                    set_label: "Crop",
+                    set_icon_name: "crop",
+                },
+                // todo: make icons in buttons bigger
+                gtk::Button {
+                    set_icon_name: "rotate-right",
+                    set_height_request: 32,
+                    add_css_class: "circular",
                 },
 
                 gtk::Button {
-                    set_label: "Rotate CW",
+                     set_icon_name: "rotate-left",
+                     add_css_class: "flat",
                 },
 
                 gtk::Button {
-                    set_label: "Rotate CCW",
+                    set_icon_name: "panorama-horizontal",
                 },
 
                 gtk::Button {
-                    set_label: "Flip Horizontally"
-                },
+                    set_icon_name: "panorama-vertical",
 
-                gtk::Button {
-                    set_label: "Flip Vertical"
                 },
             },
 
@@ -65,6 +71,7 @@ impl SimpleComponent for EditControlsModel {
                 set_halign: gtk::Align::End,
                 gtk::Button {
                     set_label: "Export Frame",
+                    add_css_class: "pill",
                 },
             },
 
