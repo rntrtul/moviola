@@ -1,10 +1,26 @@
 use gtk4::prelude::{BoxExt, ButtonExt, OrientableExt, WidgetExt};
 use relm4::{ComponentParts, ComponentSender, gtk, RelmWidgetExt, SimpleComponent};
+use crate::ui::edit_controls::CropType::{Crop16To9, Crop3To2, Crop4To3, Crop5To4, CropFree, CropOriginal, CropSquare};
 
-pub struct EditControlsModel {}
+pub struct EditControlsModel {
+    crop_mode: EditControlsMsg,
+}
 
 #[derive(Debug)]
-pub enum EditControlsMsg {}
+enum CropType {
+    CropFree = 0,
+    CropOriginal,
+    CropSquare,
+    Crop5To4,
+    Crop4To3,
+    Crop3To2,
+    Crop16To9,
+}
+
+#[derive(Debug)]
+pub enum EditControlsMsg {
+    CropMode(CropType)
+}
 
 #[relm4::component(pub)]
 impl SimpleComponent for EditControlsModel {
@@ -28,7 +44,7 @@ impl SimpleComponent for EditControlsModel {
                     set_icon_name: "play",
                 },
 
-                gtk::Box{
+                gtk::Box {
                     set_width_request: 300,
                     set_hexpand: true,
                     inline_css: "background-color: grey"
@@ -42,9 +58,31 @@ impl SimpleComponent for EditControlsModel {
             gtk::Box {
                 set_spacing: 10,
 
-                gtk::Button {
-                    set_icon_name: "crop",
+                gtk::Box {
+                add_css_class: "linked",
+
+                    gtk::Button {
+                        set_icon_name: "crop",
+                    },
+
+                    #[name = "crop_mode_dropdown"]
+                    gtk::DropDown::from_strings(&["Free", "Original", "Square", "5:4", "4:3", "3:2", "16:9"]) {
+                        connect_selected_item_notify [sender] => move |dropdown| {
+                            let mode = match dropdown.selected() {
+                                0 => CropFree,
+                                1 => CropOriginal,
+                                2 => CropSquare,
+                                3 => Crop5To4,
+                                4 => Crop4To3,
+                                5 => Crop3To2,
+                                6 => Crop16To9,
+                                _ => panic!("Unknown crop mode selected")
+                            };
+                            sender.input(EditControlsMsg::CropMode(mode));
+                        }
+                    },
                 },
+
                 // todo: make icons in buttons bigger
                 gtk::Button {
                     set_icon_name: "rotate-right",
@@ -65,24 +103,33 @@ impl SimpleComponent for EditControlsModel {
                     set_icon_name: "panorama-vertical",
 
                 },
-            },
 
-            gtk::Box{
-                set_halign: gtk::Align::End,
-                gtk::Button {
-                    set_label: "Export Frame",
-                    add_css_class: "pill",
+                gtk::Box{
+                    set_halign: gtk::Align::End,
+                    gtk::Button {
+                        set_label: "Export Frame",
+                        add_css_class: "pill",
+                    },
                 },
             },
-
-
         }
     }
 
     fn init(init: Self::Init, root: Self::Root, sender: ComponentSender<Self>) -> ComponentParts<Self> {
         let widgets = view_output!();
-        let model = EditControlsModel {};
+        let model = EditControlsModel {
+            crop_mode: EditControlsMsg::CropMode(CropFree),
+        };
 
         ComponentParts { model, widgets }
+    }
+
+    fn update(&mut self, message: Self::Input, sender: ComponentSender<Self>) {
+        match message {
+            EditControlsMsg::CropMode(_) => {
+                println!("UPDATE WITH MESSAGE");
+                self.crop_mode = message;
+            }
+        }
     }
 }
