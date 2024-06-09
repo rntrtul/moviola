@@ -1,7 +1,5 @@
-use gst::glib;
 use gst::prelude::*;
-use gtk4::{gio};
-use gtk4::prelude::{OrientableExt, BoxExt, WidgetExt, ButtonExt, FileExt, GtkApplicationExt};
+use gtk4::prelude::{BoxExt, OrientableExt, WidgetExt};
 use relm4::*;
 use relm4::adw::gdk;
 
@@ -89,6 +87,10 @@ impl SimpleComponent for VideoPlayerModel {
 
 impl VideoPlayerModel {
     fn play_new_video(&mut self) {
+        if self.playbin.is_some() {
+            self.playbin.as_ref().unwrap().set_state(gst::State::Null).unwrap();
+        }
+
         let playbin = gst::ElementFactory::make("playbin")
             .name("playbin")
             .property("uri", self.video_uri.as_ref().unwrap())
@@ -97,6 +99,7 @@ impl VideoPlayerModel {
 
         playbin.set_property("video-sink", &self.gtk_sink);
         playbin.set_state(gst::State::Playing).unwrap();
+        playbin.set_state(gst::State::Paused).unwrap();
 
         self.playbin = Some(playbin);
     }

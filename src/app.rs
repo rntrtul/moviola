@@ -1,12 +1,12 @@
-use relm4::{adw, gtk, main_application, ComponentParts, ComponentSender, SimpleComponent, Controller, Component, ComponentController};
-
-use gtk::prelude::{
-    ApplicationExt, GtkWindowExt, OrientableExt, WidgetExt};
-use gtk::{glib};
-use gtk4::{gio};
+use gtk4::gio;
 use gtk4::prelude::{ButtonExt, FileExt, GtkApplicationExt};
-use super::ui::video_player::{VideoPlayerModel, VideoPlayerMsg};
+use gtk::glib;
+use gtk::prelude::{
+    ApplicationExt, GtkWindowExt, OrientableExt, WidgetExt, };
+use relm4::{adw, Component, ComponentController, ComponentParts, ComponentSender, Controller, gtk, main_application, SimpleComponent};
+
 use super::ui::edit_controls::EditControlsModel;
+use super::ui::video_player::{VideoPlayerModel, VideoPlayerMsg};
 
 pub(super) struct App {
     video_player: Controller<VideoPlayerModel>,
@@ -73,7 +73,14 @@ impl SimpleComponent for App {
 
             #[name="tool_bar_view"]
             adw::ToolbarView {
-                add_top_bar = &adw::HeaderBar {},
+                add_top_bar = &adw::HeaderBar {
+                     pack_end = &gtk::Button {
+                        set_icon_name: "document-open-symbolic",
+                        #[watch]
+                        set_visible: model.video_is_open,
+                        connect_clicked => AppMsg::OpenFile,
+                    }
+                },
 
                 #[name = "content"]
                 gtk::Box{
