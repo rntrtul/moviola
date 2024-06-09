@@ -17,6 +17,7 @@ pub enum VideoPlayerMsg {
     Pause,
     TogglePlayPause,
     Stop,
+    SeekToPercent(f64),
     NewVideo(String),
 }
 
@@ -78,7 +79,7 @@ impl SimpleComponent for VideoPlayerModel {
             sender.input(VideoPlayerMsg::TogglePlayPause);
         });
         widgets.vid_frame.add_controller(gesture);
-        
+
         ComponentParts { model, widgets }
     }
 
@@ -90,12 +91,42 @@ impl SimpleComponent for VideoPlayerModel {
                 self.play_new_video();
             }
             VideoPlayerMsg::TogglePlayPause => self.video_toggle_play_pause(),
+            VideoPlayerMsg::SeekToPercent(percent) => self.seek_to_percent(percent),
             _ => panic!("Unknown message recived for video player")
         }
     }
 }
 
 impl VideoPlayerModel {
+    // todo: hookup with ui/keyboard. add support for stepping backwards
+    fn step_next_frame(&mut self) {
+        if let Some(video_sink) = self.playbin.as_ref().unwrap().property::<Option<gst::Element>>("video-sink") {
+            let step = gst::event::Step::new(gst::format::Buffers::ONE, 1.0, true, false);
+            video_sink.send_event(step);
+        }
+    }
+    fn seek_to_percent(&mut self, percent: f64) {
+        if self.playbin.is_none() {
+            println!("early exit for seek");
+            return;
+        }
+
+        let duration = self.playbin.as_ref().unwrap().query_duration::<gst::ClockTime>().unwrap();
+        let seconds = (duration.seconds() as f64 * percent) as u64;
+
+        let time = gst::GenericFormattedValue::from(gst::ClockTime::from_seconds(seconds));
+
+        let seek = gst::event::Seek::new(
+            1.0,
+            gst::SeekFlags::FLUSH | gst::SeekFlags::ACCURATE,
+            gst::SeekType::Set,
+            time,
+            gst::SeekType::End,
+            gst::ClockTime::ZERO);
+
+        self.playbin.as_ref().unwrap().send_event(seek);
+    }
+
     fn video_toggle_play_pause(&mut self) {
         let (new_state, playbin_new_state) = if self.is_playing {
             (false, gst::State::Paused)
@@ -120,6 +151,7 @@ impl VideoPlayerModel {
         playbin.set_property("video-sink", &self.gtk_sink);
         playbin.set_state(gst::State::Playing).unwrap();
 
+        //  todo: investigate to see if leaking memory here
         self.playbin = Some(playbin);
         self.is_playing = true;
     }

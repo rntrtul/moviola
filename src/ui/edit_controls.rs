@@ -1,5 +1,6 @@
 use gtk4::prelude::{BoxExt, ButtonExt, OrientableExt, WidgetExt};
 use relm4::{ComponentParts, ComponentSender, gtk, RelmWidgetExt, SimpleComponent};
+
 use crate::ui::edit_controls::CropType::{Crop16To9, Crop3To2, Crop4To3, Crop5To4, CropFree, CropOriginal, CropSquare};
 
 pub struct EditControlsModel {
@@ -19,13 +20,18 @@ enum CropType {
 
 #[derive(Debug)]
 pub enum EditControlsMsg {
-    CropMode(CropType)
+    CropMode(CropType),
+}
+
+#[derive(Debug)]
+pub enum EditControlsOutput {
+    SeekToPercent(f64),
 }
 
 #[relm4::component(pub)]
 impl SimpleComponent for EditControlsModel {
     type Input = EditControlsMsg;
-    type Output = ();
+    type Output = EditControlsOutput;
     type Init = ();
 
     view! {
@@ -44,9 +50,9 @@ impl SimpleComponent for EditControlsModel {
                     set_icon_name: "play",
                 },
 
+                #[name = "timeline"]
                 gtk::Box {
                     set_width_request: 300,
-                    set_hexpand: true,
                     inline_css: "background-color: grey"
                 },
 
@@ -121,13 +127,19 @@ impl SimpleComponent for EditControlsModel {
             crop_mode: EditControlsMsg::CropMode(CropFree),
         };
 
+        let gesture = gtk::GestureClick::new();
+        gesture.connect_pressed(move |_, _, x, y| {
+            let percent = x / 300f64;
+            sender.output(EditControlsOutput::SeekToPercent(percent)).expect("could not send message");
+        });
+        widgets.timeline.add_controller(gesture);
+
         ComponentParts { model, widgets }
     }
 
     fn update(&mut self, message: Self::Input, sender: ComponentSender<Self>) {
         match message {
             EditControlsMsg::CropMode(_) => {
-                println!("UPDATE WITH MESSAGE");
                 self.crop_mode = message;
             }
         }
