@@ -3,12 +3,15 @@ use relm4::{adw, gtk, main_application, ComponentParts, ComponentSender, SimpleC
 use gtk::prelude::{
     ApplicationExt, GtkWindowExt, OrientableExt, WidgetExt};
 use gtk::{glib};
-use super::ui::video_player::VideoPlayerModel;
+use gtk4::{gio, Window};
+use gtk4::prelude::{ButtonExt, FileExt, BoxExt};
+use super::ui::video_player::{VideoPlayerModel, VideoPlayerMsg};
 use super::ui::edit_controls::EditControlsModel;
 
 pub(super) struct App {
     video_player: Controller<VideoPlayerModel>,
     edit_controls: Controller<EditControlsModel>,
+    video_is_open: bool,
 }
 
 #[derive(Debug)]
@@ -76,6 +79,7 @@ impl SimpleComponent for App {
         let model = Self {
             video_player,
             edit_controls,
+            video_is_open: false,
         };
 
         let widgets = view_output!();
