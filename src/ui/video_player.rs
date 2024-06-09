@@ -5,6 +5,7 @@ use relm4::adw::gdk;
 
 pub struct VideoPlayerModel {
     video_is_selected: bool,
+    is_playing: bool,
     gtk_sink: gst::Element,
     video_uri: Option<String>,
     playbin: Option<gst::Element>,
@@ -14,6 +15,7 @@ pub struct VideoPlayerModel {
 pub enum VideoPlayerMsg {
     Play,
     Pause,
+    TogglePlayPause,
     Stop,
     NewVideo(String),
 }
@@ -61,6 +63,7 @@ impl SimpleComponent for VideoPlayerModel {
 
         let model = VideoPlayerModel {
             video_is_selected: false,
+            is_playing: true,
             playbin: None,
             gtk_sink,
             video_uri: None,
@@ -70,6 +73,12 @@ impl SimpleComponent for VideoPlayerModel {
 
         widgets.vid_frame.append(&offload);
 
+        let gesture = gtk::GestureClick::new();
+        gesture.connect_pressed(move |_, _, _, _| {
+            sender.input(VideoPlayerMsg::TogglePlayPause);
+        });
+        widgets.vid_frame.add_controller(gesture);
+        
         ComponentParts { model, widgets }
     }
 
@@ -80,12 +89,23 @@ impl SimpleComponent for VideoPlayerModel {
                 self.video_is_selected = true;
                 self.play_new_video();
             }
+            VideoPlayerMsg::TogglePlayPause => self.video_toggle_play_pause(),
             _ => panic!("Unknown message recived for video player")
         }
     }
 }
 
 impl VideoPlayerModel {
+    fn video_toggle_play_pause(&mut self) {
+        let (new_state, playbin_new_state) = if self.is_playing {
+            (false, gst::State::Paused)
+        } else {
+            (true, gst::State::Playing)
+        };
+
+        self.is_playing = new_state;
+        self.playbin.as_ref().unwrap().set_state(playbin_new_state).unwrap();
+    }
     fn play_new_video(&mut self) {
         if self.playbin.is_some() {
             self.playbin.as_ref().unwrap().set_state(gst::State::Null).unwrap();
@@ -99,8 +119,8 @@ impl VideoPlayerModel {
 
         playbin.set_property("video-sink", &self.gtk_sink);
         playbin.set_state(gst::State::Playing).unwrap();
-        playbin.set_state(gst::State::Paused).unwrap();
 
         self.playbin = Some(playbin);
+        self.is_playing = true;
     }
 }
