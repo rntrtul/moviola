@@ -206,20 +206,20 @@ impl VideoPlayerModel {
     fn play_new_video(&mut self) {
         if self.playbin.is_some() {
             self.playbin.as_ref().unwrap().set_state(gst::State::Null).unwrap();
+            self.playbin.as_ref().unwrap().set_property("uri", self.video_uri.as_ref().unwrap());
+        } else {
+            let playbin = gst::ElementFactory::make("playbin")
+                .name("playbin")
+                .property("uri", self.video_uri.as_ref().unwrap())
+                .property("video-sink", &self.gtk_sink)
+                .build()
+                .unwrap();
+
+            self.playbin = Some(playbin);
         }
 
-        let playbin = gst::ElementFactory::make("playbin")
-            .name("playbin")
-            .property("uri", self.video_uri.as_ref().unwrap())
-            .build()
-            .unwrap();
-
-        playbin.set_property("video-sink", &self.gtk_sink);
-        playbin.set_property("mute", false);
-        playbin.set_state(gst::State::Playing).unwrap();
-
-        //  todo: investigate to see if leaking memory here
-        self.playbin = Some(playbin);
+        self.playbin.as_ref().unwrap().set_property("mute", false);
+        self.playbin.as_ref().unwrap().set_state(gst::State::Playing).unwrap();
         self.is_playing = true;
         self.is_mute = false;
     }
