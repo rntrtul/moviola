@@ -54,7 +54,16 @@ impl SimpleComponent for VideoPlayerModel {
                 add_css_class: "toolbar",
 
                 gtk::Button {
-                    set_icon_name: "play",
+                    #[watch]
+                    set_icon_name: if model.is_playing {
+                        "pause"
+                    } else {
+                        "play"
+                    },
+                    
+                    connect_clicked[sender] => move |_| {
+                            sender.input(VideoPlayerMsg::TogglePlayPause)
+                    }
                 },
 
                 #[name = "timeline"]
@@ -72,6 +81,7 @@ impl SimpleComponent for VideoPlayerModel {
 
                     add_controller = gtk::GestureDrag {
                         connect_drag_update[sender] => move |drag,x_offset,_| {
+                            // todo: worry about seek only working on drag being still?
                             let (start_x, _) = drag.start_point().unwrap();
                             let width = drag.widget().width() as f64;
                             let percent_dragged = (start_x + x_offset) / width;
