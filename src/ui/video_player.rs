@@ -6,6 +6,7 @@ use relm4::adw::gdk;
 pub struct VideoPlayerModel {
     video_is_selected: bool,
     is_playing: bool,
+    is_mute: bool,
     gtk_sink: gst::Element,
     video_uri: Option<String>,
     playbin: Option<gst::Element>,
@@ -16,6 +17,7 @@ pub enum VideoPlayerMsg {
     Play,
     Pause,
     TogglePlayPause,
+    ToggleMute,
     Stop,
     SeekToPercent(f64),
     NewVideo(String),
@@ -60,7 +62,7 @@ impl SimpleComponent for VideoPlayerModel {
                     } else {
                         "play"
                     },
-                    
+
                     connect_clicked[sender] => move |_| {
                             sender.input(VideoPlayerMsg::TogglePlayPause)
                     }
@@ -92,7 +94,15 @@ impl SimpleComponent for VideoPlayerModel {
                 },
 
                 gtk::Button {
-                     set_icon_name: "audio-volume-muted",
+                    #[watch]
+                     set_icon_name: if model.is_mute {
+                        "audio-volume-muted"
+                    } else {
+                        "audio-volume-high"
+                    },
+                    connect_clicked[sender] => move |_| {
+                            sender.input(VideoPlayerMsg::ToggleMute)
+                    }
                 },
             },
         }
@@ -120,6 +130,7 @@ impl SimpleComponent for VideoPlayerModel {
         let model = VideoPlayerModel {
             video_is_selected: false,
             is_playing: true,
+            is_mute: false,
             playbin: None,
             gtk_sink,
             video_uri: None,
@@ -141,6 +152,7 @@ impl SimpleComponent for VideoPlayerModel {
             }
             VideoPlayerMsg::TogglePlayPause => self.video_toggle_play_pause(),
             VideoPlayerMsg::SeekToPercent(percent) => self.seek_to_percent(percent),
+            VideoPlayerMsg::ToggleMute => self.toggle_mute(),
             _ => panic!("Unknown message received for video player")
         }
     }
@@ -176,6 +188,11 @@ impl VideoPlayerModel {
         self.playbin.as_ref().unwrap().send_event(seek);
     }
 
+    fn toggle_mute(&mut self) {
+        self.is_mute = !self.is_mute;
+        self.playbin.as_ref().unwrap().set_property("mute", self.is_mute);
+    }
+
     fn video_toggle_play_pause(&mut self) {
         let (new_state, playbin_new_state) = if self.is_playing {
             (false, gst::State::Paused)
@@ -198,10 +215,12 @@ impl VideoPlayerModel {
             .unwrap();
 
         playbin.set_property("video-sink", &self.gtk_sink);
+        playbin.set_property("mute", false);
         playbin.set_state(gst::State::Playing).unwrap();
 
         //  todo: investigate to see if leaking memory here
         self.playbin = Some(playbin);
         self.is_playing = true;
+        self.is_mute = false;
     }
 }
