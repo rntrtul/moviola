@@ -5,7 +5,7 @@ use gtk::prelude::{
     ApplicationExt, GtkWindowExt, OrientableExt, WidgetExt, };
 use relm4::{adw, Component, ComponentController, ComponentParts, ComponentSender, Controller, gtk, main_application, SimpleComponent};
 
-use super::ui::edit_controls::{EditControlsModel, EditControlsOutput};
+use super::ui::edit_controls::EditControlsModel;
 use super::ui::video_player::{VideoPlayerModel, VideoPlayerMsg};
 
 pub(super) struct App {
@@ -18,7 +18,6 @@ pub(super) struct App {
 pub(super) enum AppMsg {
     OpenFile,
     SetVideo(String),
-    SeekToPercent(f64),
     Quit,
 }
 
@@ -130,9 +129,7 @@ impl SimpleComponent for App {
         let edit_controls: Controller<EditControlsModel> =
             EditControlsModel::builder()
                 .launch(())
-                .forward(sender.input_sender(), |msg| match msg {
-                    EditControlsOutput::SeekToPercent(percent) => AppMsg::SeekToPercent(percent),
-                });
+                .detach();
 
         let model = Self {
             video_player,
@@ -162,8 +159,6 @@ impl SimpleComponent for App {
                 self.video_player.widget().set_visible(true);
                 self.video_is_open = true;
             }
-
-            AppMsg::SeekToPercent(percent) => self.video_player.emit(VideoPlayerMsg::SeekToPercent(percent)),
         }
     }
 }

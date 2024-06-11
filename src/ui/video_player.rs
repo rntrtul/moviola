@@ -1,5 +1,5 @@
 use gst::prelude::*;
-use gtk4::prelude::{BoxExt, OrientableExt, WidgetExt};
+use gtk4::prelude::{BoxExt, ButtonExt, EventControllerExt, GestureDragExt, OrientableExt, WidgetExt};
 use relm4::*;
 use relm4::adw::gdk;
 
@@ -32,6 +32,8 @@ impl SimpleComponent for VideoPlayerModel {
             set_orientation: gtk::Orientation::Vertical,
             set_width_request: 670,
             set_height_request: 390,
+            set_halign: gtk::Align::Center,
+            set_valign: gtk::Align::Center,
             inline_css: "margin: 15px",
 
             #[name = "vid_frame"]
@@ -39,6 +41,49 @@ impl SimpleComponent for VideoPlayerModel {
                 #[watch]
                 set_visible: model.video_is_selected,
                 set_orientation: gtk::Orientation::Vertical,
+
+                add_controller = gtk::GestureClick {
+                    connect_pressed[sender] => move |_,_,_,_| {
+                        sender.input(VideoPlayerMsg::TogglePlayPause)
+                    }
+                }
+            },
+
+            gtk::Box {
+                set_spacing: 10,
+                add_css_class: "toolbar",
+
+                gtk::Button {
+                    set_icon_name: "play",
+                },
+
+                #[name = "timeline"]
+                gtk::Box {
+                    set_hexpand: true,
+                    inline_css: "background-color: grey",
+
+                    add_controller = gtk::GestureClick {
+                        connect_pressed[sender] => move |click,_,x,_| {
+                            let width = click.widget().width() as f64;
+                            let percent = x / width;
+                            sender.input(VideoPlayerMsg::SeekToPercent(percent));
+                        }
+                    },
+
+                    add_controller = gtk::GestureDrag {
+                        connect_drag_update[sender] => move |drag,x_offset,_| {
+                            let (start_x, _) = drag.start_point().unwrap();
+                            let width = drag.widget().width() as f64;
+                            let percent_dragged = (start_x + x_offset) / width;
+
+                            sender.input(VideoPlayerMsg::SeekToPercent(percent_dragged));
+                        }
+                    },
+                },
+
+                gtk::Button {
+                     set_icon_name: "audio-volume-muted",
+                },
             },
         }
     }
@@ -74,12 +119,6 @@ impl SimpleComponent for VideoPlayerModel {
 
         widgets.vid_frame.append(&offload);
 
-        let gesture = gtk::GestureClick::new();
-        gesture.connect_pressed(move |_, _, _, _| {
-            sender.input(VideoPlayerMsg::TogglePlayPause);
-        });
-        widgets.vid_frame.add_controller(gesture);
-
         ComponentParts { model, widgets }
     }
 
@@ -92,7 +131,7 @@ impl SimpleComponent for VideoPlayerModel {
             }
             VideoPlayerMsg::TogglePlayPause => self.video_toggle_play_pause(),
             VideoPlayerMsg::SeekToPercent(percent) => self.seek_to_percent(percent),
-            _ => panic!("Unknown message recived for video player")
+            _ => panic!("Unknown message received for video player")
         }
     }
 }

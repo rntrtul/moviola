@@ -1,5 +1,5 @@
 use gtk4::prelude::{BoxExt, ButtonExt, OrientableExt, WidgetExt};
-use relm4::{ComponentParts, ComponentSender, gtk, RelmWidgetExt, SimpleComponent};
+use relm4::{ComponentParts, ComponentSender, gtk, SimpleComponent};
 
 use crate::ui::edit_controls::CropType::{Crop16To9, Crop3To2, Crop4To3, Crop5To4, CropFree, CropOriginal, CropSquare};
 
@@ -41,25 +41,6 @@ impl SimpleComponent for EditControlsModel {
             set_halign: gtk::Align::Center,
             set_valign: gtk::Align::Center,
             set_spacing: 20,
-
-            gtk::Box {
-                set_spacing: 10,
-                add_css_class: "toolbar",
-
-                gtk::Button {
-                    set_icon_name: "play",
-                },
-
-                #[name = "timeline"]
-                gtk::Box {
-                    set_width_request: 300,
-                    inline_css: "background-color: grey"
-                },
-
-                gtk::Button {
-                     set_icon_name: "audio-volume-muted",
-                },
-            },
 
             gtk::Box {
                 set_spacing: 10,
@@ -126,13 +107,6 @@ impl SimpleComponent for EditControlsModel {
         let model = EditControlsModel {
             crop_mode: EditControlsMsg::CropMode(CropFree),
         };
-
-        let gesture = gtk::GestureClick::new();
-        gesture.connect_pressed(move |_, _, x, y| {
-            let percent = x / 300f64;
-            sender.output(EditControlsOutput::SeekToPercent(percent)).expect("could not send message");
-        });
-        widgets.timeline.add_controller(gesture);
 
         ComponentParts { model, widgets }
     }
