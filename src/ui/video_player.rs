@@ -386,8 +386,19 @@ impl VideoPlayerModel {
         self.bus_watch = Some(bus_watch);
         self.playbin.as_ref().unwrap().set_property("mute", false);
         self.playbin.as_ref().unwrap().set_state(gst::State::Playing).unwrap();
+        // fixme: stop UI from freezing. make component async?
 
-        // todo: pause until playbin setup right to pervent seeking from happening too early
+        for msg in bus.iter_timed(ClockTime::NONE) {
+            use gst::MessageView;
+
+            match msg.view() {
+                MessageView::AsyncDone(..) => {
+                    break;
+                }
+                _ => ()
+            }
+        }
+
         self.is_playing = true;
         self.is_mute = false;
     }
