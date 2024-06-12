@@ -1,12 +1,15 @@
-use std::time;
+use std::{thread, time};
 
-use gst::{element_error, SeekFlags};
+use anyhow::Error;
+use gst::{Bus, ClockTime, Element, element_error, glib, Message, SeekFlags};
+use gst::bus::BusWatchGuard;
 use gst::prelude::*;
-use gst_app::prelude::BaseSrcExt;
 use gst_video::VideoFrameExt;
 use gtk4::prelude::{BoxExt, ButtonExt, EventControllerExt, GestureDragExt, OrientableExt, WidgetExt};
 use relm4::*;
 use relm4::adw::gdk;
+
+// todo: dispose of stuff on quit
 
 pub struct VideoPlayerModel {
     video_is_selected: bool,
@@ -15,8 +18,7 @@ pub struct VideoPlayerModel {
     gtk_sink: gst::Element,
     video_uri: Option<String>,
     playbin: Option<gst::Element>,
-    thumbnail_pipeline: Option<gst::Pipeline>,
-    got_snapshot: bool,
+    bus_watch: Option<BusWatchGuard>,
 }
 
 #[derive(Debug)]
@@ -141,8 +143,7 @@ impl SimpleComponent for VideoPlayerModel {
             playbin: None,
             gtk_sink,
             video_uri: None,
-            thumbnail_pipeline: None,
-            got_snapshot: false,
+            bus_watch: None,
         };
 
         let widgets = view_output!();
@@ -176,10 +177,9 @@ impl VideoPlayerModel {
         }
     }
 
-    fn create_thumbnail(&mut self, thumbnail_save_path: std::path::PathBuf, timestamp: u64) {
-        let uri = &self.video_uri.as_ref().unwrap();
+    fn create_thumbnail(thumbnail_save_path: std::path::PathBuf, video_uri: String) -> Result<gst::Pipeline, Error> {
         let pipeline = gst::parse::launch(&format!(
-            "uridecodebin uri={uri} ! videoconvert ! appsink name=sink"
+            "uridecodebin uri={video_uri} ! videoconvert ! appsink name=sink"
         )).unwrap()
             .downcast::<gst::Pipeline>()
             .expect("Expected a gst::pipeline");
@@ -209,7 +209,6 @@ impl VideoPlayerModel {
                         gst::FlowError::Error
                     }).unwrap();
 
-                    // fixme: does this limit to 1 snapshot
                     if got_snapshot {
                         return Err(gst::FlowError::Eos);
                     }
@@ -218,7 +217,6 @@ impl VideoPlayerModel {
 
                     let caps = sample.caps().expect("sample without caps");
                     let info = gst_video::VideoInfo::from_caps(caps).expect("Failed to parse caps");
-                    println!("name: {}, {:?}", info.format_info().has_alpha(), info.format_info().flags());
 
                     let frame = gst_video::VideoFrameRef::from_buffer_ref_readable(buffer, &info)
                         .map_err(|_| {
@@ -226,12 +224,10 @@ impl VideoPlayerModel {
                             gst::FlowError::Error
                         }).unwrap();
 
-
                     let aspect_ratio = (frame.width() as f64 * info.par().numer() as f64)
                         / (frame.height() as f64 * info.par().denom() as f64);
                     let target_height = 180;
                     let target_width = target_height as f64 * aspect_ratio;
-                    println!("w: {}, h: {}", target_width, target_height);
 
                     let img = image::FlatSamples::<&[u8]> {
                         samples: frame.plane_data(0).unwrap(),
@@ -266,14 +262,7 @@ impl VideoPlayerModel {
                 .build()
         );
 
-        pipeline.set_state(gst::State::Paused).unwrap();
-        std::thread::sleep(time::Duration::from_secs(3));
-
-        let time = gst::GenericFormattedValue::from(gst::ClockTime::from_seconds(timestamp));
-        let _ = pipeline.seek_simple(SeekFlags::FLUSH, time);
-        pipeline.set_state(gst::State::Playing).unwrap();
-
-        self.thumbnail_pipeline = Some(pipeline);
+        Ok(pipeline)
     }
 
     fn seek_to_percent(&mut self, percent: f64) {
@@ -313,10 +302,51 @@ impl VideoPlayerModel {
         self.is_playing = new_state;
         self.playbin.as_ref().unwrap().set_state(playbin_new_state).unwrap();
     }
+
+    fn thumbnail_thread(video_uri: String, video_duration: ClockTime) {
+        let num_thumbnails: u64 = 12;
+        let step = video_duration.mseconds() / (num_thumbnails + 2); // + 2 so first and last frame not chosen
+
+        for i in 0..num_thumbnails {
+            let uri = video_uri.clone();
+
+            thread::spawn(move || {
+                let save_path = std::path::PathBuf::from(format!("/home/fareed/Videos/thumbnail{}.jpg", i));
+                let timestamp = gst::GenericFormattedValue::from(ClockTime::from_mseconds(step + (step * i)));
+
+                let pipeline = VideoPlayerModel::create_thumbnail(save_path, uri).expect("could not create thumbnail pipeline");
+                pipeline.set_state(gst::State::Paused).unwrap();
+                let bus = pipeline.bus().expect("Pipeline without a bus.");
+                let mut seeked = false;
+
+                for msg in bus.iter_timed(ClockTime::NONE) {
+                    use gst::MessageView;
+
+                    match msg.view() {
+                        MessageView::AsyncDone(..) => {
+                            if !seeked {
+                                if pipeline.seek_simple(SeekFlags::FLUSH, timestamp).is_err()
+                                {
+                                    println!("Failed to seek");
+                                }
+                                pipeline.set_state(gst::State::Playing).unwrap();
+                                seeked = true;
+                            }
+                        }
+                        MessageView::Eos(..) => break,
+                        _ => ()
+                    }
+                }
+                pipeline.set_state(gst::State::Null).unwrap();
+            });
+        }
+    }
+
     fn play_new_video(&mut self) {
         if self.playbin.is_some() {
             self.playbin.as_ref().unwrap().set_state(gst::State::Null).unwrap();
             self.playbin.as_ref().unwrap().set_property("uri", self.video_uri.as_ref().unwrap());
+            self.bus_watch = None;
         } else {
             let playbin = gst::ElementFactory::make("playbin")
                 .name("playbin")
@@ -328,10 +358,35 @@ impl VideoPlayerModel {
             self.playbin = Some(playbin);
         }
 
+        let bus = self.playbin.as_ref().unwrap().bus().unwrap();
+        let playbin_clone = self.playbin.as_ref().unwrap().clone();
+        let uri = self.video_uri.as_ref().unwrap().clone();
+        let mut generated_for_video = false;
+
+        let bus_watch = bus.add_watch(move |_bus, message| {
+            use gst::MessageView;
+            let video_uri = uri.clone();
+            match message.view() {
+                MessageView::StateChanged(state_changed) => {
+                    if state_changed.src().map(|s| s == &playbin_clone).unwrap_or(false) &&
+                        state_changed.current() == gst::State::Playing &&
+                        !generated_for_video {
+                        let duration = playbin_clone.query_duration::<ClockTime>().unwrap();
+                        thread::spawn(move || {
+                            VideoPlayerModel::thumbnail_thread(video_uri, duration);
+                        });
+                        generated_for_video = true;
+                    }
+                    glib::ControlFlow::Continue
+                }
+                _ => glib::ControlFlow::Continue,
+            }
+        }).unwrap();
+
+        self.bus_watch = Some(bus_watch);
         self.playbin.as_ref().unwrap().set_property("mute", false);
         self.playbin.as_ref().unwrap().set_state(gst::State::Playing).unwrap();
 
-        self.create_thumbnail(std::path::PathBuf::from("/home/fareed/Videos/test.jpg"), 35);
         // todo: pause until playbin setup right to pervent seeking from happening too early
         self.is_playing = true;
         self.is_mute = false;

@@ -152,7 +152,10 @@ impl SimpleComponent for App {
 
     fn update(&mut self, message: Self::Input, _sender: ComponentSender<Self>) {
         match message {
-            AppMsg::Quit => main_application().quit(),
+            AppMsg::Quit => {
+                println!("QUIT");
+                main_application().quit()
+            }
             AppMsg::OpenFile => App::launch_file_opener(_sender),
             AppMsg::SetVideo(file_name) => {
                 self.video_player.emit(VideoPlayerMsg::NewVideo(file_name));
