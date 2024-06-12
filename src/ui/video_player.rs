@@ -1,7 +1,8 @@
-use std::{thread, time};
+use std::sync::{Arc, Barrier};
+use std::thread;
 
 use anyhow::Error;
-use gst::{Bus, ClockTime, Element, element_error, glib, Message, SeekFlags};
+use gst::{ClockTime, Element, element_error, glib, SeekFlags};
 use gst::bus::BusWatchGuard;
 use gst::prelude::*;
 use gst_video::VideoFrameExt;
@@ -32,11 +33,17 @@ pub enum VideoPlayerMsg {
     NewVideo(String),
 }
 
+#[derive(Debug)]
+pub enum VideoPlayerCommandMsg {
+    VideoInit(bool),
+}
+
 #[relm4::component(pub)]
-impl SimpleComponent for VideoPlayerModel {
+impl Component for VideoPlayerModel {
     type Input = VideoPlayerMsg;
     type Output = ();
     type Init = u8;
+    type CommandOutput = VideoPlayerCommandMsg;
 
     view! {
         gtk::Box {
@@ -138,7 +145,7 @@ impl SimpleComponent for VideoPlayerModel {
 
         let model = VideoPlayerModel {
             video_is_selected: false,
-            is_playing: true,
+            is_playing: false,
             is_mute: false,
             playbin: None,
             gtk_sink,
@@ -153,17 +160,31 @@ impl SimpleComponent for VideoPlayerModel {
         ComponentParts { model, widgets }
     }
 
-    fn update(&mut self, message: Self::Input, sender: ComponentSender<Self>) {
+    fn update(&mut self, message: Self::Input, sender: ComponentSender<Self>, _: &Self::Root) {
         match message {
             VideoPlayerMsg::NewVideo(value) => {
                 self.video_uri = Some(value);
                 self.video_is_selected = true;
                 self.play_new_video();
+                let playbin_clone = self.playbin.as_ref().unwrap().clone();
+
+                sender.oneshot_command(async move {
+                    VideoPlayerModel::wait_for_playbin_done(&playbin_clone);
+                    VideoPlayerCommandMsg::VideoInit(true)
+                });
             }
             VideoPlayerMsg::TogglePlayPause => self.video_toggle_play_pause(),
             VideoPlayerMsg::SeekToPercent(percent) => self.seek_to_percent(percent),
             VideoPlayerMsg::ToggleMute => self.toggle_mute(),
             _ => panic!("Unknown message received for video player")
+        }
+    }
+
+    fn update_cmd(&mut self, message: Self::CommandOutput, sender: ComponentSender<Self>, root: &Self::Root) {
+        match message {
+            VideoPlayerCommandMsg::VideoInit(done) => {
+                self.is_playing = true;
+            }
         }
     }
 }
@@ -307,8 +328,11 @@ impl VideoPlayerModel {
         let num_thumbnails: u64 = 12;
         let step = video_duration.mseconds() / (num_thumbnails + 2); // + 2 so first and last frame not chosen
 
+        let barrier = Arc::new(Barrier::new(12 + 1));
+
         for i in 0..num_thumbnails {
             let uri = video_uri.clone();
+            let barrier = barrier.clone();
 
             thread::spawn(move || {
                 let save_path = std::path::PathBuf::from(format!("/home/fareed/Videos/thumbnail{}.jpg", i));
@@ -338,7 +362,25 @@ impl VideoPlayerModel {
                     }
                 }
                 pipeline.set_state(gst::State::Null).unwrap();
+                barrier.wait();
             });
+        }
+
+        barrier.wait();
+    }
+
+    fn wait_for_playbin_done(playbin: &Element) {
+        let bus = playbin.bus().unwrap();
+
+        for msg in bus.iter_timed(ClockTime::NONE) {
+            use gst::MessageView;
+
+            match msg.view() {
+                MessageView::AsyncDone(..) => {
+                    break;
+                }
+                _ => ()
+            }
         }
     }
 
@@ -386,20 +428,7 @@ impl VideoPlayerModel {
         self.bus_watch = Some(bus_watch);
         self.playbin.as_ref().unwrap().set_property("mute", false);
         self.playbin.as_ref().unwrap().set_state(gst::State::Playing).unwrap();
-        // fixme: stop UI from freezing. make component async?
 
-        for msg in bus.iter_timed(ClockTime::NONE) {
-            use gst::MessageView;
-
-            match msg.view() {
-                MessageView::AsyncDone(..) => {
-                    break;
-                }
-                _ => ()
-            }
-        }
-
-        self.is_playing = true;
         self.is_mute = false;
     }
 }
