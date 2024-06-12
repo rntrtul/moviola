@@ -13,4 +13,3 @@ gst_app = { package = "gstreamer-app", version = "0.22.0" }
 gtk4 = { version = "0.8.2", features = ["v4_14"] }
 image = { version = "0.25.1", default-features = false, features = ["png", "jpeg"] }
 anyhow = "1.0.86"
-futures = { version = "0.3.30", features = ["thread-pool"] }

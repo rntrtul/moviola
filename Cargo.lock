@@ -234,7 +234,6 @@ dependencies = [
  "futures-core",
  "futures-task",
  "futures-util",
- "num_cpus",
 ]
 
 [[package]]
@@ -1362,7 +1361,6 @@ name = "vidEditor"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "futures",
  "gstreamer",
  "gstreamer-app",
  "gstreamer-video",

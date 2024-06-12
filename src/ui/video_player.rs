@@ -2,8 +2,7 @@ use std::sync::{Arc, Barrier};
 use std::thread;
 
 use anyhow::Error;
-use gst::{ClockTime, Element, element_error, glib, SeekFlags};
-use gst::bus::BusWatchGuard;
+use gst::{ClockTime, Element, element_error, SeekFlags};
 use gst::prelude::*;
 use gst_video::VideoFrameExt;
 use gtk4::prelude::{BoxExt, ButtonExt, EventControllerExt, GestureDragExt, OrientableExt, WidgetExt};
@@ -12,6 +11,9 @@ use relm4::adw::gdk;
 
 // todo: dispose of stuff on quit
 
+static THUMBNAIL_PATH: &str = "/home/fareed/Videos";
+static NUM_THUMBNAILS: u64 = 12;
+
 pub struct VideoPlayerModel {
     video_is_selected: bool,
     is_playing: bool,
@@ -19,16 +21,12 @@ pub struct VideoPlayerModel {
     gtk_sink: gst::Element,
     video_uri: Option<String>,
     playbin: Option<gst::Element>,
-    bus_watch: Option<BusWatchGuard>,
 }
 
 #[derive(Debug)]
 pub enum VideoPlayerMsg {
-    Play,
-    Pause,
     TogglePlayPause,
     ToggleMute,
-    Stop,
     SeekToPercent(f64),
     NewVideo(String),
 }
@@ -36,6 +34,7 @@ pub enum VideoPlayerMsg {
 #[derive(Debug)]
 pub enum VideoPlayerCommandMsg {
     VideoInit(bool),
+    GenerateThumbnails,
 }
 
 #[relm4::component(pub)]
@@ -150,7 +149,6 @@ impl Component for VideoPlayerModel {
             playbin: None,
             gtk_sink,
             video_uri: None,
-            bus_watch: None,
         };
 
         let widgets = view_output!();
@@ -166,8 +164,8 @@ impl Component for VideoPlayerModel {
                 self.video_uri = Some(value);
                 self.video_is_selected = true;
                 self.play_new_video();
+                
                 let playbin_clone = self.playbin.as_ref().unwrap().clone();
-
                 sender.oneshot_command(async move {
                     VideoPlayerModel::wait_for_playbin_done(&playbin_clone);
                     VideoPlayerCommandMsg::VideoInit(true)
@@ -176,14 +174,23 @@ impl Component for VideoPlayerModel {
             VideoPlayerMsg::TogglePlayPause => self.video_toggle_play_pause(),
             VideoPlayerMsg::SeekToPercent(percent) => self.seek_to_percent(percent),
             VideoPlayerMsg::ToggleMute => self.toggle_mute(),
-            _ => panic!("Unknown message received for video player")
         }
     }
 
-    fn update_cmd(&mut self, message: Self::CommandOutput, sender: ComponentSender<Self>, root: &Self::Root) {
+    fn update_cmd(&mut self, message: Self::CommandOutput, sender: ComponentSender<Self>, _root: &Self::Root) {
         match message {
-            VideoPlayerCommandMsg::VideoInit(done) => {
+            VideoPlayerCommandMsg::VideoInit(_) => {
                 self.is_playing = true;
+                let duration = self.playbin.as_ref().unwrap().query_duration::<ClockTime>().unwrap();
+                let uri = self.video_uri.as_ref().unwrap().clone();
+
+                sender.oneshot_command(async move {
+                    VideoPlayerModel::thumbnail_thread(uri, duration);
+                    VideoPlayerCommandMsg::GenerateThumbnails
+                });
+            }
+            VideoPlayerCommandMsg::GenerateThumbnails => {
+                println!("put images on timeline");
             }
         }
     }
@@ -325,17 +332,16 @@ impl VideoPlayerModel {
     }
 
     fn thumbnail_thread(video_uri: String, video_duration: ClockTime) {
-        let num_thumbnails: u64 = 12;
-        let step = video_duration.mseconds() / (num_thumbnails + 2); // + 2 so first and last frame not chosen
+        let step = video_duration.mseconds() / (NUM_THUMBNAILS + 2); // + 2 so first and last frame not chosen
 
-        let barrier = Arc::new(Barrier::new(12 + 1));
+        let barrier = Arc::new(Barrier::new((NUM_THUMBNAILS + 1) as usize));
 
-        for i in 0..num_thumbnails {
+        for i in 0..NUM_THUMBNAILS {
             let uri = video_uri.clone();
             let barrier = barrier.clone();
 
             thread::spawn(move || {
-                let save_path = std::path::PathBuf::from(format!("/home/fareed/Videos/thumbnail{}.jpg", i));
+                let save_path = std::path::PathBuf::from(format!("/{}/thumbnail_{}.jpg", THUMBNAIL_PATH, i));
                 let timestamp = gst::GenericFormattedValue::from(ClockTime::from_mseconds(step + (step * i)));
 
                 let pipeline = VideoPlayerModel::create_thumbnail(save_path, uri).expect("could not create thumbnail pipeline");
@@ -388,7 +394,6 @@ impl VideoPlayerModel {
         if self.playbin.is_some() {
             self.playbin.as_ref().unwrap().set_state(gst::State::Null).unwrap();
             self.playbin.as_ref().unwrap().set_property("uri", self.video_uri.as_ref().unwrap());
-            self.bus_watch = None;
         } else {
             let playbin = gst::ElementFactory::make("playbin")
                 .name("playbin")
@@ -400,32 +405,6 @@ impl VideoPlayerModel {
             self.playbin = Some(playbin);
         }
 
-        let bus = self.playbin.as_ref().unwrap().bus().unwrap();
-        let playbin_clone = self.playbin.as_ref().unwrap().clone();
-        let uri = self.video_uri.as_ref().unwrap().clone();
-        let mut generated_for_video = false;
-
-        let bus_watch = bus.add_watch(move |_bus, message| {
-            use gst::MessageView;
-            let video_uri = uri.clone();
-            match message.view() {
-                MessageView::StateChanged(state_changed) => {
-                    if state_changed.src().map(|s| s == &playbin_clone).unwrap_or(false) &&
-                        state_changed.current() == gst::State::Playing &&
-                        !generated_for_video {
-                        let duration = playbin_clone.query_duration::<ClockTime>().unwrap();
-                        thread::spawn(move || {
-                            VideoPlayerModel::thumbnail_thread(video_uri, duration);
-                        });
-                        generated_for_video = true;
-                    }
-                    glib::ControlFlow::Continue
-                }
-                _ => glib::ControlFlow::Continue,
-            }
-        }).unwrap();
-
-        self.bus_watch = Some(bus_watch);
         self.playbin.as_ref().unwrap().set_property("mute", false);
         self.playbin.as_ref().unwrap().set_state(gst::State::Playing).unwrap();
 
