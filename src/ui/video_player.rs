@@ -1,4 +1,9 @@
+use std::time;
+
+use gst::{element_error, SeekFlags};
 use gst::prelude::*;
+use gst_app::prelude::BaseSrcExt;
+use gst_video::VideoFrameExt;
 use gtk4::prelude::{BoxExt, ButtonExt, EventControllerExt, GestureDragExt, OrientableExt, WidgetExt};
 use relm4::*;
 use relm4::adw::gdk;
@@ -10,6 +15,8 @@ pub struct VideoPlayerModel {
     gtk_sink: gst::Element,
     video_uri: Option<String>,
     playbin: Option<gst::Element>,
+    thumbnail_pipeline: Option<gst::Pipeline>,
+    got_snapshot: bool,
 }
 
 #[derive(Debug)]
@@ -134,6 +141,8 @@ impl SimpleComponent for VideoPlayerModel {
             playbin: None,
             gtk_sink,
             video_uri: None,
+            thumbnail_pipeline: None,
+            got_snapshot: false,
         };
 
         let widgets = view_output!();
@@ -166,8 +175,109 @@ impl VideoPlayerModel {
             video_sink.send_event(step);
         }
     }
+
+    fn create_thumbnail(&mut self, thumbnail_save_path: std::path::PathBuf, timestamp: u64) {
+        let uri = &self.video_uri.as_ref().unwrap();
+        let pipeline = gst::parse::launch(&format!(
+            "uridecodebin uri={uri} ! videoconvert ! appsink name=sink"
+        )).unwrap()
+            .downcast::<gst::Pipeline>()
+            .expect("Expected a gst::pipeline");
+
+        let appsink = pipeline
+            .by_name("sink")
+            .expect("sink element not found")
+            .downcast::<gst_app::AppSink>()
+            .expect("Sink element is expected to be appsink!");
+
+        appsink.set_property("sync", false);
+
+        appsink.set_caps(Some(
+            &gst_video::VideoCapsBuilder::new()
+                .format(gst_video::VideoFormat::Rgbx)
+                .build(),
+        ));
+
+        let mut got_snapshot = false;
+
+        appsink.set_callbacks(
+            gst_app::AppSinkCallbacks::builder()
+                .new_sample(move |appsink| {
+                    let sample = appsink.pull_sample().map_err(|_| gst::FlowError::Error).unwrap();
+                    let buffer = sample.buffer().ok_or_else(|| {
+                        element_error!(appsink, gst::ResourceError::Failed, ("Failed"));
+                        gst::FlowError::Error
+                    }).unwrap();
+
+                    // fixme: does this limit to 1 snapshot
+                    if got_snapshot {
+                        return Err(gst::FlowError::Eos);
+                    }
+
+                    got_snapshot = true;
+
+                    let caps = sample.caps().expect("sample without caps");
+                    let info = gst_video::VideoInfo::from_caps(caps).expect("Failed to parse caps");
+                    println!("name: {}, {:?}", info.format_info().has_alpha(), info.format_info().flags());
+
+                    let frame = gst_video::VideoFrameRef::from_buffer_ref_readable(buffer, &info)
+                        .map_err(|_| {
+                            element_error!(appsink, gst::ResourceError::Failed, ("Failed to map buff readable"));
+                            gst::FlowError::Error
+                        }).unwrap();
+
+
+                    let aspect_ratio = (frame.width() as f64 * info.par().numer() as f64)
+                        / (frame.height() as f64 * info.par().denom() as f64);
+                    let target_height = 180;
+                    let target_width = target_height as f64 * aspect_ratio;
+                    println!("w: {}, h: {}", target_width, target_height);
+
+                    let img = image::FlatSamples::<&[u8]> {
+                        samples: frame.plane_data(0).unwrap(),
+                        layout: image::flat::SampleLayout {
+                            channels: 3,
+                            channel_stride: 1,
+                            width: frame.width(),
+                            width_stride: 4,
+                            height: frame.height(),
+                            height_stride: frame.plane_stride()[0] as usize,
+                        },
+                        color_hint: Some(image::ColorType::Rgb8),
+                    };
+
+                    let scaled_img = image::imageops::thumbnail(
+                        &img.as_view::<image::Rgb<u8>>().expect("could not create image view"),
+                        target_width as u32,
+                        target_height as u32,
+                    );
+
+                    scaled_img.save(&thumbnail_save_path).map_err(|err| {
+                        element_error!(appsink, gst::ResourceError::Write,
+                        (
+                            "Failed to write a preview file {}: {}",
+                            &thumbnail_save_path.display(), err
+                        ));
+                        gst::FlowError::Error
+                    }).unwrap();
+
+                    Err(gst::FlowError::Eos)
+                })
+                .build()
+        );
+
+        pipeline.set_state(gst::State::Paused).unwrap();
+        std::thread::sleep(time::Duration::from_secs(3));
+
+        let time = gst::GenericFormattedValue::from(gst::ClockTime::from_seconds(timestamp));
+        let _ = pipeline.seek_simple(SeekFlags::FLUSH, time);
+        pipeline.set_state(gst::State::Playing).unwrap();
+
+        self.thumbnail_pipeline = Some(pipeline);
+    }
+
     fn seek_to_percent(&mut self, percent: f64) {
-        if self.playbin.is_none() {
+        if self.playbin.is_none() || !self.is_playing {
             println!("early exit for seek");
             return;
         }
@@ -220,6 +330,9 @@ impl VideoPlayerModel {
 
         self.playbin.as_ref().unwrap().set_property("mute", false);
         self.playbin.as_ref().unwrap().set_state(gst::State::Playing).unwrap();
+
+        self.create_thumbnail(std::path::PathBuf::from("/home/fareed/Videos/test.jpg"), 35);
+        // todo: pause until playbin setup right to pervent seeking from happening too early
         self.is_playing = true;
         self.is_mute = false;
     }
