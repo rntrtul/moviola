@@ -226,7 +226,7 @@ impl VideoPlayerModel {
 
                     let aspect_ratio = (frame.width() as f64 * info.par().numer() as f64)
                         / (frame.height() as f64 * info.par().denom() as f64);
-                    let target_height = 180;
+                    let target_height = 90;
                     let target_width = target_height as f64 * aspect_ratio;
 
                     let img = image::FlatSamples::<&[u8]> {
