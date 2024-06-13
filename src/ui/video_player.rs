@@ -348,10 +348,18 @@ impl VideoPlayerModel {
     }
 
     fn populate_timeline(timeline: &gtk::Box) {
-        // todo: delete all children or reuse the gtk image?
+        // todo: see if can reuse picture widget instead of discarding. without storing ref to all of them
+        if timeline.first_child().is_some() {
+            for _ in 0..NUM_THUMBNAILS {
+                let child = timeline.first_child().unwrap();
+                timeline.remove(&child);
+            }
+        }
+
         for i in 0..NUM_THUMBNAILS {
             let file = gio::File::for_parse_name(format!("{}/thumbnail_{}.jpg", THUMBNAIL_PATH, i).as_str());
             let image = gtk::Picture::for_file(&file);
+
             image.set_hexpand(true);
             image.set_valign(gtk::Align::Fill);
             image.set_halign(gtk::Align::Fill);
