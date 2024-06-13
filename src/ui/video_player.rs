@@ -5,7 +5,8 @@ use anyhow::Error;
 use gst::{ClockTime, Element, element_error, SeekFlags};
 use gst::prelude::*;
 use gst_video::VideoFrameExt;
-use gtk4::prelude::{BoxExt, ButtonExt, EventControllerExt, GestureDragExt, OrientableExt, WidgetExt};
+use gtk4::gio;
+use gtk4::prelude::{BoxExt, ButtonExt, EventControllerExt, GestureDragExt, OrientableExt, TextChildAnchorExt, WidgetExt};
 use relm4::*;
 use relm4::adw::gdk;
 
@@ -13,11 +14,14 @@ use relm4::adw::gdk;
 
 static THUMBNAIL_PATH: &str = "/home/fareed/Videos";
 static NUM_THUMBNAILS: u64 = 12;
+static THUMBNAIL_HEIGHT: u32 = 180;
 
 pub struct VideoPlayerModel {
     video_is_selected: bool,
+    video_is_loaded: bool,
     is_playing: bool,
     is_mute: bool,
+    thumbnails_available: bool,
     gtk_sink: gst::Element,
     video_uri: Option<String>,
     playbin: Option<gst::Element>,
@@ -29,6 +33,7 @@ pub enum VideoPlayerMsg {
     ToggleMute,
     SeekToPercent(f64),
     NewVideo(String),
+    AddThumbnails,
 }
 
 #[derive(Debug)]
@@ -142,10 +147,13 @@ impl Component for VideoPlayerModel {
         let offload = gtk4::GraphicsOffload::new(Some(&picture));
         offload.set_enabled(gtk::GraphicsOffloadEnabled::Enabled);
 
+
         let model = VideoPlayerModel {
             video_is_selected: false,
+            video_is_loaded: false,
             is_playing: false,
             is_mute: false,
+            thumbnails_available: false,
             playbin: None,
             gtk_sink,
             video_uri: None,
@@ -158,13 +166,13 @@ impl Component for VideoPlayerModel {
         ComponentParts { model, widgets }
     }
 
-    fn update(&mut self, message: Self::Input, sender: ComponentSender<Self>, _: &Self::Root) {
+    fn update_with_view(&mut self, widgets: &mut Self::Widgets, message: Self::Input, sender: ComponentSender<Self>, root: &Self::Root) {
         match message {
             VideoPlayerMsg::NewVideo(value) => {
                 self.video_uri = Some(value);
                 self.video_is_selected = true;
                 self.play_new_video();
-                
+
                 let playbin_clone = self.playbin.as_ref().unwrap().clone();
                 sender.oneshot_command(async move {
                     VideoPlayerModel::wait_for_playbin_done(&playbin_clone);
@@ -174,13 +182,20 @@ impl Component for VideoPlayerModel {
             VideoPlayerMsg::TogglePlayPause => self.video_toggle_play_pause(),
             VideoPlayerMsg::SeekToPercent(percent) => self.seek_to_percent(percent),
             VideoPlayerMsg::ToggleMute => self.toggle_mute(),
+            VideoPlayerMsg::AddThumbnails => {
+                let timeline = &widgets.timeline;
+                VideoPlayerModel::populate_timeline(timeline);
+            }
         }
+
+        self.update_view(widgets, sender);
     }
 
     fn update_cmd(&mut self, message: Self::CommandOutput, sender: ComponentSender<Self>, _root: &Self::Root) {
         match message {
             VideoPlayerCommandMsg::VideoInit(_) => {
                 self.is_playing = true;
+                self.video_is_loaded = true;
                 let duration = self.playbin.as_ref().unwrap().query_duration::<ClockTime>().unwrap();
                 let uri = self.video_uri.as_ref().unwrap().clone();
 
@@ -190,7 +205,8 @@ impl Component for VideoPlayerModel {
                 });
             }
             VideoPlayerCommandMsg::GenerateThumbnails => {
-                println!("put images on timeline");
+                sender.input(VideoPlayerMsg::AddThumbnails);
+                self.thumbnails_available = true;
             }
         }
     }
@@ -254,7 +270,7 @@ impl VideoPlayerModel {
 
                     let aspect_ratio = (frame.width() as f64 * info.par().numer() as f64)
                         / (frame.height() as f64 * info.par().denom() as f64);
-                    let target_height = 90;
+                    let target_height = THUMBNAIL_HEIGHT;
                     let target_width = target_height as f64 * aspect_ratio;
 
                     let img = image::FlatSamples::<&[u8]> {
@@ -273,7 +289,7 @@ impl VideoPlayerModel {
                     let scaled_img = image::imageops::thumbnail(
                         &img.as_view::<image::Rgb<u8>>().expect("could not create image view"),
                         target_width as u32,
-                        target_height as u32,
+                        target_height,
                     );
 
                     scaled_img.save(&thumbnail_save_path).map_err(|err| {
@@ -294,7 +310,7 @@ impl VideoPlayerModel {
     }
 
     fn seek_to_percent(&mut self, percent: f64) {
-        if self.playbin.is_none() || !self.is_playing {
+        if self.playbin.is_none() || !self.video_is_loaded {
             println!("early exit for seek");
             return;
         }
@@ -329,6 +345,18 @@ impl VideoPlayerModel {
 
         self.is_playing = new_state;
         self.playbin.as_ref().unwrap().set_state(playbin_new_state).unwrap();
+    }
+
+    fn populate_timeline(timeline: &gtk::Box) {
+        // todo: delete all children or reuse the gtk image?
+        for i in 0..NUM_THUMBNAILS {
+            let file = gio::File::for_parse_name(format!("{}/thumbnail_{}.jpg", THUMBNAIL_PATH, i).as_str());
+            let image = gtk::Picture::for_file(&file);
+            image.set_hexpand(true);
+            image.set_valign(gtk::Align::Fill);
+            image.set_halign(gtk::Align::Fill);
+            timeline.append(&image);
+        }
     }
 
     fn thumbnail_thread(video_uri: String, video_duration: ClockTime) {
