@@ -5,10 +5,12 @@ use anyhow::Error;
 use gst::{ClockTime, Element, element_error, SeekFlags};
 use gst::prelude::*;
 use gst_video::VideoFrameExt;
-use gtk4::gio;
+use gtk4::{ConstraintAttribute, gio};
 use gtk4::prelude::{BoxExt, ButtonExt, EventControllerExt, GestureDragExt, OrientableExt, TextChildAnchorExt, WidgetExt};
 use relm4::*;
 use relm4::adw::gdk;
+
+use crate::ui::handle::HandleWidget;
 
 // todo: dispose of stuff on quit
 
@@ -34,6 +36,7 @@ pub enum VideoPlayerMsg {
     SeekToPercent(f64),
     NewVideo(String),
     AddThumbnails,
+    MoveStartTo(f32),
 }
 
 #[derive(Debug)]
@@ -88,28 +91,50 @@ impl Component for VideoPlayerModel {
                     }
                 },
 
-                #[name = "timeline"]
-                gtk::Box {
-                    set_hexpand: true,
-                    inline_css: "background-color: grey",
+                #[name = "overlay"]
+                gtk::Overlay {
+                    #[wrap(Some)]
+                    set_child: timeline = &gtk::Box {
+                        set_hexpand: true,
+                        inline_css: "background-color: grey",
+                        set_margin_start: 5,
+                        set_margin_end: 5,
 
-                    add_controller = gtk::GestureClick {
-                        connect_pressed[sender] => move |click,_,x,_| {
-                            let width = click.widget().width() as f64;
-                            let percent = x / width;
-                            sender.input(VideoPlayerMsg::SeekToPercent(percent));
+                        add_controller = gtk::GestureClick {
+                            connect_pressed[sender] => move |click,_,x,_| {
+                                let width = click.widget().width() as f64;
+                                let percent = x / width;
+                                sender.input(VideoPlayerMsg::SeekToPercent(percent));
+                            }
+                        },
+
+                        add_controller = gtk::GestureDrag {
+                            connect_drag_update[sender] => move |drag,x_offset,_| {
+                                // todo: worry about seek only working on drag being still due to flush?
+                                let (start_x, _) = drag.start_point().unwrap();
+                                let width = drag.widget().width() as f64;
+                                let percent_dragged = (start_x + x_offset) / width;
+
+                                sender.input(VideoPlayerMsg::SeekToPercent(percent_dragged));
+                            },
                         }
                     },
 
-                    add_controller = gtk::GestureDrag {
-                        connect_drag_update[sender] => move |drag,x_offset,_| {
-                            // todo: worry about seek only working on drag being still?
-                            let (start_x, _) = drag.start_point().unwrap();
-                            let width = drag.widget().width() as f64;
-                            let percent_dragged = (start_x + x_offset) / width;
+                    add_overlay: start_handle = &super::HandleWidget::default() {
+                        set_halign: gtk::Align::Start,
+                        set_valign: gtk::Align::Center,
 
-                            sender.input(VideoPlayerMsg::SeekToPercent(percent_dragged));
+                        add_controller = gtk::GestureDrag {
+                            connect_drag_update[sender] => move |drag,x_offset,_| {
+                                let (start_x, _) = drag.start_point().unwrap();
+                                sender.input(VideoPlayerMsg::MoveStartTo((start_x + x_offset) as f32))
+                            },
                         }
+                    },
+
+                    add_overlay: end_handle = &super::HandleWidget::default() {
+                        set_halign: gtk::Align::End,
+                        set_valign: gtk::Align::Center,
                     },
                 },
 
@@ -185,6 +210,10 @@ impl Component for VideoPlayerModel {
             VideoPlayerMsg::AddThumbnails => {
                 let timeline = &widgets.timeline;
                 VideoPlayerModel::populate_timeline(timeline);
+            }
+            VideoPlayerMsg::MoveStartTo(pos) => {
+                widgets.start_handle.set_x(pos);
+                widgets.start_handle.queue_draw();
             }
         }
 
@@ -319,10 +348,10 @@ impl VideoPlayerModel {
         let seconds = (duration.seconds() as f64 * percent) as u64;
 
         let time = gst::GenericFormattedValue::from(gst::ClockTime::from_seconds(seconds));
-
+        // todo: play around with seek flags for faster perf key_unit vs accurate?
         let seek = gst::event::Seek::new(
             1.0,
-            gst::SeekFlags::FLUSH | gst::SeekFlags::ACCURATE,
+            gst::SeekFlags::FLUSH | gst::SeekFlags::KEY_UNIT,
             gst::SeekType::Set,
             time,
             gst::SeekType::End,
