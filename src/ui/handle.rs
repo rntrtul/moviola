@@ -9,7 +9,9 @@ use relm4::gtk;
 #[properties(wrapper_type = super::HandleWidget)]
 pub struct HandleWidget {
     #[property(get, set)]
-    pub x: Cell<f32>,
+    pub x: Cell<i32>,
+    #[property(get, set)]
+    pub rel_x: Cell<i32>,
 }
 
 //     todo: have setting for thickness and height percent of parent?
@@ -28,7 +30,7 @@ impl ObjectImpl for HandleWidget {}
 
 impl WidgetImpl for HandleWidget {
     fn measure(&self, orientation: Orientation, for_size: i32) -> (i32, i32, i32, i32) {
-        println!("{:?}, {}", orientation, for_size);
+        // println!("{:?}, {}", orientation, for_size);
         if orientation == gtk::Orientation::Horizontal {
             //     calc min width
             (10, 10, -1, -1)
@@ -42,8 +44,9 @@ impl WidgetImpl for HandleWidget {
 
         let target_height = (widget.height() as f32) * 0.75;
         let y_instep = widget.height() as f32 * 0.125;
+        // fixme: limit handle to bounds of the timeline (snaps to it afterwards)
 
-        let rect = graphene::Rect::new(self.x.get(), y_instep, widget.width() as f32, target_height);
+        let rect = graphene::Rect::new(self.rel_x.get() as f32, y_instep, widget.width() as f32, target_height);
         let round_rect = gsk::RoundedRect::from_rect(rect, 6f32);
 
         let path_builder = gsk::PathBuilder::new();
@@ -55,7 +58,11 @@ impl WidgetImpl for HandleWidget {
 }
 
 impl HandleWidget {
-    pub fn set_x(&mut self, pos: f32) {
+    pub fn set_x(&mut self, pos: i32) {
         self.x.set(pos);
+    }
+
+    pub fn set_rel_x(&mut self, pos: i32) {
+        self.rel_x.set(pos);
     }
 }

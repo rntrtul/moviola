@@ -1,3 +1,4 @@
+use std::cmp::max;
 use std::sync::{Arc, Barrier};
 use std::thread;
 
@@ -5,12 +6,10 @@ use anyhow::Error;
 use gst::{ClockTime, Element, element_error, SeekFlags};
 use gst::prelude::*;
 use gst_video::VideoFrameExt;
-use gtk4::{ConstraintAttribute, gio};
-use gtk4::prelude::{BoxExt, ButtonExt, EventControllerExt, GestureDragExt, OrientableExt, TextChildAnchorExt, WidgetExt};
+use gtk4::gio;
+use gtk4::prelude::{BoxExt, ButtonExt, EventControllerExt, GestureDragExt, OrientableExt, WidgetExt};
 use relm4::*;
 use relm4::adw::gdk;
-
-use crate::ui::handle::HandleWidget;
 
 // todo: dispose of stuff on quit
 
@@ -36,7 +35,8 @@ pub enum VideoPlayerMsg {
     SeekToPercent(f64),
     NewVideo(String),
     AddThumbnails,
-    MoveStartTo(f32),
+    MoveStartTo(i32),
+    MoveStartEnd,
 }
 
 #[derive(Debug)]
@@ -125,9 +125,14 @@ impl Component for VideoPlayerModel {
                         set_valign: gtk::Align::Center,
 
                         add_controller = gtk::GestureDrag {
-                            connect_drag_update[sender] => move |drag,x_offset,_| {
+                            connect_drag_update[sender] => move |drag,offset_x,_| {
                                 let (start_x, _) = drag.start_point().unwrap();
-                                sender.input(VideoPlayerMsg::MoveStartTo((start_x + x_offset) as f32))
+                                let targ_x = (start_x + offset_x) as i32;
+                                sender.input(VideoPlayerMsg::MoveStartTo(targ_x))
+                            },
+
+                            connect_drag_end[sender] => move |_, _,_| {
+                                sender.input(VideoPlayerMsg::MoveStartEnd);
                             },
                         }
                     },
@@ -212,8 +217,16 @@ impl Component for VideoPlayerModel {
                 VideoPlayerModel::populate_timeline(timeline);
             }
             VideoPlayerMsg::MoveStartTo(pos) => {
-                widgets.start_handle.set_x(pos);
+                widgets.start_handle.set_rel_x(pos);
                 widgets.start_handle.queue_draw();
+            }
+            VideoPlayerMsg::MoveStartEnd => {
+                let curr_margin = widgets.start_handle.x();
+                let new_margin = max(curr_margin + widgets.start_handle.rel_x(), 0);
+
+                widgets.start_handle.set_x(new_margin);
+                widgets.start_handle.set_margin_start(new_margin);
+                widgets.start_handle.set_rel_x(0);
             }
         }
 
