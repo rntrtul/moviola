@@ -1,7 +1,7 @@
 use std::cell::Cell;
 
 use gtk4::{gdk, glib, graphene, gsk, Orientation, Snapshot};
-use gtk4::prelude::{ObjectExt, SnapshotExtManual, WidgetExt};
+use gtk4::prelude::{ObjectExt, SnapshotExt, WidgetExt};
 use gtk4::subclass::prelude::*;
 use relm4::gtk;
 
@@ -11,6 +11,10 @@ pub struct HandleWidget {
     #[property(get, set)]
     pub x: Cell<f32>,
 }
+
+//     todo: have setting for thickness and height percent of parent?
+//              or just do type and have those settings pre determined?
+
 
 #[glib::object_subclass]
 impl ObjectSubclass for HandleWidget {
@@ -37,13 +41,16 @@ impl WidgetImpl for HandleWidget {
         let widget = self.obj();
 
         let target_height = (widget.height() as f32) * 0.75;
-        println!("w: {}, h: {}", widget.width(), widget.height());
         let y_instep = widget.height() as f32 * 0.125;
 
-        let blue_colour = gdk::RGBA::WHITE;
         let rect = graphene::Rect::new(self.x.get(), y_instep, widget.width() as f32, target_height);
         let round_rect = gsk::RoundedRect::from_rect(rect, 6f32);
-        snapshot.append_border(&round_rect, &[2f32, 2f32, 2f32, 2f32], &[blue_colour, blue_colour, blue_colour, blue_colour]);
+
+        let path_builder = gsk::PathBuilder::new();
+        path_builder.add_rounded_rect(&round_rect);
+        let path = path_builder.to_path();
+
+        snapshot.append_fill(&path, gsk::FillRule::Winding, &gdk::RGBA::WHITE);
     }
 }
 
