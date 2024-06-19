@@ -12,6 +12,8 @@ pub struct HandleWidget {
     pub x: Cell<i32>,
     #[property(get, set)]
     pub rel_x: Cell<i32>,
+    #[property(get, set)]
+    is_handle: Cell<bool>,
 }
 
 //     todo: have setting for thickness and height percent of parent?
@@ -29,12 +31,16 @@ impl ObjectSubclass for HandleWidget {
 impl ObjectImpl for HandleWidget {}
 
 impl WidgetImpl for HandleWidget {
-    fn measure(&self, orientation: Orientation, for_size: i32) -> (i32, i32, i32, i32) {
-        // println!("{:?}, {}", orientation, for_size);
+    fn measure(&self, orientation: Orientation, _for_size: i32) -> (i32, i32, i32, i32) {
         if orientation == gtk::Orientation::Horizontal {
-            //     calc min width
-            (10, 10, -1, -1)
+            // calc width range
+            if self.is_handle.get() {
+                (10, 10, -1, -1)
+            } else {
+                (5, 5, -1, -1)
+            }
         } else {
+            // height range
             (20, 200, -1, -1)
         }
     }
@@ -42,9 +48,11 @@ impl WidgetImpl for HandleWidget {
     fn snapshot(&self, snapshot: &Snapshot) {
         let widget = self.obj();
 
-        let target_height = (widget.height() as f32) * 0.75;
-        let y_instep = widget.height() as f32 * 0.125;
-        // fixme: limit handle to bounds of the timeline (snaps to it afterwards)
+        let height_percent = if self.is_handle.get() { 0.75 } else { 1.0 };
+        let instep_percent = if height_percent == 0.75 { 0.125 } else { 0. };
+
+        let target_height = (widget.height() as f32) * height_percent;
+        let y_instep = widget.height() as f32 * instep_percent;
 
         let rect = graphene::Rect::new(self.rel_x.get() as f32, y_instep, widget.width() as f32, target_height);
         let round_rect = gsk::RoundedRect::from_rect(rect, 6f32);
@@ -53,7 +61,9 @@ impl WidgetImpl for HandleWidget {
         path_builder.add_rounded_rect(&round_rect);
         let path = path_builder.to_path();
 
-        snapshot.append_fill(&path, gsk::FillRule::Winding, &gdk::RGBA::WHITE);
+        let colour = if self.is_handle.get() { &gdk::RGBA::WHITE } else { &gdk::RGBA::BLUE };
+
+        snapshot.append_fill(&path, gsk::FillRule::Winding, colour);
     }
 }
 

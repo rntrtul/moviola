@@ -11,10 +11,11 @@ glib::wrapper! {
 }
 
 impl HandleWidget {
-    fn new(x: i32) -> Self {
+    fn new(x: i32, is_handle: bool) -> Self {
         glib::Object::builder()
             .property("x", x)
             .property("rel_x", 0)
+            .property("is_handle", is_handle)
             .build()
     }
 }
@@ -24,6 +25,7 @@ impl Default for HandleWidget {
         glib::Object::builder()
             .property("x", 0)
             .property("rel_x", 0)
+            .property("is_handle", true)
             .build()
     }
 }

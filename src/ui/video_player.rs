@@ -1,4 +1,3 @@
-use std::cmp::max;
 use std::sync::{Arc, Barrier};
 use std::thread;
 
@@ -139,6 +138,11 @@ impl Component for VideoPlayerModel {
                         }
                     },
 
+                    add_overlay: seek_bar = &super::HandleWidget::new(0, false) {
+                        set_halign: gtk::Align::Start,
+                        set_valign: gtk::Align::Center,
+                    },
+
                     add_overlay: end_handle = &super::HandleWidget::default() {
                         set_halign: gtk::Align::End,
                         set_valign: gtk::Align::Center,
@@ -224,7 +228,11 @@ impl Component for VideoPlayerModel {
                 });
             }
             VideoPlayerMsg::TogglePlayPause => self.video_toggle_play_pause(),
-            VideoPlayerMsg::SeekToPercent(percent) => self.seek_to_percent(percent),
+            VideoPlayerMsg::SeekToPercent(percent) => {
+                let seek_bar_pos = (widgets.timeline.width() as f64 * percent) as i32;
+                widgets.seek_bar.set_margin_start(seek_bar_pos);
+                self.seek_to_percent(percent);
+            }
             VideoPlayerMsg::ToggleMute => self.toggle_mute(),
             VideoPlayerMsg::AddThumbnails => {
                 let timeline = &widgets.timeline;
