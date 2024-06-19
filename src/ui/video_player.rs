@@ -1,5 +1,6 @@
 use std::sync::{Arc, Barrier};
 use std::thread;
+use std::time::Duration;
 
 use anyhow::Error;
 use gst::{ClockTime, Element, element_error, SeekFlags};
@@ -38,12 +39,14 @@ pub enum VideoPlayerMsg {
     MoveStartEnd,
     MoveEndTo(i32),
     MoveEndEnd,
+    UpdateSeekBar(f64),
 }
 
 #[derive(Debug)]
 pub enum VideoPlayerCommandMsg {
     VideoInit(bool),
     GenerateThumbnails,
+    UpdateSeekPos,
 }
 
 #[relm4::component(pub)]
@@ -273,6 +276,12 @@ impl Component for VideoPlayerModel {
                 widgets.end_handle.set_margin_end(new_margin);
                 widgets.end_handle.set_rel_x(0);
             }
+            VideoPlayerMsg::UpdateSeekBar(percent) => {
+                let target_bar_pos = (widgets.timeline.width() as f64 * percent) as i32;
+                if target_bar_pos != widgets.seek_bar.margin_start() {
+                    widgets.seek_bar.set_margin_start(target_bar_pos);
+                }
+            }
         }
 
         self.update_view(widgets, sender);
@@ -290,10 +299,30 @@ impl Component for VideoPlayerModel {
                     VideoPlayerModel::thumbnail_thread(uri, duration);
                     VideoPlayerCommandMsg::GenerateThumbnails
                 });
+
+                let playbin_clone = self.playbin.as_ref().unwrap().clone();
+                sender.command(|out, shutdown| {
+                    shutdown.register(async move {
+                        loop {
+                            // todo: determine good wait time to make smooth
+                            // todo: test more with video switches
+                            tokio::time::sleep(Duration::from_millis(20)).await;
+                            if playbin_clone.state(Some(ClockTime::ZERO)).1 == gst::State::Playing {
+                                out.send(VideoPlayerCommandMsg::UpdateSeekPos).unwrap();
+                            }
+                        }
+                    }).drop_on_shutdown()
+                })
             }
             VideoPlayerCommandMsg::GenerateThumbnails => {
-                sender.input(VideoPlayerMsg::AddThumbnails);
                 self.thumbnails_available = true;
+                sender.input(VideoPlayerMsg::AddThumbnails);
+            }
+            VideoPlayerCommandMsg::UpdateSeekPos => {
+                let duration = self.playbin.as_ref().unwrap().query_duration::<ClockTime>().unwrap();
+                let pos = self.playbin.as_ref().unwrap().query_position::<gst::ClockTime>().unwrap();
+                let percent = pos.mseconds() as f64 / duration.mseconds() as f64;
+                sender.input(VideoPlayerMsg::UpdateSeekBar(percent));
             }
         }
     }
@@ -409,7 +438,7 @@ impl VideoPlayerModel {
         // todo: play around with seek flags for faster perf key_unit vs accurate?
         let seek = gst::event::Seek::new(
             1.0,
-            gst::SeekFlags::FLUSH | gst::SeekFlags::KEY_UNIT,
+            gst::SeekFlags::FLUSH | gst::SeekFlags::ACCURATE,
             gst::SeekType::Set,
             time,
             gst::SeekType::End,
