@@ -37,6 +37,8 @@ pub enum VideoPlayerMsg {
     AddThumbnails,
     MoveStartTo(i32),
     MoveStartEnd,
+    MoveEndTo(i32),
+    MoveEndEnd,
 }
 
 #[derive(Debug)]
@@ -140,6 +142,18 @@ impl Component for VideoPlayerModel {
                     add_overlay: end_handle = &super::HandleWidget::default() {
                         set_halign: gtk::Align::End,
                         set_valign: gtk::Align::Center,
+
+                        add_controller = gtk::GestureDrag {
+                            connect_drag_update[sender] => move |drag,offset_x,_| {
+                                let (start_x, _) = drag.start_point().unwrap();
+                                let targ_x = (start_x + offset_x) as i32;
+                                sender.input(VideoPlayerMsg::MoveEndTo(targ_x))
+                            },
+
+                            connect_drag_end[sender] => move |_, _,_| {
+                                sender.input(VideoPlayerMsg::MoveEndEnd);
+                            },
+                        }
                     },
                 },
 
@@ -217,16 +231,39 @@ impl Component for VideoPlayerModel {
                 VideoPlayerModel::populate_timeline(timeline);
             }
             VideoPlayerMsg::MoveStartTo(pos) => {
-                widgets.start_handle.set_rel_x(pos);
-                widgets.start_handle.queue_draw();
+                let end_pos = widgets.timeline.width() - widgets.end_handle.x();
+                let target_pos = widgets.start_handle.x() + pos;
+
+                if (end_pos > target_pos) && (target_pos >= 0) {
+                    widgets.start_handle.set_rel_x(pos);
+                    widgets.start_handle.queue_draw();
+                }
+            }
+            VideoPlayerMsg::MoveEndTo(pos) => {
+                let target_instep = -widgets.end_handle.x() + pos;
+                let target_pos = widgets.timeline.width() + target_instep;
+                // fixme: on quick change let rel_x limit
+
+                if (target_pos > widgets.start_handle.x()) && (target_instep <= 0) {
+                    widgets.end_handle.set_rel_x(pos);
+                    widgets.end_handle.queue_draw();
+                }
             }
             VideoPlayerMsg::MoveStartEnd => {
                 let curr_margin = widgets.start_handle.x();
-                let new_margin = max(curr_margin + widgets.start_handle.rel_x(), 0);
+                let new_margin = curr_margin + widgets.start_handle.rel_x();
 
                 widgets.start_handle.set_x(new_margin);
                 widgets.start_handle.set_margin_start(new_margin);
                 widgets.start_handle.set_rel_x(0);
+            }
+            VideoPlayerMsg::MoveEndEnd => {
+                let curr_margin = widgets.end_handle.x();
+                let new_margin = (-curr_margin + widgets.end_handle.rel_x()).abs();
+
+                widgets.end_handle.set_x(new_margin);
+                widgets.end_handle.set_margin_end(new_margin);
+                widgets.end_handle.set_rel_x(0);
             }
         }
 
