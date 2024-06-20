@@ -102,7 +102,7 @@ impl SimpleComponent for EditControlsModel {
         }
     }
 
-    fn init(init: Self::Init, root: Self::Root, sender: ComponentSender<Self>) -> ComponentParts<Self> {
+    fn init(_init: Self::Init, root: Self::Root, sender: ComponentSender<Self>) -> ComponentParts<Self> {
         let widgets = view_output!();
         let model = EditControlsModel {
             crop_mode: EditControlsMsg::CropMode(CropFree),
@@ -111,7 +111,7 @@ impl SimpleComponent for EditControlsModel {
         ComponentParts { model, widgets }
     }
 
-    fn update(&mut self, message: Self::Input, sender: ComponentSender<Self>) {
+    fn update(&mut self, message: Self::Input, _sender: ComponentSender<Self>) {
         match message {
             EditControlsMsg::CropMode(_) => {
                 self.crop_mode = message;

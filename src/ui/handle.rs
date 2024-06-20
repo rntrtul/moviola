@@ -32,7 +32,7 @@ impl ObjectImpl for HandleWidget {}
 
 impl WidgetImpl for HandleWidget {
     fn measure(&self, orientation: Orientation, _for_size: i32) -> (i32, i32, i32, i32) {
-        if orientation == gtk::Orientation::Horizontal {
+        if orientation == Orientation::Horizontal {
             // calc width range
             if self.is_handle.get() {
                 (10, 10, -1, -1)

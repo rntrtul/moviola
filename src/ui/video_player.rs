@@ -23,9 +23,9 @@ pub struct VideoPlayerModel {
     is_playing: bool,
     is_mute: bool,
     thumbnails_available: bool,
-    gtk_sink: gst::Element,
+    gtk_sink: Element,
     video_uri: Option<String>,
-    playbin: Option<gst::Element>,
+    playbin: Option<Element>,
 }
 
 #[derive(Debug)]
@@ -51,10 +51,10 @@ pub enum VideoPlayerCommandMsg {
 
 #[relm4::component(pub)]
 impl Component for VideoPlayerModel {
+    type CommandOutput = VideoPlayerCommandMsg;
     type Input = VideoPlayerMsg;
     type Output = ();
     type Init = u8;
-    type CommandOutput = VideoPlayerCommandMsg;
 
     view! {
         gtk::Box {
@@ -217,7 +217,7 @@ impl Component for VideoPlayerModel {
         ComponentParts { model, widgets }
     }
 
-    fn update_with_view(&mut self, widgets: &mut Self::Widgets, message: Self::Input, sender: ComponentSender<Self>, root: &Self::Root) {
+    fn update_with_view(&mut self, widgets: &mut Self::Widgets, message: Self::Input, sender: ComponentSender<Self>, _root: &Self::Root) {
         match message {
             VideoPlayerMsg::NewVideo(value) => {
                 self.video_uri = Some(value);
@@ -320,7 +320,7 @@ impl Component for VideoPlayerModel {
             }
             VideoPlayerCommandMsg::UpdateSeekPos => {
                 let duration = self.playbin.as_ref().unwrap().query_duration::<ClockTime>().unwrap();
-                let pos = self.playbin.as_ref().unwrap().query_position::<gst::ClockTime>().unwrap();
+                let pos = self.playbin.as_ref().unwrap().query_position::<ClockTime>().unwrap();
                 let percent = pos.mseconds() as f64 / duration.mseconds() as f64;
                 sender.input(VideoPlayerMsg::UpdateSeekBar(percent));
             }
@@ -331,7 +331,7 @@ impl Component for VideoPlayerModel {
 impl VideoPlayerModel {
     // todo: hookup with ui/keyboard. add support for stepping backwards
     fn step_next_frame(&mut self) {
-        if let Some(video_sink) = self.playbin.as_ref().unwrap().property::<Option<gst::Element>>("video-sink") {
+        if let Some(video_sink) = self.playbin.as_ref().unwrap().property::<Option<Element>>("video-sink") {
             let step = gst::event::Step::new(gst::format::Buffers::ONE, 1.0, true, false);
             video_sink.send_event(step);
         }
@@ -431,18 +431,18 @@ impl VideoPlayerModel {
             return;
         }
 
-        let duration = self.playbin.as_ref().unwrap().query_duration::<gst::ClockTime>().unwrap();
+        let duration = self.playbin.as_ref().unwrap().query_duration::<ClockTime>().unwrap();
         let seconds = (duration.seconds() as f64 * percent) as u64;
 
-        let time = gst::GenericFormattedValue::from(gst::ClockTime::from_seconds(seconds));
+        let time = gst::GenericFormattedValue::from(ClockTime::from_seconds(seconds));
         // todo: play around with seek flags for faster perf key_unit vs accurate?
         let seek = gst::event::Seek::new(
             1.0,
-            gst::SeekFlags::FLUSH | gst::SeekFlags::ACCURATE,
+            SeekFlags::FLUSH | SeekFlags::ACCURATE,
             gst::SeekType::Set,
             time,
             gst::SeekType::End,
-            gst::ClockTime::ZERO);
+            ClockTime::ZERO);
 
         self.playbin.as_ref().unwrap().send_event(seek);
     }
