@@ -1,6 +1,6 @@
-use std::sync::{Arc, Barrier};
+use std::sync::{Arc, Barrier, mpsc, Mutex};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, SystemTime};
 
 use anyhow::Error;
 use gst::{ClockTime, Element, element_error, SeekFlags};
@@ -15,7 +15,7 @@ use relm4::adw::gdk;
 
 static THUMBNAIL_PATH: &str = "/home/fareed/Videos";
 static NUM_THUMBNAILS: u64 = 12;
-static THUMBNAIL_HEIGHT: u32 = 180;
+static THUMBNAIL_HEIGHT: u32 = 90;
 
 pub struct VideoPlayerModel {
     video_is_selected: bool,
@@ -337,7 +337,12 @@ impl VideoPlayerModel {
         }
     }
 
-    fn create_thumbnail(thumbnail_save_path: std::path::PathBuf, video_uri: String) -> Result<gst::Pipeline, Error> {
+    fn create_thumbnail_pipeline(
+        got_current_thumb: Arc<Mutex<bool>>,
+        current_thumb_num: Arc<Mutex<u64>>,
+        video_uri: String,
+        senders: mpsc::Sender<u8>) -> Result<gst::Pipeline, Error>
+    {
         let pipeline = gst::parse::launch(&format!(
             "uridecodebin uri={video_uri} ! videoconvert ! appsink name=sink"
         )).unwrap()
@@ -358,8 +363,6 @@ impl VideoPlayerModel {
                 .build(),
         ));
 
-        let mut got_snapshot = false;
-
         appsink.set_callbacks(
             gst_app::AppSinkCallbacks::builder()
                 .new_sample(move |appsink| {
@@ -369,11 +372,13 @@ impl VideoPlayerModel {
                         gst::FlowError::Error
                     }).unwrap();
 
-                    if got_snapshot {
+                    let mut got_current = got_current_thumb.lock().unwrap();
+
+                    if *got_current {
                         return Err(gst::FlowError::Eos);
                     }
 
-                    got_snapshot = true;
+                    *got_current = true;
 
                     let caps = sample.caps().expect("sample without caps");
                     let info = gst_video::VideoInfo::from_caps(caps).expect("Failed to parse caps");
@@ -407,7 +412,11 @@ impl VideoPlayerModel {
                         target_width as u32,
                         target_height,
                     );
+                    let thumb_num = current_thumb_num.lock().unwrap();
 
+                    let thumbnail_save_path = std::path::PathBuf::from(
+                        format!("/{}/thumbnail_{}.jpg", THUMBNAIL_PATH, *thumb_num)
+                    );
                     scaled_img.save(&thumbnail_save_path).map_err(|err| {
                         element_error!(appsink, gst::ResourceError::Write,
                         (
@@ -416,7 +425,7 @@ impl VideoPlayerModel {
                         ));
                         gst::FlowError::Error
                     }).unwrap();
-
+                    senders.send(0).unwrap();
                     Err(gst::FlowError::Eos)
                 })
                 .build()
@@ -484,50 +493,57 @@ impl VideoPlayerModel {
     }
 
     // fixme: speed up
-    // ~ 500ms seconds for all pipelines to be made
-    // each thumbnail takes ~ 550-600ms to be made
-    // final barrier cleared after 3500~4000ms
+    // pipeline ready in ~1300ms, ~330ms for each thumbnail after
+    // slower than older method, but uses a lot less cpu and memory
     fn thumbnail_thread(video_uri: String, video_duration: ClockTime) {
         let step = video_duration.mseconds() / (NUM_THUMBNAILS + 2); // + 2 so first and last frame not chosen
+        let uri = video_uri.clone();
+        let barrier = Arc::new(Barrier::new(2));
+        let barrier2 = barrier.clone();
 
-        let barrier = Arc::new(Barrier::new((NUM_THUMBNAILS + 1) as usize));
+        thread::spawn(move || {
+            let now = SystemTime::now();
+            let got_current_thumb = Arc::new(Mutex::new(false));
+            let current_thumb_num = Arc::new(Mutex::new(0));
+            let (senders, receiver) = mpsc::channel();
 
-        for i in 0..NUM_THUMBNAILS {
-            let uri = video_uri.clone();
-            let barrier = barrier.clone();
+            let pipeline = VideoPlayerModel::create_thumbnail_pipeline(Arc::clone(&got_current_thumb), Arc::clone(&current_thumb_num), uri, senders.clone())
+                .expect("could not create thumbnail pipeline");
+            pipeline.set_state(gst::State::Paused).unwrap();
+            let mut seeked = false;
+            let bus = pipeline.bus().expect("Pipeline without a bus.");
 
-            thread::spawn(move || {
-                let save_path = std::path::PathBuf::from(format!("/{}/thumbnail_{}.jpg", THUMBNAIL_PATH, i));
-                let timestamp = gst::GenericFormattedValue::from(ClockTime::from_mseconds(step + (step * i)));
+            for msg in bus.iter_timed(ClockTime::NONE) {
+                use gst::MessageView;
 
-                let pipeline = VideoPlayerModel::create_thumbnail(save_path, uri).expect("could not create thumbnail pipeline");
-                pipeline.set_state(gst::State::Paused).unwrap();
-                let bus = pipeline.bus().expect("Pipeline without a bus.");
-                let mut seeked = false;
-
-                for msg in bus.iter_timed(ClockTime::NONE) {
-                    use gst::MessageView;
-
-                    match msg.view() {
-                        MessageView::AsyncDone(..) => {
-                            if !seeked {
-                                if pipeline.seek_simple(SeekFlags::FLUSH | SeekFlags::KEY_UNIT, timestamp).is_err()
-                                {
-                                    println!("Failed to seek");
-                                }
-                                pipeline.set_state(gst::State::Playing).unwrap();
-                                seeked = true;
-                            }
+                match msg.view() {
+                    MessageView::AsyncDone(..) => {
+                        if !seeked {
+                            seeked = true;
+                            break;
                         }
-                        MessageView::Eos(..) => break,
-                        _ => ()
                     }
+                    _ => ()
                 }
-                pipeline.set_state(gst::State::Null).unwrap();
-                barrier.wait();
-            });
-        }
+            }
 
+            for i in 0..NUM_THUMBNAILS {
+                let timestamp = gst::GenericFormattedValue::from(ClockTime::from_mseconds(step + (step * i)));
+                if pipeline.seek_simple(SeekFlags::FLUSH | SeekFlags::KEY_UNIT, timestamp).is_err()
+                {
+                    println!("Failed to seek");
+                }
+                pipeline.set_state(gst::State::Playing).unwrap();
+                receiver.recv().unwrap();
+                pipeline.set_state(gst::State::Paused).unwrap();
+
+                let mut gen_new = got_current_thumb.lock().unwrap();
+                let mut thumb_num = current_thumb_num.lock().unwrap();
+                *thumb_num = i;
+                *gen_new = false;
+            }
+            barrier2.wait();
+        });
         barrier.wait();
     }
 
