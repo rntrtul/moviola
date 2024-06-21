@@ -413,7 +413,6 @@ impl VideoPlayerModel {
                         target_height,
                     );
                     let thumb_num = current_thumb_num.lock().unwrap();
-
                     let thumbnail_save_path = std::path::PathBuf::from(
                         format!("/{}/thumbnail_{}.jpg", THUMBNAIL_PATH, *thumb_num)
                     );
@@ -502,7 +501,6 @@ impl VideoPlayerModel {
         let barrier2 = barrier.clone();
 
         thread::spawn(move || {
-            let now = SystemTime::now();
             let got_current_thumb = Arc::new(Mutex::new(false));
             let current_thumb_num = Arc::new(Mutex::new(0));
             let (senders, receiver) = mpsc::channel();
@@ -539,7 +537,7 @@ impl VideoPlayerModel {
 
                 let mut gen_new = got_current_thumb.lock().unwrap();
                 let mut thumb_num = current_thumb_num.lock().unwrap();
-                *thumb_num = i;
+                *thumb_num += 1;
                 *gen_new = false;
             }
             barrier2.wait();
