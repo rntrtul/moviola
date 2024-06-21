@@ -483,6 +483,10 @@ impl VideoPlayerModel {
         }
     }
 
+    // fixme: speed up
+    // ~ 500ms seconds for all pipelines to be made
+    // each thumbnail takes ~ 550-600ms to be made
+    // final barrier cleared after 3500~4000ms
     fn thumbnail_thread(video_uri: String, video_duration: ClockTime) {
         let step = video_duration.mseconds() / (NUM_THUMBNAILS + 2); // + 2 so first and last frame not chosen
 
@@ -507,7 +511,7 @@ impl VideoPlayerModel {
                     match msg.view() {
                         MessageView::AsyncDone(..) => {
                             if !seeked {
-                                if pipeline.seek_simple(SeekFlags::FLUSH, timestamp).is_err()
+                                if pipeline.seek_simple(SeekFlags::FLUSH | SeekFlags::KEY_UNIT, timestamp).is_err()
                                 {
                                     println!("Failed to seek");
                                 }
@@ -561,5 +565,20 @@ impl VideoPlayerModel {
         self.playbin.as_ref().unwrap().set_state(gst::State::Playing).unwrap();
 
         self.is_mute = false;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn thumb_create() {
+        gst::init().unwrap();
+
+        let duration = ClockTime::from_mseconds(1422600);
+        let uri = "file:///home/fareed/Videos/mp3e1.mkv";
+        VideoPlayerModel::thumbnail_thread(uri.parse().unwrap(), duration);
+        assert_eq!(true, true);
     }
 }
