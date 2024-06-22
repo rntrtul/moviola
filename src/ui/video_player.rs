@@ -1,4 +1,4 @@
-use std::sync::{Arc, Barrier, mpsc, Mutex};
+use std::sync::{Arc, Condvar, mpsc, Mutex};
 use std::thread;
 use std::time::Duration;
 
@@ -193,7 +193,8 @@ impl Component for VideoPlayerModel {
         _: Self::Init,
         root: Self::Root,
         sender: ComponentSender<Self>,
-    ) -> ComponentParts<Self> {
+    ) -> ComponentParts<Self>
+    {
         gst::init().unwrap();
 
         let gtk_sink = gst::ElementFactory::make("gtk4paintablesink")
@@ -245,7 +246,15 @@ impl Component for VideoPlayerModel {
 
                 let uri = self.video_uri.as_ref().unwrap().clone();
                 sender.oneshot_command(async move {
-                    VideoPlayerModel::thumbnail_thread(uri);
+                    let thumbnail_pair = Arc::new((Mutex::new(false), Condvar::new()));
+
+                    VideoPlayerModel::thumbnail_thread(uri, Arc::clone(&thumbnail_pair));
+
+                    let (num_thumbs, all_done) = &*thumbnail_pair;
+                    let mut thumbnails_done = num_thumbs.lock().unwrap();
+                    while !*thumbnails_done {
+                        thumbnails_done = all_done.wait(thumbnails_done).unwrap();
+                    }
                     VideoPlayerCommandMsg::GenerateThumbnails
                 });
             }
@@ -368,11 +377,13 @@ impl VideoPlayerModel {
         }
     }
 
+    // todo: cleanup arguments needed
     fn create_thumbnail_pipeline(
         got_current_thumb: Arc<Mutex<bool>>,
         current_thumb_num: Arc<Mutex<u64>>,
         video_uri: String,
-        senders: mpsc::Sender<u8>) -> Result<gst::Pipeline, Error>
+        senders: mpsc::Sender<u8>,
+        thumbnails_done: Arc<(Mutex<bool>, Condvar)>) -> Result<gst::Pipeline, Error>
     {
         let pipeline = gst::parse::launch(&format!(
             "uridecodebin uri={video_uri} ! videoconvert ! appsink name=sink"
@@ -404,57 +415,72 @@ impl VideoPlayerModel {
                     }
 
                     *got_current = true;
+                    let current_thumb_num = Arc::clone(&current_thumb_num);
+                    let thumbnails_done = Arc::clone(&thumbnails_done);
 
-                    let sample = appsink.pull_sample().map_err(|_| gst::FlowError::Error).unwrap();
-                    let buffer = sample.buffer().ok_or_else(|| {
-                        element_error!(appsink, gst::ResourceError::Failed, ("Failed"));
-                        gst::FlowError::Error
-                    }).unwrap();
-
-                    let caps = sample.caps().expect("sample without caps");
-                    let info = gst_video::VideoInfo::from_caps(caps).expect("Failed to parse caps");
-
-                    let frame = gst_video::VideoFrameRef::from_buffer_ref_readable(buffer, &info)
-                        .map_err(|_| {
-                            element_error!(appsink, gst::ResourceError::Failed, ("Failed to map buff readable"));
+                    let appsink = appsink.clone();
+                    thread::spawn(move || {
+                        let sample = appsink.pull_sample().map_err(|_| gst::FlowError::Error).unwrap();
+                        let buffer = sample.buffer().ok_or_else(|| {
+                            element_error!(appsink, gst::ResourceError::Failed, ("Failed"));
                             gst::FlowError::Error
                         }).unwrap();
 
-                    let aspect_ratio = (frame.width() as f64 * info.par().numer() as f64)
-                        / (frame.height() as f64 * info.par().denom() as f64);
-                    let target_height = THUMBNAIL_HEIGHT;
-                    let target_width = target_height as f64 * aspect_ratio;
+                        let caps = sample.caps().expect("sample without caps");
+                        let info = gst_video::VideoInfo::from_caps(caps).expect("Failed to parse caps");
 
-                    let img = image::FlatSamples::<&[u8]> {
-                        samples: frame.plane_data(0).unwrap(),
-                        layout: image::flat::SampleLayout {
-                            channels: 3,
-                            channel_stride: 1,
-                            width: frame.width(),
-                            width_stride: 4,
-                            height: frame.height(),
-                            height_stride: frame.plane_stride()[0] as usize,
-                        },
-                        color_hint: Some(image::ColorType::Rgb8),
-                    };
+                        let frame = gst_video::VideoFrameRef::from_buffer_ref_readable(buffer, &info)
+                            .map_err(|_| {
+                                element_error!(appsink, gst::ResourceError::Failed, ("Failed to map buff readable"));
+                                gst::FlowError::Error
+                            }).unwrap();
 
-                    let scaled_img = image::imageops::thumbnail(
-                        &img.as_view::<image::Rgb<u8>>().expect("could not create image view"),
-                        target_width as u32,
-                        target_height,
-                    );
-                    let thumb_num = current_thumb_num.lock().unwrap();
-                    let thumbnail_save_path = std::path::PathBuf::from(
-                        format!("/{}/thumbnail_{}.jpg", THUMBNAIL_PATH, *thumb_num)
-                    );
-                    scaled_img.save(&thumbnail_save_path).map_err(|err| {
-                        element_error!(appsink, gst::ResourceError::Write,
-                        (
-                            "Failed to write a preview file {}: {}",
-                            &thumbnail_save_path.display(), err
-                        ));
-                        gst::FlowError::Error
-                    }).unwrap();
+                        let aspect_ratio = (frame.width() as f64 * info.par().numer() as f64)
+                            / (frame.height() as f64 * info.par().denom() as f64);
+                        let target_height = THUMBNAIL_HEIGHT;
+                        let target_width = target_height as f64 * aspect_ratio;
+
+                        let img = image::FlatSamples::<&[u8]> {
+                            samples: frame.plane_data(0).unwrap(),
+                            layout: image::flat::SampleLayout {
+                                channels: 3,
+                                channel_stride: 1,
+                                width: frame.width(),
+                                width_stride: 4,
+                                height: frame.height(),
+                                height_stride: frame.plane_stride()[0] as usize,
+                            },
+                            color_hint: Some(image::ColorType::Rgb8),
+                        };
+
+                        let scaled_img = image::imageops::thumbnail(
+                            &img.as_view::<image::Rgb<u8>>().expect("could not create image view"),
+                            target_width as u32,
+                            target_height,
+                        );
+                        let mut thumb_num = current_thumb_num.lock().unwrap();
+                        let thumbnail_save_path = std::path::PathBuf::from(
+                            format!("/{}/thumbnail_{}.jpg", THUMBNAIL_PATH, *thumb_num)
+                        );
+
+                        scaled_img.save(&thumbnail_save_path).map_err(|err| {
+                            element_error!(appsink, gst::ResourceError::Write,
+                            (
+                                "Failed to write a preview file {}: {}",
+                                &thumbnail_save_path.display(), err
+                            ));
+                            gst::FlowError::Error
+                        }).unwrap();
+                        *thumb_num += 1;
+
+                        let (thumbs_done_lock, thumbs_done_cvar) = &*thumbnails_done;
+                        let mut done_thumbnails = thumbs_done_lock.lock().unwrap();
+                        if *thumb_num == NUM_THUMBNAILS {
+                            *done_thumbnails = true;
+                            thumbs_done_cvar.notify_one();
+                        }
+                    });
+
                     senders.send(0).unwrap();
                     Err(gst::FlowError::Eos)
                 })
@@ -527,21 +553,24 @@ impl VideoPlayerModel {
     }
 
     // fixme: speed up
-    // pipeline ready in ~1300ms, ~330ms for each thumbnail after
-    // slower than older method, but uses a lot less cpu and memory
-    // maybe reuse existing pipeline
-    fn thumbnail_thread(video_uri: String) {
+    // pipeline ready in ~1300ms, ~900ms for all thumbnail after
+    // try to reuse existing pipeline
+    fn thumbnail_thread(video_uri: String, thumbnails_done: Arc<(Mutex<bool>, Condvar)>) {
         let uri = video_uri.clone();
-        let barrier = Arc::new(Barrier::new(2));
-        let barrier2 = barrier.clone();
 
         thread::spawn(move || {
             let got_current_thumb = Arc::new(Mutex::new(false));
             let current_thumb_num = Arc::new(Mutex::new(0));
             let (senders, receiver) = mpsc::channel();
 
-            let pipeline = VideoPlayerModel::create_thumbnail_pipeline(Arc::clone(&got_current_thumb), Arc::clone(&current_thumb_num), uri, senders.clone())
-                .expect("could not create thumbnail pipeline");
+            let pipeline = VideoPlayerModel::create_thumbnail_pipeline(
+                Arc::clone(&got_current_thumb),
+                Arc::clone(&current_thumb_num),
+                uri,
+                senders.clone(),
+                Arc::clone(&thumbnails_done),
+            ).expect("could not create thumbnail pipeline");
+
             pipeline.set_state(gst::State::Paused).unwrap();
             let bus = pipeline.bus().expect("Pipeline without a bus.");
 
@@ -570,13 +599,9 @@ impl VideoPlayerModel {
                 pipeline.set_state(gst::State::Paused).unwrap();
 
                 let mut gen_new = got_current_thumb.lock().unwrap();
-                let mut thumb_num = current_thumb_num.lock().unwrap();
-                *thumb_num += 1;
                 *gen_new = false;
             }
-            barrier2.wait();
         });
-        barrier.wait();
     }
 
     fn wait_for_playbin_done(playbin: &Element) {
@@ -638,7 +663,16 @@ mod tests {
         gst::init().unwrap();
 
         let uri = "file:///home/fareed/Videos/mp3e1.mkv";
-        VideoPlayerModel::thumbnail_thread(uri.parse().unwrap());
+        let thumbnail_pair = Arc::new((Mutex::new(false), Condvar::new()));
+
+        VideoPlayerModel::thumbnail_thread(uri.parse().unwrap(), Arc::clone(&thumbnail_pair));
+
+        let (num_thumbs, all_done) = &*thumbnail_pair;
+        let mut thumbnails_done = num_thumbs.lock().unwrap();
+        while !*thumbnails_done {
+            thumbnails_done = all_done.wait(thumbnails_done).unwrap();
+        }
+
         assert_eq!(true, true);
     }
 }
