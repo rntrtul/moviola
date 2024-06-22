@@ -122,7 +122,6 @@ impl Component for VideoPlayerModel {
 
                         add_controller = gtk::GestureDrag {
                             connect_drag_update[sender] => move |drag,x_offset,_| {
-                                // todo: worry about seek only working on drag being still due to flush?
                                 let (start_x, _) = drag.start_point().unwrap();
                                 let width = drag.widget().width() as f64;
                                 let percent_dragged = (start_x + x_offset) / width;
@@ -258,28 +257,34 @@ impl Component for VideoPlayerModel {
             VideoPlayerMsg::MoveStartTo(pos) => {
                 let end_pos = widgets.timeline.width() - widgets.end_handle.x();
                 let target_pos = widgets.start_handle.x() + pos;
+                let seek_percent = target_pos as f64 / widgets.timeline.width() as f64;
 
                 if end_pos > target_pos {
                     if target_pos >= 0 {
                         widgets.start_handle.set_rel_x(pos);
                         widgets.start_handle.queue_draw();
+                        sender.input(VideoPlayerMsg::SeekToPercent(seek_percent));
                     } else if (target_pos < 0) && (widgets.start_handle.rel_x() != -widgets.start_handle.x()) {
                         widgets.start_handle.set_rel_x(-widgets.start_handle.x());
                         widgets.start_handle.queue_draw();
+                        sender.input(VideoPlayerMsg::SeekToPercent(seek_percent));
                     }
                 }
             }
             VideoPlayerMsg::MoveEndTo(pos) => {
                 let target_instep = -widgets.end_handle.x() + pos;
                 let target_pos = widgets.timeline.width() + target_instep;
+                let seek_percent = target_pos as f64 / widgets.timeline.width() as f64;
 
                 if target_pos > widgets.start_handle.x() {
                     if target_instep <= 0 {
                         widgets.end_handle.set_rel_x(pos);
                         widgets.end_handle.queue_draw();
+                        sender.input(VideoPlayerMsg::SeekToPercent(seek_percent));
                     } else if (target_instep > 0) && (widgets.end_handle.rel_x() != widgets.end_handle.x()) {
                         widgets.end_handle.set_rel_x(widgets.end_handle.x());
                         widgets.end_handle.queue_draw();
+                        sender.input(VideoPlayerMsg::SeekToPercent(seek_percent));
                     }
                 }
             }
@@ -329,7 +334,7 @@ impl Component for VideoPlayerModel {
                         loop {
                             // todo: determine good wait time to make smooth
                             // todo: test more with video switches
-                            tokio::time::sleep(Duration::from_millis(20)).await;
+                            tokio::time::sleep(Duration::from_millis(30)).await;
                             if playbin_clone.state(Some(ClockTime::ZERO)).1 == gst::State::Playing {
                                 out.send(VideoPlayerCommandMsg::UpdateSeekPos).unwrap();
                             }
