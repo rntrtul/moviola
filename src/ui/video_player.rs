@@ -235,6 +235,7 @@ impl Component for VideoPlayerModel {
                 self.is_playing = false;
                 self.video_is_selected = true;
                 self.play_new_video();
+                VideoPlayerModel::remove_timeline_thumbnails(&widgets.timeline);
 
                 let playbin_clone = self.playbin.as_ref().unwrap().clone();
                 sender.oneshot_command(async move {
@@ -500,14 +501,19 @@ impl VideoPlayerModel {
         self.playbin.as_ref().unwrap().set_state(playbin_new_state).unwrap();
     }
 
-    fn populate_timeline(timeline: &gtk::Box) {
-        // todo: see if can reuse picture widget instead of discarding. without storing ref to all of them
+    fn remove_timeline_thumbnails(timeline: &gtk::Box) {
         if timeline.first_child().is_some() {
             for _ in 0..NUM_THUMBNAILS {
                 let child = timeline.first_child().unwrap();
                 timeline.remove(&child);
             }
         }
+    }
+
+    fn populate_timeline(timeline: &gtk::Box) {
+        // todo: see if can reuse picture widget instead of discarding. without storing ref to all of them
+        // todo: try and cache thumbnails of 10 videos?
+        Self::remove_timeline_thumbnails(timeline);
 
         for i in 0..NUM_THUMBNAILS {
             let file = gio::File::for_parse_name(format!("{}/thumbnail_{}.jpg", THUMBNAIL_PATH, i).as_str());
