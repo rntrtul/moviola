@@ -4,6 +4,7 @@ use std::time::Duration;
 
 use anyhow::Error;
 use gst::{ClockTime, Element, element_error, SeekFlags};
+use gst::glib::FlagsClass;
 use gst::prelude::*;
 use gst_video::VideoFrameExt;
 use gtk4::gio;
@@ -240,6 +241,12 @@ impl Component for VideoPlayerModel {
                     VideoPlayerModel::wait_for_playbin_done(&playbin_clone);
                     VideoPlayerCommandMsg::VideoInit(true)
                 });
+
+                let uri = self.video_uri.as_ref().unwrap().clone();
+                sender.oneshot_command(async move {
+                    VideoPlayerModel::thumbnail_thread(uri);
+                    VideoPlayerCommandMsg::GenerateThumbnails
+                });
             }
             VideoPlayerMsg::TogglePlayPause => self.video_toggle_play_pause(),
             VideoPlayerMsg::SeekToPercent(percent) => {
@@ -321,13 +328,6 @@ impl Component for VideoPlayerModel {
             VideoPlayerCommandMsg::VideoInit(_) => {
                 self.is_playing = true;
                 self.video_is_loaded = true;
-                let duration = self.playbin.as_ref().unwrap().query_duration::<ClockTime>().unwrap();
-                let uri = self.video_uri.as_ref().unwrap().clone();
-
-                sender.oneshot_command(async move {
-                    VideoPlayerModel::thumbnail_thread(uri, duration);
-                    VideoPlayerCommandMsg::GenerateThumbnails
-                });
 
                 let playbin_clone = self.playbin.as_ref().unwrap().clone();
                 sender.command(|out, shutdown| {
@@ -523,8 +523,8 @@ impl VideoPlayerModel {
     // fixme: speed up
     // pipeline ready in ~1300ms, ~330ms for each thumbnail after
     // slower than older method, but uses a lot less cpu and memory
-    fn thumbnail_thread(video_uri: String, video_duration: ClockTime) {
-        let step = video_duration.mseconds() / (NUM_THUMBNAILS + 2); // + 2 so first and last frame not chosen
+    // maybe reuse existing pipeline
+    fn thumbnail_thread(video_uri: String) {
         let uri = video_uri.clone();
         let barrier = Arc::new(Barrier::new(2));
         let barrier2 = barrier.clone();
@@ -549,6 +549,9 @@ impl VideoPlayerModel {
                     _ => ()
                 }
             }
+
+            let duration = pipeline.query_duration::<ClockTime>().unwrap();
+            let step = duration.mseconds() / (NUM_THUMBNAILS + 2); // + 2 so first and last frame not chosen
 
             for i in 0..NUM_THUMBNAILS {
                 let timestamp = gst::GenericFormattedValue::from(ClockTime::from_mseconds(step + (step * i)));
@@ -597,6 +600,19 @@ impl VideoPlayerModel {
                 .build()
                 .unwrap();
 
+            let flags = playbin.property_value("flags");
+            let flags_class = FlagsClass::with_type(flags.type_()).unwrap();
+
+            let flags = flags_class
+                .builder_with_value(flags)
+                .unwrap()
+                .set_by_nick("audio")
+                .set_by_nick("video")
+                .unset_by_nick("text")
+                .build()
+                .unwrap();
+            playbin.set_property_from_value("flags", &flags);
+
             self.playbin = Some(playbin);
         }
 
@@ -615,9 +631,8 @@ mod tests {
     fn thumb_create() {
         gst::init().unwrap();
 
-        let duration = ClockTime::from_mseconds(1422600);
         let uri = "file:///home/fareed/Videos/mp3e1.mkv";
-        VideoPlayerModel::thumbnail_thread(uri.parse().unwrap(), duration);
+        VideoPlayerModel::thumbnail_thread(uri.parse().unwrap());
         assert_eq!(true, true);
     }
 }
