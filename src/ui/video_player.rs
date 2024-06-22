@@ -1,6 +1,6 @@
 use std::sync::{Arc, Barrier, mpsc, Mutex};
 use std::thread;
-use std::time::{Duration, SystemTime};
+use std::time::Duration;
 
 use anyhow::Error;
 use gst::{ClockTime, Element, element_error, SeekFlags};
@@ -245,19 +245,28 @@ impl Component for VideoPlayerModel {
                 let end_pos = widgets.timeline.width() - widgets.end_handle.x();
                 let target_pos = widgets.start_handle.x() + pos;
 
-                if (end_pos > target_pos) && (target_pos >= 0) {
-                    widgets.start_handle.set_rel_x(pos);
-                    widgets.start_handle.queue_draw();
+                if end_pos > target_pos {
+                    if target_pos >= 0 {
+                        widgets.start_handle.set_rel_x(pos);
+                        widgets.start_handle.queue_draw();
+                    } else if (target_pos < 0) && (widgets.start_handle.rel_x() != -widgets.start_handle.x()) {
+                        widgets.start_handle.set_rel_x(-widgets.start_handle.x());
+                        widgets.start_handle.queue_draw();
+                    }
                 }
             }
             VideoPlayerMsg::MoveEndTo(pos) => {
                 let target_instep = -widgets.end_handle.x() + pos;
                 let target_pos = widgets.timeline.width() + target_instep;
-                // fixme: on quick change let rel_x limit
 
-                if (target_pos > widgets.start_handle.x()) && (target_instep <= 0) {
-                    widgets.end_handle.set_rel_x(pos);
-                    widgets.end_handle.queue_draw();
+                if target_pos > widgets.start_handle.x() {
+                    if target_instep <= 0 {
+                        widgets.end_handle.set_rel_x(pos);
+                        widgets.end_handle.queue_draw();
+                    } else if (target_instep > 0) && (widgets.end_handle.rel_x() != widgets.end_handle.x()) {
+                        widgets.end_handle.set_rel_x(widgets.end_handle.x());
+                        widgets.end_handle.queue_draw();
+                    }
                 }
             }
             VideoPlayerMsg::MoveStartEnd => {
@@ -508,7 +517,6 @@ impl VideoPlayerModel {
             let pipeline = VideoPlayerModel::create_thumbnail_pipeline(Arc::clone(&got_current_thumb), Arc::clone(&current_thumb_num), uri, senders.clone())
                 .expect("could not create thumbnail pipeline");
             pipeline.set_state(gst::State::Paused).unwrap();
-            let mut seeked = false;
             let bus = pipeline.bus().expect("Pipeline without a bus.");
 
             for msg in bus.iter_timed(ClockTime::NONE) {
@@ -516,10 +524,7 @@ impl VideoPlayerModel {
 
                 match msg.view() {
                     MessageView::AsyncDone(..) => {
-                        if !seeked {
-                            seeked = true;
-                            break;
-                        }
+                        break;
                     }
                     _ => ()
                 }
