@@ -17,6 +17,7 @@ static THUMBNAIL_PATH: &str = "/home/fareed/Videos";
 static NUM_THUMBNAILS: u64 = 12;
 static THUMBNAIL_HEIGHT: u32 = 90;
 
+// todo: do i need is_loaded and is_playing?
 pub struct VideoPlayerModel {
     video_is_selected: bool,
     video_is_loaded: bool,
@@ -54,8 +55,6 @@ impl Component for VideoPlayerModel {
     type CommandOutput = VideoPlayerCommandMsg;
     type Input = VideoPlayerMsg;
     type Output = ();
-    type Init = u8;
-
     view! {
         gtk::Box {
             set_orientation: gtk::Orientation::Vertical,
@@ -65,10 +64,17 @@ impl Component for VideoPlayerModel {
             set_valign: gtk::Align::Center,
             inline_css: "margin: 15px",
 
+            gtk::Spinner {
+                #[watch]
+                set_spinning: !model.video_is_loaded,
+                set_halign: gtk::Align::Center,
+                set_valign: gtk::Align::Center,
+            },
+
             #[name = "vid_frame"]
             gtk::Box {
                 #[watch]
-                set_visible: model.video_is_selected,
+                set_visible: model.video_is_loaded,
                 set_orientation: gtk::Orientation::Vertical,
 
                 add_controller = gtk::GestureClick {
@@ -79,6 +85,8 @@ impl Component for VideoPlayerModel {
             },
 
             gtk::Box {
+                #[watch]
+                set_visible: model.video_is_loaded,
                 set_spacing: 10,
                 add_css_class: "toolbar",
 
@@ -179,6 +187,8 @@ impl Component for VideoPlayerModel {
         }
     }
 
+    type Init = u8;
+
     fn init(
         _: Self::Init,
         root: Self::Root,
@@ -221,6 +231,8 @@ impl Component for VideoPlayerModel {
         match message {
             VideoPlayerMsg::NewVideo(value) => {
                 self.video_uri = Some(value);
+                self.video_is_loaded = false;
+                self.is_playing = false;
                 self.video_is_selected = true;
                 self.play_new_video();
 
