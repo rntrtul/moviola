@@ -245,8 +245,10 @@ impl Component for VideoPlayerModel {
             VideoPlayerMsg::TogglePlayPause => self.video_toggle_play_pause(),
             VideoPlayerMsg::SeekToPercent(percent) => {
                 let seek_bar_pos = (widgets.timeline.width() as f64 * percent) as i32;
-                widgets.seek_bar.set_margin_start(seek_bar_pos);
-                self.seek_to_percent(percent);
+                if seek_bar_pos != widgets.seek_bar.margin_start() {
+                    widgets.seek_bar.set_margin_start(seek_bar_pos);
+                    self.seek_to_percent(percent);
+                }
             }
             VideoPlayerMsg::ToggleMute => self.toggle_mute(),
             VideoPlayerMsg::AddThumbnails => {
@@ -464,10 +466,9 @@ impl VideoPlayerModel {
         let seconds = (duration.seconds() as f64 * percent) as u64;
 
         let time = gst::GenericFormattedValue::from(ClockTime::from_seconds(seconds));
-        // todo: play around with seek flags for faster perf key_unit vs accurate?
         let seek = gst::event::Seek::new(
             1.0,
-            SeekFlags::FLUSH | SeekFlags::ACCURATE,
+            SeekFlags::FLUSH | SeekFlags::KEY_UNIT,
             gst::SeekType::Set,
             time,
             gst::SeekType::End,
