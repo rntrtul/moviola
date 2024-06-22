@@ -397,12 +397,6 @@ impl VideoPlayerModel {
         appsink.set_callbacks(
             gst_app::AppSinkCallbacks::builder()
                 .new_sample(move |appsink| {
-                    let sample = appsink.pull_sample().map_err(|_| gst::FlowError::Error).unwrap();
-                    let buffer = sample.buffer().ok_or_else(|| {
-                        element_error!(appsink, gst::ResourceError::Failed, ("Failed"));
-                        gst::FlowError::Error
-                    }).unwrap();
-
                     let mut got_current = got_current_thumb.lock().unwrap();
 
                     if *got_current {
@@ -410,6 +404,12 @@ impl VideoPlayerModel {
                     }
 
                     *got_current = true;
+
+                    let sample = appsink.pull_sample().map_err(|_| gst::FlowError::Error).unwrap();
+                    let buffer = sample.buffer().ok_or_else(|| {
+                        element_error!(appsink, gst::ResourceError::Failed, ("Failed"));
+                        gst::FlowError::Error
+                    }).unwrap();
 
                     let caps = sample.caps().expect("sample without caps");
                     let info = gst_video::VideoInfo::from_caps(caps).expect("Failed to parse caps");
