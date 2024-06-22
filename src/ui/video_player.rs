@@ -148,11 +148,6 @@ impl Component for VideoPlayerModel {
                         }
                     },
 
-                    add_overlay: seek_bar = &super::HandleWidget::new(0, false) {
-                        set_halign: gtk::Align::Start,
-                        set_valign: gtk::Align::Center,
-                    },
-
                     add_overlay: end_handle = &super::HandleWidget::default() {
                         set_halign: gtk::Align::End,
                         set_valign: gtk::Align::Center,
@@ -168,6 +163,11 @@ impl Component for VideoPlayerModel {
                                 sender.input(VideoPlayerMsg::MoveEndEnd);
                             },
                         }
+                    },
+
+                    add_overlay: seek_bar = &super::HandleWidget::new(0, false) {
+                        set_halign: gtk::Align::Start,
+                        set_valign: gtk::Align::Center,
                     },
                 },
 
@@ -255,6 +255,7 @@ impl Component for VideoPlayerModel {
                 VideoPlayerModel::populate_timeline(timeline);
             }
             VideoPlayerMsg::MoveStartTo(pos) => {
+                // todo: make MoveStartTo and MoveEndTo generic as MoveHandleTo(isStart, pos)
                 let end_pos = widgets.timeline.width() - widgets.end_handle.x();
                 let target_pos = widgets.start_handle.x() + pos;
                 let seek_percent = target_pos as f64 / widgets.timeline.width() as f64;
@@ -347,6 +348,7 @@ impl Component for VideoPlayerModel {
                 sender.input(VideoPlayerMsg::AddThumbnails);
             }
             VideoPlayerCommandMsg::UpdateSeekPos => {
+                // fixme: on a lot of drags query_position failed. find way to reproduce better
                 let duration = self.playbin.as_ref().unwrap().query_duration::<ClockTime>().unwrap();
                 let pos = self.playbin.as_ref().unwrap().query_position::<ClockTime>().unwrap();
                 let percent = pos.mseconds() as f64 / duration.mseconds() as f64;
