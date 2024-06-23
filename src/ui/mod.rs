@@ -4,6 +4,7 @@ use relm4::gtk;
 pub mod video_player;
 pub mod edit_controls;
 mod handle;
+mod timeline;
 
 glib::wrapper! {
     pub struct HandleWidget(ObjectSubclass<handle::HandleWidget>)

@@ -1,31 +1,23 @@
-use std::sync::{Arc, Condvar, mpsc, Mutex};
-use std::thread;
-use std::time::Duration;
+use std::time::{Duration, SystemTime};
 
-use anyhow::Error;
-use gst::{ClockTime, Element, element_error, SeekFlags};
+use gst::{ClockTime, Element, SeekFlags};
 use gst::glib::FlagsClass;
 use gst::prelude::*;
-use gst_video::VideoFrameExt;
-use gtk4::gio;
-use gtk4::prelude::{BoxExt, ButtonExt, EventControllerExt, GestureDragExt, OrientableExt, WidgetExt};
+use gtk4::prelude::{BoxExt, ButtonExt, OrientableExt, WidgetExt};
 use relm4::*;
 use relm4::adw::gdk;
 
+use crate::ui::timeline::{TimelineModel, TimelineMsg, TimelineOutput};
+
 // todo: dispose of stuff on quit
-
-static THUMBNAIL_PATH: &str = "/home/fareed/Videos";
-static NUM_THUMBNAILS: u64 = 12;
-static THUMBNAIL_HEIGHT: u32 = 90;
-
 // todo: do i need is_loaded and is_playing?
 pub struct VideoPlayerModel {
     video_is_selected: bool,
     video_is_loaded: bool,
     is_playing: bool,
     is_mute: bool,
-    thumbnails_available: bool,
     gtk_sink: Element,
+    timeline: Controller<TimelineModel>,
     video_uri: Option<String>,
     playbin: Option<Element>,
 }
@@ -36,18 +28,11 @@ pub enum VideoPlayerMsg {
     ToggleMute,
     SeekToPercent(f64),
     NewVideo(String),
-    AddThumbnails,
-    MoveStartTo(i32),
-    MoveStartEnd,
-    MoveEndTo(i32),
-    MoveEndEnd,
-    UpdateSeekBar(f64),
 }
 
 #[derive(Debug)]
 pub enum VideoPlayerCommandMsg {
     VideoInit(bool),
-    GenerateThumbnails,
     UpdateSeekPos,
 }
 
@@ -55,7 +40,7 @@ pub enum VideoPlayerCommandMsg {
 impl Component for VideoPlayerModel {
     type CommandOutput = VideoPlayerCommandMsg;
     type Input = VideoPlayerMsg;
-    type Output = ();
+    type Output = TimelineMsg;
     view! {
         gtk::Box {
             set_orientation: gtk::Orientation::Vertical,
@@ -104,73 +89,7 @@ impl Component for VideoPlayerModel {
                     }
                 },
 
-                #[name = "overlay"]
-                gtk::Overlay {
-                    #[wrap(Some)]
-                    set_child: timeline = &gtk::Box {
-                        set_hexpand: true,
-                        inline_css: "background-color: grey",
-                        set_margin_start: 5,
-                        set_margin_end: 5,
-
-                        add_controller = gtk::GestureClick {
-                            connect_pressed[sender] => move |click,_,x,_| {
-                                let width = click.widget().width() as f64;
-                                let percent = x / width;
-                                sender.input(VideoPlayerMsg::SeekToPercent(percent));
-                            }
-                        },
-
-                        add_controller = gtk::GestureDrag {
-                            connect_drag_update[sender] => move |drag,x_offset,_| {
-                                let (start_x, _) = drag.start_point().unwrap();
-                                let width = drag.widget().width() as f64;
-                                let percent_dragged = (start_x + x_offset) / width;
-
-                                sender.input(VideoPlayerMsg::SeekToPercent(percent_dragged));
-                            },
-                        }
-                    },
-
-                    add_overlay: start_handle = &super::HandleWidget::default() {
-                        set_halign: gtk::Align::Start,
-                        set_valign: gtk::Align::Center,
-
-                        add_controller = gtk::GestureDrag {
-                            connect_drag_update[sender] => move |drag,offset_x,_| {
-                                let (start_x, _) = drag.start_point().unwrap();
-                                let targ_x = (start_x + offset_x) as i32;
-                                sender.input(VideoPlayerMsg::MoveStartTo(targ_x))
-                            },
-
-                            connect_drag_end[sender] => move |_, _,_| {
-                                sender.input(VideoPlayerMsg::MoveStartEnd);
-                            },
-                        }
-                    },
-
-                    add_overlay: end_handle = &super::HandleWidget::default() {
-                        set_halign: gtk::Align::End,
-                        set_valign: gtk::Align::Center,
-
-                        add_controller = gtk::GestureDrag {
-                            connect_drag_update[sender] => move |drag,offset_x,_| {
-                                let (start_x, _) = drag.start_point().unwrap();
-                                let targ_x = (start_x + offset_x) as i32;
-                                sender.input(VideoPlayerMsg::MoveEndTo(targ_x))
-                            },
-
-                            connect_drag_end[sender] => move |_, _,_| {
-                                sender.input(VideoPlayerMsg::MoveEndEnd);
-                            },
-                        }
-                    },
-
-                    add_overlay: seek_bar = &super::HandleWidget::new(0, false) {
-                        set_halign: gtk::Align::Start,
-                        set_valign: gtk::Align::Center,
-                    },
-                },
+                model.timeline.widget(){},
 
                 gtk::Button {
                     #[watch]
@@ -187,6 +106,7 @@ impl Component for VideoPlayerModel {
         }
     }
 
+    // todo: remove init u8, not used
     type Init = u8;
 
     fn init(
@@ -209,16 +129,21 @@ impl Component for VideoPlayerModel {
         let offload = gtk4::GraphicsOffload::new(Some(&picture));
         offload.set_enabled(gtk::GraphicsOffloadEnabled::Enabled);
 
+        let timeline: Controller<TimelineModel> = TimelineModel::builder()
+            .launch(())
+            .forward(sender.input_sender(), |msg| match msg {
+                TimelineOutput::SeekToPercent(percent) => VideoPlayerMsg::SeekToPercent(percent),
+            });
 
         let model = VideoPlayerModel {
             video_is_selected: false,
             video_is_loaded: false,
             is_playing: false,
             is_mute: false,
-            thumbnails_available: false,
-            playbin: None,
             gtk_sink,
+            timeline,
             video_uri: None,
+            playbin: None,
         };
 
         let widgets = view_output!();
@@ -236,97 +161,21 @@ impl Component for VideoPlayerModel {
                 self.is_playing = false;
                 self.video_is_selected = true;
                 self.play_new_video();
-                VideoPlayerModel::remove_timeline_thumbnails(&widgets.timeline);
 
                 let playbin_clone = self.playbin.as_ref().unwrap().clone();
                 sender.oneshot_command(async move {
+                    let now = SystemTime::now();
                     VideoPlayerModel::wait_for_playbin_done(&playbin_clone);
+                    println!("Pipeline done in {:?}", now.elapsed().unwrap());
                     VideoPlayerCommandMsg::VideoInit(true)
                 });
 
                 let uri = self.video_uri.as_ref().unwrap().clone();
-                sender.oneshot_command(async move {
-                    let thumbnail_pair = Arc::new((Mutex::new(0), Condvar::new()));
-                    VideoPlayerModel::thumbnail_thread(uri, Arc::clone(&thumbnail_pair));
-                    let (num_thumbs, all_done) = &*thumbnail_pair;
-                    let mut thumbnails_done = num_thumbs.lock().unwrap();
-
-                    while *thumbnails_done != NUM_THUMBNAILS {
-                        thumbnails_done = all_done.wait(thumbnails_done).unwrap();
-                    }
-                    VideoPlayerCommandMsg::GenerateThumbnails
-                });
+                self.timeline.sender().send(TimelineMsg::GenerateThumnails(uri)).unwrap();
             }
+            VideoPlayerMsg::SeekToPercent(percent) => self.seek_to_percent(percent),
             VideoPlayerMsg::TogglePlayPause => self.video_toggle_play_pause(),
-            VideoPlayerMsg::SeekToPercent(percent) => {
-                let seek_bar_pos = (widgets.timeline.width() as f64 * percent) as i32;
-                if seek_bar_pos != widgets.seek_bar.margin_start() {
-                    widgets.seek_bar.set_margin_start(seek_bar_pos);
-                    self.seek_to_percent(percent);
-                }
-            }
             VideoPlayerMsg::ToggleMute => self.toggle_mute(),
-            VideoPlayerMsg::AddThumbnails => {
-                let timeline = &widgets.timeline;
-                VideoPlayerModel::populate_timeline(timeline);
-            }
-            VideoPlayerMsg::MoveStartTo(pos) => {
-                // todo: make MoveStartTo and MoveEndTo generic as MoveHandleTo(isStart, pos)
-                let end_pos = widgets.timeline.width() - widgets.end_handle.x();
-                let target_pos = widgets.start_handle.x() + pos;
-                let seek_percent = target_pos as f64 / widgets.timeline.width() as f64;
-
-                if end_pos > target_pos {
-                    if target_pos >= 0 {
-                        widgets.start_handle.set_rel_x(pos);
-                        widgets.start_handle.queue_draw();
-                        sender.input(VideoPlayerMsg::SeekToPercent(seek_percent));
-                    } else if (target_pos < 0) && (widgets.start_handle.rel_x() != -widgets.start_handle.x()) {
-                        widgets.start_handle.set_rel_x(-widgets.start_handle.x());
-                        widgets.start_handle.queue_draw();
-                        sender.input(VideoPlayerMsg::SeekToPercent(seek_percent));
-                    }
-                }
-            }
-            VideoPlayerMsg::MoveEndTo(pos) => {
-                let target_instep = -widgets.end_handle.x() + pos;
-                let target_pos = widgets.timeline.width() + target_instep;
-                let seek_percent = target_pos as f64 / widgets.timeline.width() as f64;
-
-                if target_pos > widgets.start_handle.x() {
-                    if target_instep <= 0 {
-                        widgets.end_handle.set_rel_x(pos);
-                        widgets.end_handle.queue_draw();
-                        sender.input(VideoPlayerMsg::SeekToPercent(seek_percent));
-                    } else if (target_instep > 0) && (widgets.end_handle.rel_x() != widgets.end_handle.x()) {
-                        widgets.end_handle.set_rel_x(widgets.end_handle.x());
-                        widgets.end_handle.queue_draw();
-                        sender.input(VideoPlayerMsg::SeekToPercent(seek_percent));
-                    }
-                }
-            }
-            VideoPlayerMsg::MoveStartEnd => {
-                let curr_margin = widgets.start_handle.x();
-                let new_margin = curr_margin + widgets.start_handle.rel_x();
-
-                widgets.start_handle.set_x(new_margin);
-                widgets.start_handle.set_margin_start(new_margin);
-                widgets.start_handle.set_rel_x(0);
-            }
-            VideoPlayerMsg::MoveEndEnd => {
-                let curr_margin = widgets.end_handle.x();
-                let new_margin = (-curr_margin + widgets.end_handle.rel_x()).abs();
-
-                widgets.end_handle.set_x(new_margin);
-                widgets.end_handle.set_margin_end(new_margin);
-                widgets.end_handle.set_rel_x(0);
-            }
-            VideoPlayerMsg::UpdateSeekBar(percent) => {
-                let target_bar_pos = (widgets.timeline.width() as f64 * percent) as i32;
-                if target_bar_pos != widgets.seek_bar.margin_start() {
-                    widgets.seek_bar.set_margin_start(target_bar_pos);
-                }
-            }
         }
 
         self.update_view(widgets, sender);
@@ -344,6 +193,8 @@ impl Component for VideoPlayerModel {
                         loop {
                             // todo: determine good wait time to make smooth
                             // todo: test more with video switches
+                            // fixme: does this continue firing while video is being switched?
+                            // on seek this can fire between status being playing and paused
                             tokio::time::sleep(Duration::from_millis(30)).await;
                             if playbin_clone.state(Some(ClockTime::ZERO)).1 == gst::State::Playing {
                                 out.send(VideoPlayerCommandMsg::UpdateSeekPos).unwrap();
@@ -352,16 +203,15 @@ impl Component for VideoPlayerModel {
                     }).drop_on_shutdown()
                 })
             }
-            VideoPlayerCommandMsg::GenerateThumbnails => {
-                self.thumbnails_available = true;
-                sender.input(VideoPlayerMsg::AddThumbnails);
-            }
             VideoPlayerCommandMsg::UpdateSeekPos => {
                 // fixme: on a lot of drags query_position failed. find way to reproduce better
+                //          also happened on a video change.
                 let duration = self.playbin.as_ref().unwrap().query_duration::<ClockTime>().unwrap();
-                let pos = self.playbin.as_ref().unwrap().query_position::<ClockTime>().unwrap();
+                let pos = self.playbin.as_ref().unwrap()
+                    .query_position::<ClockTime>()
+                    .expect("Could not query current position.");
                 let percent = pos.mseconds() as f64 / duration.mseconds() as f64;
-                sender.input(VideoPlayerMsg::UpdateSeekBar(percent));
+                self.timeline.sender().send(TimelineMsg::UpdateSeekBarPos(percent)).unwrap();
             }
         }
     }
@@ -374,115 +224,6 @@ impl VideoPlayerModel {
             let step = gst::event::Step::new(gst::format::Buffers::ONE, 1.0, true, false);
             video_sink.send_event(step);
         }
-    }
-
-    fn create_thumbnail_pipeline(
-        got_current_thumb: Arc<Mutex<bool>>,
-        video_uri: String,
-        senders: mpsc::Sender<u8>,
-        thumbnails_done: Arc<(Mutex<u64>, Condvar)>) -> Result<gst::Pipeline, Error>
-    {
-        let pipeline = gst::parse::launch(&format!(
-            "uridecodebin uri={video_uri} ! videoconvert ! appsink name=sink"
-        )).unwrap()
-            .downcast::<gst::Pipeline>()
-            .expect("Expected a gst::pipeline");
-
-        let appsink = pipeline
-            .by_name("sink")
-            .expect("sink element not found")
-            .downcast::<gst_app::AppSink>()
-            .expect("Sink element is expected to be appsink!");
-
-        appsink.set_property("sync", false);
-
-        appsink.set_caps(Some(
-            &gst_video::VideoCapsBuilder::new()
-                .format(gst_video::VideoFormat::Rgbx)
-                .build(),
-        ));
-
-        appsink.set_callbacks(
-            gst_app::AppSinkCallbacks::builder()
-                .new_sample(move |appsink| {
-                    let mut got_current = got_current_thumb.lock().unwrap();
-
-                    if *got_current {
-                        return Err(gst::FlowError::Eos);
-                    }
-
-                    *got_current = true;
-                    let thumbnails_done = Arc::clone(&thumbnails_done);
-
-                    let appsink = appsink.clone();
-                    thread::spawn(move || {
-                        let sample = appsink.pull_sample().map_err(|_| gst::FlowError::Error).unwrap();
-                        let buffer = sample.buffer().ok_or_else(|| {
-                            element_error!(appsink, gst::ResourceError::Failed, ("Failed"));
-                            gst::FlowError::Error
-                        }).unwrap();
-
-                        let caps = sample.caps().expect("sample without caps");
-                        let info = gst_video::VideoInfo::from_caps(caps).expect("Failed to parse caps");
-
-                        let frame = gst_video::VideoFrameRef::from_buffer_ref_readable(buffer, &info)
-                            .map_err(|_| {
-                                element_error!(appsink, gst::ResourceError::Failed, ("Failed to map buff readable"));
-                                gst::FlowError::Error
-                            }).unwrap();
-
-                        let aspect_ratio = (frame.width() as f64 * info.par().numer() as f64)
-                            / (frame.height() as f64 * info.par().denom() as f64);
-                        let target_height = THUMBNAIL_HEIGHT;
-                        let target_width = target_height as f64 * aspect_ratio;
-
-                        let img = image::FlatSamples::<&[u8]> {
-                            samples: frame.plane_data(0).unwrap(),
-                            layout: image::flat::SampleLayout {
-                                channels: 3,
-                                channel_stride: 1,
-                                width: frame.width(),
-                                width_stride: 4,
-                                height: frame.height(),
-                                height_stride: frame.plane_stride()[0] as usize,
-                            },
-                            color_hint: Some(image::ColorType::Rgb8),
-                        };
-
-                        let scaled_img = image::imageops::thumbnail(
-                            &img.as_view::<image::Rgb<u8>>().expect("could not create image view"),
-                            target_width as u32,
-                            target_height,
-                        );
-                        let (thumbs_num_lock, thumbs_done_cvar) = &*thumbnails_done;
-                        let mut thumb_num = thumbs_num_lock.lock().unwrap();
-
-                        let thumbnail_save_path = std::path::PathBuf::from(
-                            format!("/{}/thumbnail_{}.jpg", THUMBNAIL_PATH, *thumb_num)
-                        );
-
-                        scaled_img.save(&thumbnail_save_path).map_err(|err| {
-                            element_error!(appsink, gst::ResourceError::Write,
-                            (
-                                "Failed to write a preview file {}: {}",
-                                &thumbnail_save_path.display(), err
-                            ));
-                            gst::FlowError::Error
-                        }).unwrap();
-                        *thumb_num += 1;
-
-                        if *thumb_num == NUM_THUMBNAILS {
-                            thumbs_done_cvar.notify_one();
-                        }
-                    });
-
-                    senders.send(0).unwrap();
-                    Err(gst::FlowError::Eos)
-                })
-                .build()
-        );
-
-        Ok(pipeline)
     }
 
     fn seek_to_percent(&mut self, percent: f64) {
@@ -522,84 +263,15 @@ impl VideoPlayerModel {
         self.playbin.as_ref().unwrap().set_state(playbin_new_state).unwrap();
     }
 
-    fn remove_timeline_thumbnails(timeline: &gtk::Box) {
-        if timeline.first_child().is_some() {
-            for _ in 0..NUM_THUMBNAILS {
-                let child = timeline.first_child().unwrap();
-                timeline.remove(&child);
-            }
-        }
-    }
-
-    fn populate_timeline(timeline: &gtk::Box) {
-        // todo: see if can reuse picture widget instead of discarding. without storing ref to all of them
-        // todo: try and cache thumbnails of 10 videos?
-        Self::remove_timeline_thumbnails(timeline);
-
-        for i in 0..NUM_THUMBNAILS {
-            let file = gio::File::for_parse_name(format!("{}/thumbnail_{}.jpg", THUMBNAIL_PATH, i).as_str());
-            let image = gtk::Picture::for_file(&file);
-
-            image.set_hexpand(true);
-            image.set_valign(gtk::Align::Fill);
-            image.set_halign(gtk::Align::Fill);
-            timeline.append(&image);
-        }
-    }
-
-    // fixme: speed up
-    // pipeline ready in ~1300ms, ~900ms for all thumbnail after
-    // try to reuse existing pipeline
-    fn thumbnail_thread(video_uri: String, thumbnails_done: Arc<(Mutex<u64>, Condvar)>) {
-        let uri = video_uri.clone();
-
-        thread::spawn(move || {
-            let got_current_thumb = Arc::new(Mutex::new(false));
-            let (senders, receiver) = mpsc::channel();
-
-            let pipeline = VideoPlayerModel::create_thumbnail_pipeline(
-                Arc::clone(&got_current_thumb),
-                uri,
-                senders.clone(),
-                Arc::clone(&thumbnails_done),
-            ).expect("could not create thumbnail pipeline");
-
-            pipeline.set_state(gst::State::Paused).unwrap();
-            let bus = pipeline.bus().expect("Pipeline without a bus.");
-
-            for msg in bus.iter_timed(ClockTime::NONE) {
-                use gst::MessageView;
-
-                match msg.view() {
-                    MessageView::AsyncDone(..) => {
-                        break;
-                    }
-                    _ => ()
-                }
-            }
-
-            let duration = pipeline.query_duration::<ClockTime>().unwrap();
-            let step = duration.mseconds() / (NUM_THUMBNAILS + 2); // + 2 so first and last frame not chosen
-
-            for i in 0..NUM_THUMBNAILS {
-                let timestamp = gst::GenericFormattedValue::from(ClockTime::from_mseconds(step + (step * i)));
-                if pipeline.seek_simple(SeekFlags::FLUSH | SeekFlags::KEY_UNIT, timestamp).is_err()
-                {
-                    println!("Failed to seek");
-                }
-                pipeline.set_state(gst::State::Playing).unwrap();
-                receiver.recv().unwrap();
-                pipeline.set_state(gst::State::Paused).unwrap();
-
-                let mut gen_new = got_current_thumb.lock().unwrap();
-                *gen_new = false;
-            }
-        });
-    }
     // fixme: on non-first videos might load fast enough that miss the async done.
-    //      the playbin is init already, just changing uri so a lot faster, saw as
+    //      the playbin is setup already, just changing uri so a lot faster, saw as
     //      fast as 60ms for smaller videos
     fn wait_for_playbin_done(playbin: &Element) {
+        // todo: verify this works
+        if playbin.state(Some(ClockTime::ZERO)).1 == gst::State::Playing {
+            return;
+        }
+
         let bus = playbin.bus().unwrap();
 
         for msg in bus.iter_timed(ClockTime::NONE) {
@@ -646,28 +318,5 @@ impl VideoPlayerModel {
         self.playbin.as_ref().unwrap().set_state(gst::State::Playing).unwrap();
 
         self.is_mute = false;
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn thumb_create() {
-        gst::init().unwrap();
-
-        let uri = "file:///home/fareed/Videos/mp3e1.mkv";
-        let thumbnail_pair = Arc::new((Mutex::new(0), Condvar::new()));
-
-        VideoPlayerModel::thumbnail_thread(uri.parse().unwrap(), Arc::clone(&thumbnail_pair));
-
-        let (num_thumbs, all_done) = &*thumbnail_pair;
-        let mut thumbnails_done = num_thumbs.lock().unwrap();
-        while *thumbnails_done != NUM_THUMBNAILS {
-            thumbnails_done = all_done.wait(thumbnails_done).unwrap();
-        }
-
-        assert_eq!(true, true);
     }
 }
