@@ -1,11 +1,11 @@
-use std::time::{Duration, SystemTime};
+use std::time::Duration;
 
-use gst::{ClockTime, Element, SeekFlags};
 use gst::glib::FlagsClass;
 use gst::prelude::*;
+use gst::{ClockTime, Element, SeekFlags};
 use gtk4::prelude::{BoxExt, ButtonExt, OrientableExt, WidgetExt};
-use relm4::*;
 use relm4::adw::gdk;
+use relm4::*;
 
 use crate::ui::timeline::{TimelineModel, TimelineMsg, TimelineOutput};
 
@@ -18,6 +18,7 @@ pub struct VideoPlayerModel {
     is_mute: bool,
     gtk_sink: Element,
     timeline: Controller<TimelineModel>,
+    video_duration: Option<ClockTime>,
     video_uri: Option<String>,
     playbin: Option<Element>,
 }
@@ -113,8 +114,7 @@ impl Component for VideoPlayerModel {
         _: Self::Init,
         root: Self::Root,
         sender: ComponentSender<Self>,
-    ) -> ComponentParts<Self>
-    {
+    ) -> ComponentParts<Self> {
         gst::init().unwrap();
 
         let gtk_sink = gst::ElementFactory::make("gtk4paintablesink")
@@ -129,11 +129,14 @@ impl Component for VideoPlayerModel {
         let offload = gtk4::GraphicsOffload::new(Some(&picture));
         offload.set_enabled(gtk::GraphicsOffloadEnabled::Enabled);
 
-        let timeline: Controller<TimelineModel> = TimelineModel::builder()
-            .launch(())
-            .forward(sender.input_sender(), |msg| match msg {
-                TimelineOutput::SeekToPercent(percent) => VideoPlayerMsg::SeekToPercent(percent),
-            });
+        let timeline: Controller<TimelineModel> =
+            TimelineModel::builder()
+                .launch(())
+                .forward(sender.input_sender(), |msg| match msg {
+                    TimelineOutput::SeekToPercent(percent) => {
+                        VideoPlayerMsg::SeekToPercent(percent)
+                    }
+                });
 
         let model = VideoPlayerModel {
             video_is_selected: false,
@@ -142,6 +145,7 @@ impl Component for VideoPlayerModel {
             is_mute: false,
             gtk_sink,
             timeline,
+            video_duration: None,
             video_uri: None,
             playbin: None,
         };
@@ -153,25 +157,33 @@ impl Component for VideoPlayerModel {
         ComponentParts { model, widgets }
     }
 
-    fn update_with_view(&mut self, widgets: &mut Self::Widgets, message: Self::Input, sender: ComponentSender<Self>, _root: &Self::Root) {
+    fn update_with_view(
+        &mut self,
+        widgets: &mut Self::Widgets,
+        message: Self::Input,
+        sender: ComponentSender<Self>,
+        _root: &Self::Root,
+    ) {
         match message {
             VideoPlayerMsg::NewVideo(value) => {
+                self.video_is_selected = true;
                 self.video_uri = Some(value);
                 self.video_is_loaded = false;
                 self.is_playing = false;
-                self.video_is_selected = true;
+                self.video_duration = None;
                 self.play_new_video();
 
                 let playbin_clone = self.playbin.as_ref().unwrap().clone();
                 sender.oneshot_command(async move {
-                    let now = SystemTime::now();
                     VideoPlayerModel::wait_for_playbin_done(&playbin_clone);
-                    println!("Pipeline done in {:?}", now.elapsed().unwrap());
                     VideoPlayerCommandMsg::VideoInit(true)
                 });
 
                 let uri = self.video_uri.as_ref().unwrap().clone();
-                self.timeline.sender().send(TimelineMsg::GenerateThumnails(uri)).unwrap();
+                self.timeline
+                    .sender()
+                    .send(TimelineMsg::GenerateThumnails(uri))
+                    .unwrap();
             }
             VideoPlayerMsg::SeekToPercent(percent) => self.seek_to_percent(percent),
             VideoPlayerMsg::TogglePlayPause => self.video_toggle_play_pause(),
@@ -181,46 +193,86 @@ impl Component for VideoPlayerModel {
         self.update_view(widgets, sender);
     }
 
-    fn update_cmd(&mut self, message: Self::CommandOutput, sender: ComponentSender<Self>, _root: &Self::Root) {
+    fn update_cmd(
+        &mut self,
+        message: Self::CommandOutput,
+        sender: ComponentSender<Self>,
+        _root: &Self::Root,
+    ) {
         match message {
             VideoPlayerCommandMsg::VideoInit(_) => {
                 self.is_playing = true;
                 self.video_is_loaded = true;
+                self.video_duration = Some(
+                    self.playbin
+                        .as_ref()
+                        .unwrap()
+                        .query_duration::<ClockTime>()
+                        .unwrap(),
+                );
 
                 let playbin_clone = self.playbin.as_ref().unwrap().clone();
                 sender.command(|out, shutdown| {
-                    shutdown.register(async move {
-                        loop {
-                            // todo: determine good wait time to make smooth
-                            // todo: test more with video switches
-                            // fixme: does this continue firing while video is being switched?
-                            // on seek this can fire between status being playing and paused
-                            tokio::time::sleep(Duration::from_millis(30)).await;
-                            if playbin_clone.state(Some(ClockTime::ZERO)).1 == gst::State::Playing {
-                                out.send(VideoPlayerCommandMsg::UpdateSeekPos).unwrap();
+                    shutdown
+                        .register(async move {
+                            loop {
+                                tokio::time::sleep(Duration::from_millis(30)).await;
+                                if playbin_clone.state(Some(ClockTime::ZERO)).1
+                                    == gst::State::Playing
+                                {
+                                    out.send(VideoPlayerCommandMsg::UpdateSeekPos).unwrap();
+                                }
                             }
-                        }
-                    }).drop_on_shutdown()
+                        })
+                        .drop_on_shutdown()
                 })
             }
             VideoPlayerCommandMsg::UpdateSeekPos => {
-                // fixme: on a lot of drags query_position failed. find way to reproduce better
-                //          also happened on a video change.
-                let duration = self.playbin.as_ref().unwrap().query_duration::<ClockTime>().unwrap();
-                let pos = self.playbin.as_ref().unwrap()
-                    .query_position::<ClockTime>()
-                    .expect("Could not query current position.");
-                let percent = pos.mseconds() as f64 / duration.mseconds() as f64;
-                self.timeline.sender().send(TimelineMsg::UpdateSeekBarPos(percent)).unwrap();
+                if self.video_duration == None {
+                    return;
+                }
+
+                let query_val = self.playbin.as_ref().unwrap().query_position::<ClockTime>();
+                match query_val {
+                    Some(curr_position) => {
+                        let percent = curr_position.mseconds() as f64
+                            / self.video_duration.unwrap().mseconds() as f64;
+                        self.timeline
+                            .sender()
+                            .send(TimelineMsg::UpdateSeekBarPos(percent))
+                            .unwrap();
+                    }
+                    None => {}
+                }
             }
         }
     }
 }
 
 impl VideoPlayerModel {
+    pub fn wait_for_playbin_done(playbin: &Element) {
+        let bus = playbin.bus().unwrap();
+
+        for msg in bus.iter_timed(ClockTime::NONE) {
+            use gst::MessageView;
+
+            match msg.view() {
+                MessageView::AsyncDone(..) => {
+                    break;
+                }
+                _ => (),
+            }
+        }
+    }
+
     // todo: hookup with ui/keyboard. add support for stepping backwards
     fn step_next_frame(&mut self) {
-        if let Some(video_sink) = self.playbin.as_ref().unwrap().property::<Option<Element>>("video-sink") {
+        if let Some(video_sink) = self
+            .playbin
+            .as_ref()
+            .unwrap()
+            .property::<Option<Element>>("video-sink")
+        {
             let step = gst::event::Step::new(gst::format::Buffers::ONE, 1.0, true, false);
             video_sink.send_event(step);
         }
@@ -232,7 +284,12 @@ impl VideoPlayerModel {
             return;
         }
 
-        let duration = self.playbin.as_ref().unwrap().query_duration::<ClockTime>().unwrap();
+        let duration = self
+            .playbin
+            .as_ref()
+            .unwrap()
+            .query_duration::<ClockTime>()
+            .unwrap();
         let seconds = (duration.seconds() as f64 * percent) as u64;
 
         let time = gst::GenericFormattedValue::from(ClockTime::from_seconds(seconds));
@@ -242,14 +299,18 @@ impl VideoPlayerModel {
             gst::SeekType::Set,
             time,
             gst::SeekType::End,
-            ClockTime::ZERO);
+            ClockTime::ZERO,
+        );
 
         self.playbin.as_ref().unwrap().send_event(seek);
     }
 
     fn toggle_mute(&mut self) {
         self.is_mute = !self.is_mute;
-        self.playbin.as_ref().unwrap().set_property("mute", self.is_mute);
+        self.playbin
+            .as_ref()
+            .unwrap()
+            .set_property("mute", self.is_mute);
     }
 
     fn video_toggle_play_pause(&mut self) {
@@ -260,36 +321,24 @@ impl VideoPlayerModel {
         };
 
         self.is_playing = new_state;
-        self.playbin.as_ref().unwrap().set_state(playbin_new_state).unwrap();
-    }
-
-    // fixme: on non-first videos might load fast enough that miss the async done.
-    //      the playbin is setup already, just changing uri so a lot faster, saw as
-    //      fast as 60ms for smaller videos
-    fn wait_for_playbin_done(playbin: &Element) {
-        // todo: verify this works
-        if playbin.state(Some(ClockTime::ZERO)).1 == gst::State::Playing {
-            return;
-        }
-
-        let bus = playbin.bus().unwrap();
-
-        for msg in bus.iter_timed(ClockTime::NONE) {
-            use gst::MessageView;
-
-            match msg.view() {
-                MessageView::AsyncDone(..) => {
-                    break;
-                }
-                _ => ()
-            }
-        }
+        self.playbin
+            .as_ref()
+            .unwrap()
+            .set_state(playbin_new_state)
+            .unwrap();
     }
 
     fn play_new_video(&mut self) {
         if self.playbin.is_some() {
-            self.playbin.as_ref().unwrap().set_state(gst::State::Null).unwrap();
-            self.playbin.as_ref().unwrap().set_property("uri", self.video_uri.as_ref().unwrap());
+            self.playbin
+                .as_ref()
+                .unwrap()
+                .set_state(gst::State::Null)
+                .unwrap();
+            self.playbin
+                .as_ref()
+                .unwrap()
+                .set_property("uri", self.video_uri.as_ref().unwrap());
         } else {
             let playbin = gst::ElementFactory::make("playbin")
                 .name("playbin")
@@ -315,7 +364,11 @@ impl VideoPlayerModel {
         }
 
         self.playbin.as_ref().unwrap().set_property("mute", false);
-        self.playbin.as_ref().unwrap().set_state(gst::State::Playing).unwrap();
+        self.playbin
+            .as_ref()
+            .unwrap()
+            .set_state(gst::State::Playing)
+            .unwrap();
 
         self.is_mute = false;
     }

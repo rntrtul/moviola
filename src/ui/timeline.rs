@@ -1,14 +1,16 @@
-use std::sync::{Arc, Condvar, mpsc, Mutex};
+use std::sync::{mpsc, Arc, Condvar, Mutex};
 use std::thread;
 
 use anyhow::Error;
-use gst::{ClockTime, element_error, SeekFlags};
 use gst::prelude::{Cast, ElementExt, ElementExtManual, GstBinExt, ObjectExt};
+use gst::{element_error, ClockTime, SeekFlags};
 use gst_video::VideoFrameExt;
 use gtk4::gio;
 use gtk4::prelude::{BoxExt, EventControllerExt, GestureDragExt, WidgetExt};
 use relm4::*;
-use relm4::{Component, ComponentParts, ComponentSender, gtk};
+use relm4::{gtk, Component, ComponentParts, ComponentSender};
+
+use crate::ui::video_player::VideoPlayerModel;
 
 static THUMBNAIL_PATH: &str = "/home/fareed/Videos";
 static NUM_THUMBNAILS: u64 = 12;
@@ -257,9 +259,9 @@ impl TimelineModel {
         let pipeline = gst::parse::launch(&format!(
             "uridecodebin uri={video_uri} ! videoconvert ! appsink name=sink"
         ))
-            .unwrap()
-            .downcast::<gst::Pipeline>()
-            .expect("Expected a gst::pipeline");
+        .unwrap()
+        .downcast::<gst::Pipeline>()
+        .expect("Expected a gst::pipeline");
 
         let appsink = pipeline
             .by_name("sink")
@@ -380,7 +382,6 @@ impl TimelineModel {
     }
 
     // fixme: speed up
-    // pipeline ready in ~1300ms, ~900ms for all thumbnail after
     // try to reuse existing pipeline or thumbnail pipeline
     fn thumbnail_thread(video_uri: String, thumbnails_done: Arc<(Mutex<u64>, Condvar)>) {
         let uri = video_uri.clone();
@@ -395,21 +396,12 @@ impl TimelineModel {
                 senders.clone(),
                 Arc::clone(&thumbnails_done),
             )
-                .expect("could not create thumbnail pipeline");
+            .expect("could not create thumbnail pipeline");
 
             pipeline.set_state(gst::State::Paused).unwrap();
-            let bus = pipeline.bus().expect("Pipeline without a bus.");
 
-            for msg in bus.iter_timed(ClockTime::NONE) {
-                use gst::MessageView;
-
-                match msg.view() {
-                    MessageView::AsyncDone(..) => {
-                        break;
-                    }
-                    _ => (),
-                }
-            }
+            let pipe_clone = pipeline.clone();
+            VideoPlayerModel::wait_for_playbin_done(&gst::Element::from(pipe_clone));
 
             let duration = pipeline.query_duration::<ClockTime>().unwrap();
             let step = duration.mseconds() / (NUM_THUMBNAILS + 2); // + 2 so first and last frame not chosen
