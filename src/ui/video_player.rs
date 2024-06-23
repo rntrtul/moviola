@@ -246,13 +246,12 @@ impl Component for VideoPlayerModel {
 
                 let uri = self.video_uri.as_ref().unwrap().clone();
                 sender.oneshot_command(async move {
-                    let thumbnail_pair = Arc::new((Mutex::new(false), Condvar::new()));
-
+                    let thumbnail_pair = Arc::new((Mutex::new(0), Condvar::new()));
                     VideoPlayerModel::thumbnail_thread(uri, Arc::clone(&thumbnail_pair));
-
                     let (num_thumbs, all_done) = &*thumbnail_pair;
                     let mut thumbnails_done = num_thumbs.lock().unwrap();
-                    while !*thumbnails_done {
+
+                    while *thumbnails_done != NUM_THUMBNAILS {
                         thumbnails_done = all_done.wait(thumbnails_done).unwrap();
                     }
                     VideoPlayerCommandMsg::GenerateThumbnails
@@ -377,13 +376,11 @@ impl VideoPlayerModel {
         }
     }
 
-    // todo: cleanup arguments needed
     fn create_thumbnail_pipeline(
         got_current_thumb: Arc<Mutex<bool>>,
-        current_thumb_num: Arc<Mutex<u64>>,
         video_uri: String,
         senders: mpsc::Sender<u8>,
-        thumbnails_done: Arc<(Mutex<bool>, Condvar)>) -> Result<gst::Pipeline, Error>
+        thumbnails_done: Arc<(Mutex<u64>, Condvar)>) -> Result<gst::Pipeline, Error>
     {
         let pipeline = gst::parse::launch(&format!(
             "uridecodebin uri={video_uri} ! videoconvert ! appsink name=sink"
@@ -415,7 +412,6 @@ impl VideoPlayerModel {
                     }
 
                     *got_current = true;
-                    let current_thumb_num = Arc::clone(&current_thumb_num);
                     let thumbnails_done = Arc::clone(&thumbnails_done);
 
                     let appsink = appsink.clone();
@@ -458,7 +454,9 @@ impl VideoPlayerModel {
                             target_width as u32,
                             target_height,
                         );
-                        let mut thumb_num = current_thumb_num.lock().unwrap();
+                        let (thumbs_num_lock, thumbs_done_cvar) = &*thumbnails_done;
+                        let mut thumb_num = thumbs_num_lock.lock().unwrap();
+
                         let thumbnail_save_path = std::path::PathBuf::from(
                             format!("/{}/thumbnail_{}.jpg", THUMBNAIL_PATH, *thumb_num)
                         );
@@ -473,10 +471,7 @@ impl VideoPlayerModel {
                         }).unwrap();
                         *thumb_num += 1;
 
-                        let (thumbs_done_lock, thumbs_done_cvar) = &*thumbnails_done;
-                        let mut done_thumbnails = thumbs_done_lock.lock().unwrap();
                         if *thumb_num == NUM_THUMBNAILS {
-                            *done_thumbnails = true;
                             thumbs_done_cvar.notify_one();
                         }
                     });
@@ -555,17 +550,15 @@ impl VideoPlayerModel {
     // fixme: speed up
     // pipeline ready in ~1300ms, ~900ms for all thumbnail after
     // try to reuse existing pipeline
-    fn thumbnail_thread(video_uri: String, thumbnails_done: Arc<(Mutex<bool>, Condvar)>) {
+    fn thumbnail_thread(video_uri: String, thumbnails_done: Arc<(Mutex<u64>, Condvar)>) {
         let uri = video_uri.clone();
 
         thread::spawn(move || {
             let got_current_thumb = Arc::new(Mutex::new(false));
-            let current_thumb_num = Arc::new(Mutex::new(0));
             let (senders, receiver) = mpsc::channel();
 
             let pipeline = VideoPlayerModel::create_thumbnail_pipeline(
                 Arc::clone(&got_current_thumb),
-                Arc::clone(&current_thumb_num),
                 uri,
                 senders.clone(),
                 Arc::clone(&thumbnails_done),
@@ -603,7 +596,9 @@ impl VideoPlayerModel {
             }
         });
     }
-
+    // fixme: on non-first videos might load fast enough that miss the async done.
+    //      the playbin is init already, just changing uri so a lot faster, saw as
+    //      fast as 60ms for smaller videos
     fn wait_for_playbin_done(playbin: &Element) {
         let bus = playbin.bus().unwrap();
 
@@ -663,13 +658,13 @@ mod tests {
         gst::init().unwrap();
 
         let uri = "file:///home/fareed/Videos/mp3e1.mkv";
-        let thumbnail_pair = Arc::new((Mutex::new(false), Condvar::new()));
+        let thumbnail_pair = Arc::new((Mutex::new(0), Condvar::new()));
 
         VideoPlayerModel::thumbnail_thread(uri.parse().unwrap(), Arc::clone(&thumbnail_pair));
 
         let (num_thumbs, all_done) = &*thumbnail_pair;
         let mut thumbnails_done = num_thumbs.lock().unwrap();
-        while !*thumbnails_done {
+        while *thumbnails_done != NUM_THUMBNAILS {
             thumbnails_done = all_done.wait(thumbnails_done).unwrap();
         }
 
