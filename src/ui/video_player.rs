@@ -250,6 +250,7 @@ impl Component for VideoPlayerModel {
 }
 
 impl VideoPlayerModel {
+    // fixme: sometimes new video just hangs
     pub fn wait_for_playbin_done(playbin: &Element) {
         let bus = playbin.bus().unwrap();
 

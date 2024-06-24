@@ -1,3 +1,4 @@
+use std::rc::Rc;
 use std::sync::{mpsc, Arc, Condvar, Mutex};
 use std::thread;
 
@@ -10,6 +11,7 @@ use gtk4::prelude::{BoxExt, EventControllerExt, GestureDragExt, WidgetExt};
 use relm4::*;
 use relm4::{gtk, Component, ComponentParts, ComponentSender};
 
+use crate::ui::handle_manager::HandleManager;
 use crate::ui::video_player::VideoPlayerModel;
 
 static THUMBNAIL_PATH: &str = "/home/fareed/Videos";
@@ -19,6 +21,7 @@ static THUMBNAIL_HEIGHT: u32 = 90;
 #[derive(Debug)]
 pub struct TimelineModel {
     thumbnails_available: bool,
+    handle_manager: Option<HandleManager>,
 }
 
 #[derive(Debug)]
@@ -124,11 +127,19 @@ impl Component for TimelineModel {
         root: Self::Root,
         sender: ComponentSender<Self>,
     ) -> ComponentParts<Self> {
-        let model = TimelineModel {
+        let mut model = TimelineModel {
             thumbnails_available: false,
+            handle_manager: None,
         };
 
         let widgets = view_output!();
+
+        let handle_manager = HandleManager {
+            start_handle: Rc::new(widgets.start_handle.clone()),
+            end_handle: Rc::new(widgets.end_handle.clone()),
+        };
+
+        model.handle_manager = Some(handle_manager);
 
         ComponentParts { model, widgets }
     }
@@ -177,60 +188,31 @@ impl Component for TimelineModel {
                 }
             }
             TimelineMsg::MoveStartTo(pos) => {
-                // todo: make MoveStartTo and MoveEndTo generic as HandleMoveTo(isStart, pos)
-                let end_pos = widgets.timeline.width() - widgets.end_handle.x();
-                let target_pos = widgets.start_handle.x() + pos;
-                let seek_percent = target_pos as f64 / widgets.timeline.width() as f64;
-
-                if end_pos > target_pos {
-                    if target_pos >= 0 {
-                        widgets.start_handle.set_rel_x(pos);
-                        widgets.start_handle.queue_draw();
-                        sender.input(TimelineMsg::SeekToPercent(seek_percent));
-                    } else if (target_pos < 0)
-                        && (widgets.start_handle.rel_x() != -widgets.start_handle.x())
-                    {
-                        widgets.start_handle.set_rel_x(-widgets.start_handle.x());
-                        widgets.start_handle.queue_draw();
-                        sender.input(TimelineMsg::SeekToPercent(seek_percent));
-                    }
+                if self
+                    .handle_manager
+                    .as_ref()
+                    .unwrap()
+                    .try_set_start_rel_x(pos, widgets.timeline.width())
+                {
+                    let seek_percent =
+                        widgets.start_handle.target_x() as f64 / widgets.timeline.width() as f64;
+                    sender.input(TimelineMsg::SeekToPercent(seek_percent));
                 }
             }
             TimelineMsg::MoveEndTo(pos) => {
-                let target_instep = -widgets.end_handle.x() + pos;
-                let target_pos = widgets.timeline.width() + target_instep;
-                let seek_percent = target_pos as f64 / widgets.timeline.width() as f64;
-
-                if target_pos > widgets.start_handle.x() {
-                    if target_instep <= 0 {
-                        widgets.end_handle.set_rel_x(pos);
-                        widgets.end_handle.queue_draw();
-                        sender.input(TimelineMsg::SeekToPercent(seek_percent));
-                    } else if (target_instep > 0)
-                        && (widgets.end_handle.rel_x() != widgets.end_handle.x())
-                    {
-                        widgets.end_handle.set_rel_x(widgets.end_handle.x());
-                        widgets.end_handle.queue_draw();
-                        sender.input(TimelineMsg::SeekToPercent(seek_percent));
-                    }
+                if self
+                    .handle_manager
+                    .as_ref()
+                    .unwrap()
+                    .try_set_end_rel_x(pos, widgets.timeline.width())
+                {
+                    let seek_percent =
+                        widgets.end_handle.target_x() as f64 / widgets.timeline.width() as f64;
+                    sender.input(TimelineMsg::SeekToPercent(seek_percent));
                 }
             }
-            TimelineMsg::MoveStartEnd => {
-                let curr_margin = widgets.start_handle.x();
-                let new_margin = curr_margin + widgets.start_handle.rel_x();
-
-                widgets.start_handle.set_x(new_margin);
-                widgets.start_handle.set_margin_start(new_margin);
-                widgets.start_handle.set_rel_x(0);
-            }
-            TimelineMsg::MoveEndEnd => {
-                let curr_margin = widgets.end_handle.x();
-                let new_margin = (-curr_margin + widgets.end_handle.rel_x()).abs();
-
-                widgets.end_handle.set_x(new_margin);
-                widgets.end_handle.set_margin_end(new_margin);
-                widgets.end_handle.set_rel_x(0);
-            }
+            TimelineMsg::MoveStartEnd => self.handle_manager.as_ref().unwrap().set_start_margin(),
+            TimelineMsg::MoveEndEnd => self.handle_manager.as_ref().unwrap().set_end_margin(),
         }
     }
 
@@ -259,9 +241,9 @@ impl TimelineModel {
         let pipeline = gst::parse::launch(&format!(
             "uridecodebin uri={video_uri} ! videoconvert ! appsink name=sink"
         ))
-        .unwrap()
-        .downcast::<gst::Pipeline>()
-        .expect("Expected a gst::pipeline");
+            .unwrap()
+            .downcast::<gst::Pipeline>()
+            .expect("Expected a gst::pipeline");
 
         let appsink = pipeline
             .by_name("sink")
@@ -382,7 +364,8 @@ impl TimelineModel {
     }
 
     // fixme: speed up
-    // try to reuse existing pipeline or thumbnail pipeline
+    // try to reuse existing pipeline or thumbnail pipeline. would be ~1.3 sec quicker for
+    // subsequent videos
     fn thumbnail_thread(video_uri: String, thumbnails_done: Arc<(Mutex<u64>, Condvar)>) {
         let uri = video_uri.clone();
 
@@ -396,7 +379,7 @@ impl TimelineModel {
                 senders.clone(),
                 Arc::clone(&thumbnails_done),
             )
-            .expect("could not create thumbnail pipeline");
+                .expect("could not create thumbnail pipeline");
 
             pipeline.set_state(gst::State::Paused).unwrap();
 

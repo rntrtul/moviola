@@ -1,16 +1,17 @@
 use gst::glib;
 use relm4::gtk;
 
-pub mod video_player;
 pub mod edit_controls;
 mod handle;
+mod handle_manager;
 mod timeline;
+pub mod video_player;
 
 glib::wrapper! {
     pub struct HandleWidget(ObjectSubclass<handle::HandleWidget>)
         @extends gtk::Widget;
 }
-
+// todo: put in handle file?
 impl HandleWidget {
     fn new(x: i32, is_handle: bool) -> Self {
         glib::Object::builder()
