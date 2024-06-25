@@ -16,6 +16,8 @@ pub struct HandleWidget {
     pub target_x: Cell<i32>,
     #[property(get, set)]
     is_handle: Cell<bool>,
+    #[property(get, set)]
+    is_start: Cell<bool>,
 }
 
 #[glib::object_subclass]
@@ -52,18 +54,18 @@ impl WidgetImpl for HandleWidget {
         let target_height = (widget.height() as f32) * height_percent;
         let y_instep = widget.height() as f32 * instep_percent;
         // todo: have shadow on handle?
-        // todo: add gray overlay on sides
+        // todo: have center of widget be considered 0
 
-        let rect = graphene::Rect::new(
+        let handle_rect = graphene::Rect::new(
             self.rel_x.get() as f32,
             y_instep,
             widget.width() as f32,
             target_height,
         );
-        let round_rect = gsk::RoundedRect::from_rect(rect, 6f32);
+        let handle_outline = gsk::RoundedRect::from_rect(handle_rect, 6f32);
 
         let path_builder = gsk::PathBuilder::new();
-        path_builder.add_rounded_rect(&round_rect);
+        path_builder.add_rounded_rect(&handle_outline);
         let path = path_builder.to_path();
 
         let colour = if self.is_handle.get() {
@@ -73,6 +75,28 @@ impl WidgetImpl for HandleWidget {
         };
 
         snapshot.append_fill(&path, gsk::FillRule::Winding, colour);
+
+        if self.is_handle.get() {
+            let is_moving = self.rel_x.get() != 0;
+
+            let (overlay_start, overlay_width) = if self.is_start.get() {
+                (-self.x.get() as f32, self.target_x.get() as f32)
+            } else {
+                if is_moving {
+                    (
+                        (self.x.get() + widget.width()) as f32,
+                        (-self.x.get() + self.rel_x.get()) as f32,
+                    )
+                } else {
+                    (widget.width() as f32, self.x.get() as f32)
+                }
+            };
+
+            let not_playing_rect =
+                graphene::Rect::new(overlay_start, 0., overlay_width, widget.height() as f32);
+            let grey = gdk::RGBA::new(0.612, 0.612, 0.612, 0.89);
+            snapshot.append_color(&grey, &not_playing_rect);
+        }
     }
 }
 

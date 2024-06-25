@@ -98,7 +98,7 @@ impl Component for TimelineModel {
                 }
             },
 
-            add_overlay: end_handle = &super::HandleWidget::default() {
+            add_overlay: end_handle = &super::HandleWidget::new(0, true, false) {
                 set_halign: gtk::Align::End,
                 set_valign: gtk::Align::Center,
 
@@ -115,7 +115,7 @@ impl Component for TimelineModel {
                 }
             },
 
-            add_overlay: seek_bar = &super::HandleWidget::new(0, false) {
+            add_overlay: seek_bar = &super::HandleWidget::new(0, false, false) {
                 set_halign: gtk::Align::Start,
                 set_valign: gtk::Align::Center,
             },
@@ -241,9 +241,9 @@ impl TimelineModel {
         let pipeline = gst::parse::launch(&format!(
             "uridecodebin uri={video_uri} ! videoconvert ! appsink name=sink"
         ))
-            .unwrap()
-            .downcast::<gst::Pipeline>()
-            .expect("Expected a gst::pipeline");
+        .unwrap()
+        .downcast::<gst::Pipeline>()
+        .expect("Expected a gst::pipeline");
 
         let appsink = pipeline
             .by_name("sink")
@@ -379,7 +379,7 @@ impl TimelineModel {
                 senders.clone(),
                 Arc::clone(&thumbnails_done),
             )
-                .expect("could not create thumbnail pipeline");
+            .expect("could not create thumbnail pipeline");
 
             pipeline.set_state(gst::State::Paused).unwrap();
 

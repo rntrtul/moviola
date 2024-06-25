@@ -13,11 +13,12 @@ glib::wrapper! {
 }
 // todo: put in handle file?
 impl HandleWidget {
-    fn new(x: i32, is_handle: bool) -> Self {
+    fn new(x: i32, is_handle: bool, is_start: bool) -> Self {
         glib::Object::builder()
             .property("x", x)
             .property("rel_x", 0)
             .property("is_handle", is_handle)
+            .property("is_start", is_start)
             .build()
     }
 }
@@ -28,6 +29,7 @@ impl Default for HandleWidget {
             .property("x", 0)
             .property("rel_x", 0)
             .property("is_handle", true)
+            .property("is_start", true)
             .build()
     }
 }
