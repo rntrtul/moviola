@@ -369,6 +369,7 @@ impl TimelineModel {
     fn thumbnail_thread(video_uri: String, thumbnails_done: Arc<(Mutex<u64>, Condvar)>) {
         let uri = video_uri.clone();
 
+        // todo: figure way to return pipeline or use static pipeline to dispose of or null this pipeline
         thread::spawn(move || {
             let got_current_thumb = Arc::new(Mutex::new(false));
             let (senders, receiver) = mpsc::channel();

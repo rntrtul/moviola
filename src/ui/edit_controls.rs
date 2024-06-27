@@ -1,7 +1,9 @@
 use gtk4::prelude::{BoxExt, ButtonExt, OrientableExt, WidgetExt};
-use relm4::{ComponentParts, ComponentSender, gtk, SimpleComponent};
+use relm4::{gtk, ComponentParts, ComponentSender, SimpleComponent};
 
-use crate::ui::edit_controls::CropType::{Crop16To9, Crop3To2, Crop4To3, Crop5To4, CropFree, CropOriginal, CropSquare};
+use crate::ui::edit_controls::CropType::{
+    Crop16To9, Crop3To2, Crop4To3, Crop5To4, CropFree, CropOriginal, CropSquare,
+};
 
 pub struct EditControlsModel {
     crop_mode: EditControlsMsg,
@@ -20,12 +22,13 @@ enum CropType {
 
 #[derive(Debug)]
 pub enum EditControlsMsg {
+    ExportFrame,
     CropMode(CropType),
 }
 
 #[derive(Debug)]
 pub enum EditControlsOutput {
-    SeekToPercent(f64),
+    ExportFrame,
 }
 
 #[relm4::component(pub)]
@@ -96,13 +99,19 @@ impl SimpleComponent for EditControlsModel {
                     gtk::Button {
                         set_label: "Export Frame",
                         add_css_class: "pill",
+
+                        connect_clicked => EditControlsMsg::ExportFrame,
                     },
                 },
             },
         }
     }
 
-    fn init(_init: Self::Init, root: Self::Root, sender: ComponentSender<Self>) -> ComponentParts<Self> {
+    fn init(
+        _init: Self::Init,
+        root: Self::Root,
+        sender: ComponentSender<Self>,
+    ) -> ComponentParts<Self> {
         let widgets = view_output!();
         let model = EditControlsModel {
             crop_mode: EditControlsMsg::CropMode(CropFree),
@@ -111,10 +120,13 @@ impl SimpleComponent for EditControlsModel {
         ComponentParts { model, widgets }
     }
 
-    fn update(&mut self, message: Self::Input, _sender: ComponentSender<Self>) {
+    fn update(&mut self, message: Self::Input, sender: ComponentSender<Self>) {
         match message {
             EditControlsMsg::CropMode(_) => {
                 self.crop_mode = message;
+            }
+            EditControlsMsg::ExportFrame => {
+                sender.output(EditControlsOutput::ExportFrame).unwrap();
             }
         }
     }

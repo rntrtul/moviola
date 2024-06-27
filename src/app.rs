@@ -1,11 +1,13 @@
+use gtk::glib;
+use gtk::prelude::{ApplicationExt, GtkWindowExt, OrientableExt, WidgetExt};
 use gtk4::gio;
 use gtk4::prelude::{ButtonExt, FileExt, GtkApplicationExt};
-use gtk::glib;
-use gtk::prelude::{
-    ApplicationExt, GtkWindowExt, OrientableExt, WidgetExt, };
-use relm4::{adw, Component, ComponentController, ComponentParts, ComponentSender, Controller, gtk, main_application, SimpleComponent};
+use relm4::{
+    adw, gtk, main_application, Component, ComponentController, ComponentParts, ComponentSender,
+    Controller, SimpleComponent,
+};
 
-use super::ui::edit_controls::EditControlsModel;
+use super::ui::edit_controls::{EditControlsModel, EditControlsOutput};
 use super::ui::video_player::{VideoPlayerModel, VideoPlayerMsg};
 
 pub(super) struct App {
@@ -16,6 +18,7 @@ pub(super) struct App {
 
 #[derive(Debug)]
 pub(super) enum AppMsg {
+    ExportFrame,
     OpenFile,
     SetVideo(String),
     Quit,
@@ -120,16 +123,19 @@ impl SimpleComponent for App {
         }
     }
 
-    fn init(_: Self::Init, root: Self::Root, sender: ComponentSender<Self>) -> ComponentParts<Self> {
+    fn init(
+        _: Self::Init,
+        root: Self::Root,
+        sender: ComponentSender<Self>,
+    ) -> ComponentParts<Self> {
         let video_player: Controller<VideoPlayerModel> =
-            VideoPlayerModel::builder()
-                .launch(2)
-                .detach();
+            VideoPlayerModel::builder().launch(2).detach();
 
-        let edit_controls: Controller<EditControlsModel> =
-            EditControlsModel::builder()
-                .launch(())
-                .detach();
+        let edit_controls: Controller<EditControlsModel> = EditControlsModel::builder()
+            .launch(())
+            .forward(sender.input_sender(), |msg| match msg {
+                EditControlsOutput::ExportFrame => AppMsg::ExportFrame,
+            });
 
         let model = Self {
             video_player,
@@ -161,6 +167,9 @@ impl SimpleComponent for App {
                 self.video_player.emit(VideoPlayerMsg::NewVideo(file_name));
                 self.video_player.widget().set_visible(true);
                 self.video_is_open = true;
+            }
+            AppMsg::ExportFrame => {
+                self.video_player.emit(VideoPlayerMsg::ExportFrame);
             }
         }
     }

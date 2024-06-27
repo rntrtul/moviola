@@ -1,8 +1,9 @@
-use std::time::Duration;
+use std::time::{Duration, SystemTime};
 
 use gst::glib::FlagsClass;
 use gst::prelude::*;
 use gst::{ClockTime, Element, SeekFlags};
+use gst_video::VideoFrameExt;
 use gtk4::prelude::{BoxExt, ButtonExt, OrientableExt, WidgetExt};
 use relm4::adw::gdk;
 use relm4::*;
@@ -25,6 +26,7 @@ pub struct VideoPlayerModel {
 
 #[derive(Debug)]
 pub enum VideoPlayerMsg {
+    ExportFrame,
     TogglePlayPause,
     ToggleMute,
     SeekToPercent(f64),
@@ -188,6 +190,16 @@ impl Component for VideoPlayerModel {
             VideoPlayerMsg::SeekToPercent(percent) => self.seek_to_percent(percent),
             VideoPlayerMsg::TogglePlayPause => self.video_toggle_play_pause(),
             VideoPlayerMsg::ToggleMute => self.toggle_mute(),
+            VideoPlayerMsg::ExportFrame => {
+                if self.video_is_loaded {
+                    let sample = self
+                        .playbin
+                        .as_ref()
+                        .unwrap()
+                        .property::<gst::Sample>("sample");
+                    VideoPlayerModel::save_sample(&sample);
+                }
+            }
         }
 
         self.update_view(widgets, sender);
@@ -372,5 +384,40 @@ impl VideoPlayerModel {
             .unwrap();
 
         self.is_mute = false;
+    }
+
+    fn save_sample(sample: &gst::Sample) {
+        let now = SystemTime::now();
+        let buffer = sample.buffer().unwrap();
+
+        let caps = sample.caps().expect("sample without caps");
+        let info = gst_video::VideoInfo::from_caps(caps).expect("Failed to parse caps");
+
+        let frame = gst_video::VideoFrameRef::from_buffer_ref_readable(buffer, &info).unwrap();
+
+        let img = image::FlatSamples::<&[u8]> {
+            samples: frame.plane_data(0).unwrap(),
+            layout: image::flat::SampleLayout {
+                channels: 3,
+                channel_stride: 1,
+                width: frame.width(),
+                width_stride: 3,
+                height: frame.height(),
+                height_stride: frame.plane_stride()[0] as usize,
+            },
+            color_hint: Some(image::ColorType::Rgb8),
+        };
+        let view = &img
+            .as_view::<image::Rgb<u8>>()
+            .expect("could not create image view");
+        println!("view prerpped {:?}", now.elapsed());
+
+        let scaled_img = image::imageops::thumbnail(view, frame.width(), frame.height());
+        println!("to thumbnail {:?}", now.elapsed());
+
+        let thumbnail_save_path = std::path::PathBuf::from("/home/fareed/Videos/export_frame.jpg");
+
+        scaled_img.save(&thumbnail_save_path).unwrap();
+        println!("export done in {:?}", now.elapsed());
     }
 }
