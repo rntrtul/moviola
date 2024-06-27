@@ -1,10 +1,12 @@
-use std::time::{Duration, SystemTime};
+use std::thread;
+use std::time::Duration;
 
 use gst::glib::FlagsClass;
 use gst::prelude::*;
 use gst::{ClockTime, Element, SeekFlags};
 use gst_video::VideoFrameExt;
 use gtk4::prelude::{BoxExt, ButtonExt, OrientableExt, WidgetExt};
+use image::RgbImage;
 use relm4::adw::gdk;
 use relm4::*;
 
@@ -387,7 +389,6 @@ impl VideoPlayerModel {
     }
 
     fn save_sample(sample: &gst::Sample) {
-        let now = SystemTime::now();
         let buffer = sample.buffer().unwrap();
 
         let caps = sample.caps().expect("sample without caps");
@@ -407,17 +408,14 @@ impl VideoPlayerModel {
             },
             color_hint: Some(image::ColorType::Rgb8),
         };
-        let view = &img
-            .as_view::<image::Rgb<u8>>()
-            .expect("could not create image view");
-        println!("view prerpped {:?}", now.elapsed());
 
-        let scaled_img = image::imageops::thumbnail(view, frame.width(), frame.height());
-        println!("to thumbnail {:?}", now.elapsed());
+        let save_img =
+            RgbImage::from_raw(frame.width(), frame.height(), Vec::from(img.samples)).unwrap();
 
-        let thumbnail_save_path = std::path::PathBuf::from("/home/fareed/Videos/export_frame.jpg");
-
-        scaled_img.save(&thumbnail_save_path).unwrap();
-        println!("export done in {:?}", now.elapsed());
+        thread::spawn(move || {
+            let thumbnail_save_path =
+                std::path::PathBuf::from("/home/fareed/Videos/export_frame.jpg");
+            save_img.save(&thumbnail_save_path).unwrap();
+        });
     }
 }
