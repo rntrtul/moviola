@@ -106,7 +106,7 @@ impl SimpleComponent for App {
                     },
 
                     model.video_player.widget(){
-                        set_visible: model.video_is_open,
+                        set_visible: false,
                     },
 
                     #[name="stack"]
