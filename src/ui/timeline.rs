@@ -16,7 +16,7 @@ pub struct TimelineModel {
 
 #[derive(Debug)]
 pub enum TimelineMsg {
-    GenerateThumnails(String),
+    GenerateThumbnails(String),
     PopulateTimeline,
     MoveStartTo(i32),
     MoveStartEnd,
@@ -142,7 +142,7 @@ impl Component for TimelineModel {
         _root: &Self::Root,
     ) {
         match message {
-            TimelineMsg::GenerateThumnails(uri) => {
+            TimelineMsg::GenerateThumbnails(uri) => {
                 Self::remove_timeline_thumbnails(&widgets.timeline);
                 self.thumbnails_available = false;
 

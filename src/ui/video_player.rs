@@ -186,7 +186,7 @@ impl Component for VideoPlayerModel {
                 let uri = self.video_uri.as_ref().unwrap().clone();
                 self.timeline
                     .sender()
-                    .send(TimelineMsg::GenerateThumnails(uri))
+                    .send(TimelineMsg::GenerateThumbnails(uri))
                     .unwrap();
             }
             VideoPlayerMsg::SeekToPercent(percent) => self.seek_to_percent(percent),
