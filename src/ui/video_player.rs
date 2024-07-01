@@ -1,16 +1,18 @@
-use std::thread;
-use std::time::Duration;
-
-use gst::glib::FlagsClass;
+use ges::prelude::{ExtractableExt, GESPipelineExt, LayerExt, TimelineExt, UriClipAssetExt};
 use gst::prelude::*;
-use gst::{ClockTime, Element, SeekFlags};
-use gst_video::VideoFrameExt;
+use gst::{ClockTime, Element, SeekFlags, State};
 use gtk4::prelude::{BoxExt, ButtonExt, OrientableExt, WidgetExt};
-use image::RgbImage;
 use relm4::adw::gdk;
 use relm4::*;
 
 use crate::ui::timeline::{TimelineModel, TimelineMsg, TimelineOutput};
+
+struct PlayingInfo {
+    pipeline: ges::Pipeline,
+    clip: ges::UriClip,
+    layer: ges::Layer,
+    timeline: ges::Timeline,
+}
 
 // todo: dispose of stuff on quit
 // todo: do i need is_loaded and is_playing?
@@ -23,7 +25,7 @@ pub struct VideoPlayerModel {
     timeline: Controller<TimelineModel>,
     video_duration: Option<ClockTime>,
     video_uri: Option<String>,
-    playbin: Option<Element>,
+    playing_info: Option<PlayingInfo>,
 }
 
 #[derive(Debug)]
@@ -151,7 +153,7 @@ impl Component for VideoPlayerModel {
             timeline,
             video_duration: None,
             video_uri: None,
-            playbin: None,
+            playing_info: None,
         };
 
         let widgets = view_output!();
@@ -177,9 +179,19 @@ impl Component for VideoPlayerModel {
                 self.video_duration = None;
                 self.play_new_video();
 
-                let playbin_clone = self.playbin.as_ref().unwrap().clone();
+                let bus = self.playing_info.as_ref().unwrap().pipeline.bus().unwrap();
                 sender.oneshot_command(async move {
-                    VideoPlayerModel::wait_for_playbin_done(&playbin_clone);
+                    for msg in bus.iter_timed(ClockTime::NONE) {
+                        use gst::MessageView;
+
+                        match msg.view() {
+                            MessageView::AsyncDone(..) => {
+                                break;
+                            }
+                            _ => (),
+                        }
+                    }
+
                     VideoPlayerCommandMsg::VideoInit(true)
                 });
 
@@ -194,12 +206,12 @@ impl Component for VideoPlayerModel {
             VideoPlayerMsg::ToggleMute => self.toggle_mute(),
             VideoPlayerMsg::ExportFrame => {
                 if self.video_is_loaded {
-                    let sample = self
-                        .playbin
+                    self.playing_info
                         .as_ref()
                         .unwrap()
-                        .property::<gst::Sample>("sample");
-                    VideoPlayerModel::save_sample(&sample);
+                        .pipeline
+                        .save_thumbnail(1920, 1080, "image/jpeg", "/home/fareed/Videos/export.jpg")
+                        .expect("unable to save exported frame");
                 }
             }
         }
@@ -217,47 +229,55 @@ impl Component for VideoPlayerModel {
             VideoPlayerCommandMsg::VideoInit(_) => {
                 self.is_playing = true;
                 self.video_is_loaded = true;
-                self.video_duration = Some(
-                    self.playbin
-                        .as_ref()
-                        .unwrap()
-                        .query_duration::<ClockTime>()
-                        .unwrap(),
-                );
 
-                let playbin_clone = self.playbin.as_ref().unwrap().clone();
-                sender.command(|out, shutdown| {
-                    shutdown
-                        .register(async move {
-                            loop {
-                                tokio::time::sleep(Duration::from_millis(30)).await;
-                                if playbin_clone.state(Some(ClockTime::ZERO)).1
-                                    == gst::State::Playing
-                                {
-                                    out.send(VideoPlayerCommandMsg::UpdateSeekPos).unwrap();
-                                }
-                            }
-                        })
-                        .drop_on_shutdown()
-                })
+                let asset = self
+                    .playing_info
+                    .as_ref()
+                    .unwrap()
+                    .clip
+                    .asset()
+                    .unwrap()
+                    .downcast::<ges::UriClipAsset>()
+                    .unwrap();
+
+                self.video_duration = Some(asset.duration().expect("could not get duration"))
+
+                // let playbin_clone = self.ges.as_ref().unwrap().clone();
+                // todo: make this thread and hold handle on it, manually reset
+                //          (can also ensure it shutsdown during video switch)
+                //          how to handle sending commands?
+                // sender.command(|out, shutdown| {
+                //     shutdown
+                //         .register(async move {
+                //             loop {
+                //                 tokio::time::sleep(Duration::from_millis(30)).await;
+                //                 if playbin_clone.state(Some(ClockTime::ZERO)).1
+                //                     == State::Playing
+                //                 {
+                //                     out.send(VideoPlayerCommandMsg::UpdateSeekPos).unwrap();
+                //                 }
+                //             }
+                //         })
+                //         .drop_on_shutdown()
+                // })
             }
             VideoPlayerCommandMsg::UpdateSeekPos => {
                 if self.video_duration == None {
                     return;
                 }
-
-                let query_val = self.playbin.as_ref().unwrap().query_position::<ClockTime>();
-                match query_val {
-                    Some(curr_position) => {
-                        let percent = curr_position.mseconds() as f64
-                            / self.video_duration.unwrap().mseconds() as f64;
-                        self.timeline
-                            .sender()
-                            .send(TimelineMsg::UpdateSeekBarPos(percent))
-                            .unwrap();
-                    }
-                    None => {}
-                }
+                // fixme: how to get current position (maybe clip.internal_time_from_timeline_time)
+                // let query_val = self.playbin.as_ref().unwrap().query_position::<ClockTime>();
+                // match query_val {
+                //     Some(curr_position) => {
+                //         let percent = curr_position.mseconds() as f64
+                //             / self.video_duration.unwrap().mseconds() as f64;
+                //         self.timeline
+                //             .sender()
+                //             .send(TimelineMsg::UpdateSeekBarPos(percent))
+                //             .unwrap();
+                //     }
+                //     None => {}
+                // }
             }
         }
     }
@@ -282,30 +302,17 @@ impl VideoPlayerModel {
 
     // todo: hookup with ui/keyboard. add support for stepping backwards
     fn step_next_frame(&mut self) {
-        if let Some(video_sink) = self
-            .playbin
-            .as_ref()
-            .unwrap()
-            .property::<Option<Element>>("video-sink")
-        {
-            let step = gst::event::Step::new(gst::format::Buffers::ONE, 1.0, true, false);
-            video_sink.send_event(step);
-        }
+        let step = gst::event::Step::new(gst::format::Buffers::ONE, 1.0, true, false);
+        self.gtk_sink.send_event(step);
     }
 
     fn seek_to_percent(&mut self, percent: f64) {
-        if self.playbin.is_none() || !self.video_is_loaded {
+        if self.playing_info.is_none() || !self.video_is_loaded {
             println!("early exit for seek");
             return;
         }
 
-        let duration = self
-            .playbin
-            .as_ref()
-            .unwrap()
-            .query_duration::<ClockTime>()
-            .unwrap();
-        let seconds = (duration.seconds() as f64 * percent) as u64;
+        let seconds = (self.video_duration.unwrap().seconds() as f64 * percent) as u64;
 
         let time = gst::GenericFormattedValue::from(ClockTime::from_seconds(seconds));
         let seek = gst::event::Seek::new(
@@ -317,105 +324,77 @@ impl VideoPlayerModel {
             ClockTime::ZERO,
         );
 
-        self.playbin.as_ref().unwrap().send_event(seek);
+        self.playing_info
+            .as_ref()
+            .unwrap()
+            .pipeline
+            .send_event(seek);
     }
 
     fn toggle_mute(&mut self) {
+        // fixme: work with gesPipeline
         self.is_mute = !self.is_mute;
-        self.playbin
-            .as_ref()
-            .unwrap()
-            .set_property("mute", self.is_mute);
     }
 
     fn video_toggle_play_pause(&mut self) {
         let (new_state, playbin_new_state) = if self.is_playing {
-            (false, gst::State::Paused)
+            (false, State::Paused)
         } else {
-            (true, gst::State::Playing)
+            (true, State::Playing)
         };
 
         self.is_playing = new_state;
-        self.playbin
+        self.playing_info
             .as_ref()
             .unwrap()
+            .pipeline
             .set_state(playbin_new_state)
             .unwrap();
     }
 
     fn play_new_video(&mut self) {
-        if self.playbin.is_some() {
-            self.playbin
-                .as_ref()
-                .unwrap()
-                .set_state(gst::State::Null)
-                .unwrap();
-            self.playbin
-                .as_ref()
-                .unwrap()
-                .set_property("uri", self.video_uri.as_ref().unwrap());
+        if self.playing_info.is_some() {
+            let play_info = self.playing_info.as_ref().unwrap();
+            play_info.pipeline.set_state(State::Null).unwrap();
+
+            let clip =
+                ges::UriClip::new(self.video_uri.as_ref().unwrap()).expect("failed to create clip");
+
+            play_info
+                .layer
+                .remove_clip(&self.playing_info.as_ref().unwrap().clip)
+                .expect("could not delete");
+
+            play_info.layer.add_clip(&clip).expect("unable to add clip");
         } else {
-            let playbin = gst::ElementFactory::make("playbin")
-                .name("playbin")
-                .property("uri", self.video_uri.as_ref().unwrap())
-                .property("video-sink", &self.gtk_sink)
-                .build()
-                .unwrap();
+            let timeline = ges::Timeline::new_audio_video();
+            let layer = timeline.append_layer();
+            let pipeline = ges::Pipeline::new();
+            pipeline.set_timeline(&timeline).unwrap();
 
-            let flags = playbin.property_value("flags");
-            let flags_class = FlagsClass::with_type(flags.type_()).unwrap();
+            let clip =
+                ges::UriClip::new(self.video_uri.as_ref().unwrap()).expect("failed to create clip");
+            layer.add_clip(&clip).unwrap();
 
-            let flags = flags_class
-                .builder_with_value(flags)
-                .unwrap()
-                .set_by_nick("audio")
-                .set_by_nick("video")
-                .unset_by_nick("text")
-                .build()
-                .unwrap();
-            playbin.set_property_from_value("flags", &flags);
+            pipeline.set_video_sink(Some(&self.gtk_sink));
 
-            self.playbin = Some(playbin);
+            let info = PlayingInfo {
+                pipeline,
+                layer,
+                clip,
+                timeline,
+            };
+
+            self.playing_info = Some(info);
         }
 
-        self.playbin.as_ref().unwrap().set_property("mute", false);
-        self.playbin
+        self.playing_info
             .as_ref()
             .unwrap()
-            .set_state(gst::State::Playing)
+            .pipeline
+            .set_state(State::Playing)
             .unwrap();
 
         self.is_mute = false;
-    }
-
-    fn save_sample(sample: &gst::Sample) {
-        let buffer = sample.buffer().unwrap();
-
-        let caps = sample.caps().expect("sample without caps");
-        let info = gst_video::VideoInfo::from_caps(caps).expect("Failed to parse caps");
-
-        let frame = gst_video::VideoFrameRef::from_buffer_ref_readable(buffer, &info).unwrap();
-
-        let img = image::FlatSamples::<&[u8]> {
-            samples: frame.plane_data(0).unwrap(),
-            layout: image::flat::SampleLayout {
-                channels: 3,
-                channel_stride: 1,
-                width: frame.width(),
-                width_stride: 3,
-                height: frame.height(),
-                height_stride: frame.plane_stride()[0] as usize,
-            },
-            color_hint: Some(image::ColorType::Rgb8),
-        };
-
-        let save_img =
-            RgbImage::from_raw(frame.width(), frame.height(), Vec::from(img.samples)).unwrap();
-
-        thread::spawn(move || {
-            let thumbnail_save_path =
-                std::path::PathBuf::from("/home/fareed/Videos/export_frame.jpg");
-            save_img.save(&thumbnail_save_path).unwrap();
-        });
     }
 }

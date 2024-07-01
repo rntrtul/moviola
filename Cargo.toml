@@ -10,6 +10,7 @@ relm4-icons = "0.8.3"
 gst = { package = "gstreamer", version = "0.22.5" }
 gst_video = { package = "gstreamer-video", version = "0.22.5" }
 gst_app = { package = "gstreamer-app", version = "0.22.0" }
+ges = { package = "gstreamer-editing-services", version = "0.22.6" }
 gtk4 = { version = "0.8.2", features = ["v4_14"] }
 image = { version = "0.25.1", default-features = false, features = ["png", "jpeg"] }
 anyhow = "1.0.86"
