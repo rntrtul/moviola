@@ -23,12 +23,14 @@ enum CropType {
 #[derive(Debug)]
 pub enum EditControlsMsg {
     ExportFrame,
+    ExportVideo,
     CropMode(CropType),
 }
 
 #[derive(Debug)]
 pub enum EditControlsOutput {
     ExportFrame,
+    ExportVideo,
 }
 
 #[relm4::component(pub)]
@@ -103,6 +105,12 @@ impl SimpleComponent for EditControlsModel {
                         connect_clicked => EditControlsMsg::ExportFrame,
                     },
                 },
+
+                gtk::Button {
+                    set_label: "save",
+
+                    connect_clicked => EditControlsMsg::ExportVideo
+                }
             },
         }
     }
@@ -128,6 +136,7 @@ impl SimpleComponent for EditControlsModel {
             EditControlsMsg::ExportFrame => {
                 sender.output(EditControlsOutput::ExportFrame).unwrap();
             }
+            EditControlsMsg::ExportVideo => sender.output(EditControlsOutput::ExportVideo).unwrap(),
         }
     }
 }

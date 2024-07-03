@@ -1,4 +1,10 @@
-use ges::prelude::{ExtractableExt, GESPipelineExt, LayerExt, TimelineExt, UriClipAssetExt};
+use std::time::SystemTime;
+
+use ges::gst_pbutils;
+use ges::prelude::{
+    EncodingProfileBuilder, ExtractableExt, GESPipelineExt, LayerExt, TimelineElementExt,
+    TimelineExt, UriClipAssetExt,
+};
 use gst::prelude::*;
 use gst::{ClockTime, Element, SeekFlags, State};
 use gtk4::prelude::{BoxExt, ButtonExt, OrientableExt, WidgetExt};
@@ -35,6 +41,7 @@ pub enum VideoPlayerMsg {
     ToggleMute,
     SeekToPercent(f64),
     NewVideo(String),
+    ExportVideo,
 }
 
 #[derive(Debug)]
@@ -214,6 +221,72 @@ impl Component for VideoPlayerModel {
                         .expect("unable to save exported frame");
                 }
             }
+            VideoPlayerMsg::ExportVideo => {
+                let now = SystemTime::now();
+                let info = self.playing_info.as_ref().unwrap();
+                info.pipeline.set_state(State::Paused).unwrap();
+
+                let audio_profile = gst_pbutils::EncodingAudioProfile::builder(
+                    &gst::Caps::builder("audio/mpeg").build(),
+                )
+                    .build();
+                let video_profile = gst_pbutils::EncodingVideoProfile::builder(
+                    &gst::Caps::builder("video/x-h265").build(),
+                )
+                    .build();
+
+                let container_profile = gst_pbutils::EncodingContainerProfile::builder(
+                    &gst::Caps::builder("video/x-matroska").build(),
+                )
+                    .name("Container")
+                    .add_profile(video_profile)
+                    .add_profile(audio_profile)
+                    .build();
+
+                let out_uri = "file:///home/fareed/Videos/out.mkv";
+
+                info.pipeline
+                    .set_render_settings(&out_uri, &container_profile)
+                    .expect("unable to set render settings");
+                info.pipeline
+                    .set_mode(ges::PipelineFlags::RENDER)
+                    .expect("failed to set to render");
+
+                let start_time = self.video_duration.unwrap().mseconds() as f64
+                    * self.timeline.model().get_target_start_percent();
+                let end_time = self.video_duration.unwrap().mseconds() as f64
+                    * self.timeline.model().get_target_end_percent();
+                let duration = (end_time - start_time) as u64;
+
+                info.clip
+                    .set_inpoint(ClockTime::from_mseconds(start_time as u64));
+                info.clip.set_duration(ClockTime::from_mseconds(duration));
+
+                info.pipeline.set_state(State::Playing).unwrap();
+
+                let bus = info.pipeline.bus().unwrap();
+
+                for msg in bus.iter_timed(gst::ClockTime::NONE) {
+                    use gst::MessageView;
+
+                    match msg.view() {
+                        MessageView::Eos(..) => {
+                            println!("Done? in {:?}", now.elapsed());
+                            break;
+                        }
+                        MessageView::Error(err) => {
+                            println!(
+                                "Error from {:?}: {} ({:?})",
+                                err.src().map(|s| s.path_string()),
+                                err.error(),
+                                err.debug()
+                            );
+                            break;
+                        }
+                        _ => (),
+                    }
+                }
+            }
         }
 
         self.update_view(widgets, sender);
@@ -241,7 +314,6 @@ impl Component for VideoPlayerModel {
                     .unwrap();
 
                 self.video_duration = Some(asset.duration().expect("could not get duration"))
-
                 // let playbin_clone = self.ges.as_ref().unwrap().clone();
                 // todo: make this thread and hold handle on it, manually reset
                 //          (can also ensure it shutsdown during video switch)
@@ -354,7 +426,7 @@ impl VideoPlayerModel {
 
     fn play_new_video(&mut self) {
         if self.playing_info.is_some() {
-            let play_info = self.playing_info.as_ref().unwrap();
+            let mut play_info = self.playing_info.as_mut().unwrap();
             play_info.pipeline.set_state(State::Null).unwrap();
 
             let clip =
@@ -362,10 +434,11 @@ impl VideoPlayerModel {
 
             play_info
                 .layer
-                .remove_clip(&self.playing_info.as_ref().unwrap().clip)
+                .remove_clip(&play_info.clip)
                 .expect("could not delete");
 
             play_info.layer.add_clip(&clip).expect("unable to add clip");
+            play_info.clip = clip;
         } else {
             let timeline = ges::Timeline::new_audio_video();
             let layer = timeline.append_layer();
@@ -377,6 +450,9 @@ impl VideoPlayerModel {
             layer.add_clip(&clip).unwrap();
 
             pipeline.set_video_sink(Some(&self.gtk_sink));
+            // fixme: audio does not play
+            let audio_sink = gst::ElementFactory::make("autoaudiosink").build().unwrap();
+            pipeline.preview_set_audio_sink(Some(&audio_sink));
 
             let info = PlayingInfo {
                 pipeline,

@@ -19,6 +19,7 @@ pub(super) struct App {
 #[derive(Debug)]
 pub(super) enum AppMsg {
     ExportFrame,
+    ExportVideo,
     OpenFile,
     SetVideo(String),
     Quit,
@@ -135,6 +136,7 @@ impl SimpleComponent for App {
             .launch(())
             .forward(sender.input_sender(), |msg| match msg {
                 EditControlsOutput::ExportFrame => AppMsg::ExportFrame,
+                EditControlsOutput::ExportVideo => AppMsg::ExportVideo,
             });
 
         let model = Self {
@@ -170,6 +172,9 @@ impl SimpleComponent for App {
             }
             AppMsg::ExportFrame => {
                 self.video_player.emit(VideoPlayerMsg::ExportFrame);
+            }
+            AppMsg::ExportVideo => {
+                self.video_player.emit(VideoPlayerMsg::ExportVideo);
             }
         }
     }

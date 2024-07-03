@@ -215,6 +215,16 @@ impl Component for TimelineModel {
 }
 
 impl TimelineModel {
+    pub fn get_target_start_percent(&self) -> f64 {
+        // self.handle_manager.as_ref().unwrap().start_handle.x();
+
+        0.02
+    }
+
+    pub fn get_target_end_percent(&self) -> f64 {
+        0.05
+    }
+
     fn remove_timeline_thumbnails(timeline: &gtk::Box) {
         if timeline.first_child().is_some() {
             for _ in 0..ThumbnailManager::get_number_of_thumbnails() {
