@@ -1,3 +1,4 @@
+use std::thread;
 use std::time::SystemTime;
 
 use ges::gst_pbutils;
@@ -266,26 +267,28 @@ impl Component for VideoPlayerModel {
 
                 let bus = info.pipeline.bus().unwrap();
 
-                for msg in bus.iter_timed(gst::ClockTime::NONE) {
-                    use gst::MessageView;
+                thread::spawn(move || {
+                    for msg in bus.iter_timed(gst::ClockTime::NONE) {
+                        use gst::MessageView;
 
-                    match msg.view() {
-                        MessageView::Eos(..) => {
-                            println!("Done? in {:?}", now.elapsed());
-                            break;
+                        match msg.view() {
+                            MessageView::Eos(..) => {
+                                println!("Done? in {:?}", now.elapsed());
+                                break;
+                            }
+                            MessageView::Error(err) => {
+                                println!(
+                                    "Error from {:?}: {} ({:?})",
+                                    err.src().map(|s| s.path_string()),
+                                    err.error(),
+                                    err.debug()
+                                );
+                                break;
+                            }
+                            _ => (),
                         }
-                        MessageView::Error(err) => {
-                            println!(
-                                "Error from {:?}: {} ({:?})",
-                                err.src().map(|s| s.path_string()),
-                                err.error(),
-                                err.debug()
-                            );
-                            break;
-                        }
-                        _ => (),
                     }
-                }
+                });
             }
         }
 

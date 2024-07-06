@@ -11,6 +11,14 @@ pub struct HandleManager {
 }
 
 impl HandleManager {
+    pub fn set_start_pos(&self, pos: f64) {
+        self.start_handle.set_percent_pos(pos);
+    }
+
+    pub fn set_end_pos(&self, pos: f64) {
+        self.end_handle.set_percent_pos(pos);
+    }
+
     pub fn try_set_start_rel_x(&self, offset: i32, container_width: i32) -> bool {
         let end_handle_pos = container_width - self.end_handle.x();
         let target_position = self.start_handle.x() + offset;

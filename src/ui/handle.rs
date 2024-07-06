@@ -15,6 +15,8 @@ pub struct HandleWidget {
     #[property(get, set)]
     pub target_x: Cell<i32>,
     #[property(get, set)]
+    pub percent_pos: Cell<f64>,
+    #[property(get, set)]
     is_handle: Cell<bool>,
     #[property(get, set)]
     is_start: Cell<bool>,
@@ -49,7 +51,7 @@ impl WidgetImpl for HandleWidget {
         let widget = self.obj();
 
         let height_percent = if self.is_handle.get() { 0.75 } else { 1.0 };
-        let instep_percent = if height_percent == 0.75 { 0.125 } else { 0. };
+        let instep_percent = if self.is_handle.get() { 0.125 } else { 0. };
 
         let target_height = (widget.height() as f32) * height_percent;
         let y_instep = widget.height() as f32 * instep_percent;

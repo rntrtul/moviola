@@ -45,6 +45,11 @@ impl Component for TimelineModel {
 
     view! {
         gtk::Overlay {
+            connect_get_child_position => move |_, _| {
+                // fixme: adjust handlebar position on resize of timeline
+                return None;
+            },
+
             #[wrap(Some)]
             set_child: timeline = &gtk::Box {
                 set_hexpand: true,
@@ -129,6 +134,8 @@ impl Component for TimelineModel {
             end_handle: Rc::new(widgets.end_handle.clone()),
         };
 
+        handle_manager.set_end_pos(1.0);
+
         model.handle_manager = Some(handle_manager);
 
         ComponentParts { model, widgets }
@@ -179,6 +186,10 @@ impl Component for TimelineModel {
                 {
                     let seek_percent =
                         widgets.start_handle.target_x() as f64 / widgets.timeline.width() as f64;
+                    self.handle_manager
+                        .as_ref()
+                        .unwrap()
+                        .set_start_pos(seek_percent);
                     sender.input(TimelineMsg::SeekToPercent(seek_percent));
                 }
             }
@@ -191,6 +202,10 @@ impl Component for TimelineModel {
                 {
                     let seek_percent =
                         widgets.end_handle.target_x() as f64 / widgets.timeline.width() as f64;
+                    self.handle_manager
+                        .as_ref()
+                        .unwrap()
+                        .set_end_pos(seek_percent);
                     sender.input(TimelineMsg::SeekToPercent(seek_percent));
                 }
             }
@@ -216,13 +231,19 @@ impl Component for TimelineModel {
 
 impl TimelineModel {
     pub fn get_target_start_percent(&self) -> f64 {
-        // self.handle_manager.as_ref().unwrap().start_handle.x();
-
-        0.02
+        self.handle_manager
+            .as_ref()
+            .unwrap()
+            .start_handle
+            .percent_pos()
     }
 
     pub fn get_target_end_percent(&self) -> f64 {
-        0.05
+        self.handle_manager
+            .as_ref()
+            .unwrap()
+            .end_handle
+            .percent_pos()
     }
 
     fn remove_timeline_thumbnails(timeline: &gtk::Box) {
@@ -236,7 +257,7 @@ impl TimelineModel {
 
     fn populate_timeline(timeline: &gtk::Box) {
         // todo: see if can reuse picture widget instead of discarding. without storing ref to all of them
-        Self::remove_timeline_thumbnails(timeline);
+        // Self::remove_timeline_thumbnails(timeline);
 
         for path in ThumbnailManager::get_thumbnail_paths() {
             let file = gio::File::for_parse_name(path.as_str());
