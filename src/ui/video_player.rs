@@ -1,5 +1,5 @@
 use std::thread;
-use std::time::SystemTime;
+use std::time::{Duration, SystemTime};
 
 use ges::gst_pbutils;
 use ges::prelude::{
@@ -316,43 +316,39 @@ impl Component for VideoPlayerModel {
                     .downcast::<ges::UriClipAsset>()
                     .unwrap();
 
-                self.video_duration = Some(asset.duration().expect("could not get duration"))
-                // let playbin_clone = self.ges.as_ref().unwrap().clone();
-                // todo: make this thread and hold handle on it, manually reset
-                //          (can also ensure it shutsdown during video switch)
-                //          how to handle sending commands?
-                // sender.command(|out, shutdown| {
-                //     shutdown
-                //         .register(async move {
-                //             loop {
-                //                 tokio::time::sleep(Duration::from_millis(30)).await;
-                //                 if playbin_clone.state(Some(ClockTime::ZERO)).1
-                //                     == State::Playing
-                //                 {
-                //                     out.send(VideoPlayerCommandMsg::UpdateSeekPos).unwrap();
-                //                 }
-                //             }
-                //         })
-                //         .drop_on_shutdown()
-                // })
+                self.video_duration = Some(asset.duration().expect("could not get duration"));
+
+                sender.command(|out, shutdown| {
+                    shutdown
+                        .register(async move {
+                            loop {
+                                tokio::time::sleep(Duration::from_millis(125)).await;
+                                out.send(VideoPlayerCommandMsg::UpdateSeekPos).unwrap();
+                            }
+                        })
+                        .drop_on_shutdown()
+                });
             }
             VideoPlayerCommandMsg::UpdateSeekPos => {
-                if self.video_duration == None {
+                let info = self.playing_info.as_ref().unwrap();
+
+                if self.video_duration == None
+                    || info.pipeline.state(Some(ClockTime::ZERO)).1 != State::Playing
+                {
                     return;
                 }
-                // fixme: how to get current position (maybe clip.internal_time_from_timeline_time)
-                // let query_val = self.playbin.as_ref().unwrap().query_position::<ClockTime>();
-                // match query_val {
-                //     Some(curr_position) => {
-                //         let percent = curr_position.mseconds() as f64
-                //             / self.video_duration.unwrap().mseconds() as f64;
-                //         self.timeline
-                //             .sender()
-                //             .send(TimelineMsg::UpdateSeekBarPos(percent))
-                //             .unwrap();
-                //     }
-                //     None => {}
-                // }
+                let query_val = info.pipeline.query_position::<ClockTime>();
+                match query_val {
+                    Some(curr_position) => {
+                        let percent = curr_position.mseconds() as f64
+                            / self.video_duration.unwrap().mseconds() as f64;
+                        self.timeline
+                            .sender()
+                            .send(TimelineMsg::UpdateSeekBarPos(percent))
+                            .unwrap();
+                    }
+                    None => {}
+                }
             }
         }
     }

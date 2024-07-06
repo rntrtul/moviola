@@ -173,6 +173,7 @@ impl Component for TimelineModel {
             }
             TimelineMsg::UpdateSeekBarPos(percent) => {
                 let target_bar_pos = (widgets.timeline.width() as f64 * percent) as i32;
+                // todo: animate between position so smoother.
                 if target_bar_pos != widgets.seek_bar.margin_start() {
                     widgets.seek_bar.set_margin_start(target_bar_pos);
                 }
