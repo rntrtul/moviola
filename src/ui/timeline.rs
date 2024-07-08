@@ -22,6 +22,7 @@ pub enum TimelineMsg {
     MoveStartEnd,
     MoveEndTo(i32),
     MoveEndEnd,
+    DragBegin,
     UpdateSeekBarPos(f64),
     SeekToPercent(f64),
 }
@@ -81,6 +82,8 @@ impl Component for TimelineModel {
                 set_valign: gtk::Align::Center,
 
                 add_controller = gtk::GestureDrag {
+                    connect_drag_begin[sender] => move |_,_,_| {sender.input(TimelineMsg::DragBegin)},
+
                     connect_drag_update[sender] => move |drag,offset_x,_| {
                         let (start_x, _) = drag.start_point().unwrap();
                         let targ_x = (start_x + offset_x) as i32;
@@ -98,6 +101,8 @@ impl Component for TimelineModel {
                 set_valign: gtk::Align::Center,
 
                 add_controller = gtk::GestureDrag {
+                    connect_drag_begin[sender] => move |_,_,_| {sender.input(TimelineMsg::DragBegin)},
+
                     connect_drag_update[sender] => move |drag,offset_x,_| {
                         let (start_x, _) = drag.start_point().unwrap();
                         let targ_x = (start_x + offset_x) as i32;
@@ -178,6 +183,9 @@ impl Component for TimelineModel {
                     widgets.seek_bar.set_margin_start(target_bar_pos);
                 }
             }
+            TimelineMsg::DragBegin => {
+                widgets.seek_bar.set_visible(false);
+            }
             TimelineMsg::MoveStartTo(pos) => {
                 if self
                     .handle_manager
@@ -210,8 +218,14 @@ impl Component for TimelineModel {
                     sender.input(TimelineMsg::SeekToPercent(seek_percent));
                 }
             }
-            TimelineMsg::MoveStartEnd => self.handle_manager.as_ref().unwrap().set_start_margin(),
-            TimelineMsg::MoveEndEnd => self.handle_manager.as_ref().unwrap().set_end_margin(),
+            TimelineMsg::MoveStartEnd => {
+                self.handle_manager.as_ref().unwrap().set_start_margin();
+                widgets.seek_bar.set_visible(true);
+            }
+            TimelineMsg::MoveEndEnd => {
+                self.handle_manager.as_ref().unwrap().set_end_margin();
+                widgets.seek_bar.set_visible(true);
+            }
         }
     }
 
