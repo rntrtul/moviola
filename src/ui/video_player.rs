@@ -6,7 +6,7 @@ use ges::prelude::{
     EncodingProfileBuilder, ExtractableExt, GESContainerExt, GESPipelineExt, LayerExt,
     TimelineElementExt, TimelineExt, UriClipAssetExt, UriClipExt,
 };
-use ges::{gst_pbutils, PipelineFlags};
+use ges::{gst_pbutils, Effect, PipelineFlags};
 use gst::prelude::*;
 use gst::{ClockTime, Element, SeekFlags, State};
 use gst_video::VideoOrientationMethod;
@@ -21,7 +21,6 @@ struct PlayingInfo {
     clip: ges::UriClip,
     layer: ges::Layer,
     timeline: ges::Timeline,
-    orientation_effect: Option<ges::Effect>,
 }
 
 // todo: dispose of stuff on quit
@@ -400,7 +399,7 @@ impl VideoPlayerModel {
                 .set_mode(PipelineFlags::FULL_PREVIEW)
                 .expect("unable to preview");
             pipeline.set_video_sink(Some(&self.gtk_sink));
-            // fixme: audio does not play
+            // fixme: audio does not play (maybe need to choose audio sink)
             let audio_sink = gst::ElementFactory::make("autoaudiosink").build().unwrap();
             pipeline.set_audio_sink(Some(&audio_sink));
 
@@ -409,7 +408,6 @@ impl VideoPlayerModel {
                 layer,
                 clip,
                 timeline,
-                orientation_effect: None,
             };
 
             self.playing_info = Some(info);
@@ -426,7 +424,7 @@ impl VideoPlayerModel {
     }
 
     fn build_container_profile() -> EncodingContainerProfile {
-        // todo: pass in audio and video targets
+        // todo: pass in audio and video targets and target resolution/aspect ratio
         let audio_profile =
             gst_pbutils::EncodingAudioProfile::builder(&gst::Caps::builder("audio/mpeg").build())
                 .build();
@@ -455,32 +453,35 @@ impl VideoPlayerModel {
             _ => panic!("unknown value given"),
         }
     }
-    fn add_orientation(&self, orientation: VideoOrientationMethod) {
-        // todo: delete previous effect on clip.
+
+    fn replace_or_add_effect(&self, effect: &Effect, effect_name: &str) {
         let info = self.playing_info.as_ref().unwrap();
-        let val = Self::video_orientation_method_to_val(orientation);
 
-        let effect = format!("autovideoflip video-direction={val}");
-        let flip = ges::Effect::new(effect.as_str()).expect("could not make flip");
-        flip.set_name(Some("orientation"))
-            .expect("Unable to set name");
-
-        let prev_flip = info
+        let found_element = info
             .clip
             .children(false)
             .into_iter()
-            .find(|child| child.name().unwrap() == "orientation");
+            .find(|child| child.name().unwrap() == effect_name);
 
-        if let Some(pre_flip) = prev_flip {
+        if let Some(prev_effect) = found_element {
             info.clip
-                .remove(&pre_flip)
+                .remove(&prev_effect)
                 .expect("could not delete previous effect");
         }
-        for child in info.clip.children(false) {
-            println!("child name: {:?}", child.name());
-        }
 
-        info.clip.add(&flip).unwrap();
+        info.clip.add(effect).unwrap();
+    }
+
+    fn add_orientation(&self, orientation: VideoOrientationMethod) {
+        // todo: delete previous effect on clip.
+        let val = Self::video_orientation_method_to_val(orientation);
+
+        let effect = format!("autovideoflip video-direction={val}");
+        let flip = Effect::new(effect.as_str()).expect("could not make flip");
+        flip.set_name(Some("orientation"))
+            .expect("Unable to set name");
+
+        self.replace_or_add_effect(&flip, "orientation");
     }
 
     fn export_video(&self) {

@@ -9,7 +9,7 @@ use crate::ui::edit_controls::CropType::{
 pub struct EditControlsModel {
     crop_mode: EditControlsMsg,
     orientation: VideoOrientationMethod,
-    rotation_angle: u32,
+    rotation_angle: i32,
     is_flip_vertical: bool,
     is_flip_horizontal: bool,
 }
@@ -31,6 +31,9 @@ pub enum EditControlsMsg {
     ExportVideo,
     CropMode(CropType),
     RotateRight90,
+    RotateLeft90,
+    FlipHorizontally,
+    FlipVertically,
 }
 
 #[derive(Debug)]
@@ -94,15 +97,18 @@ impl SimpleComponent for EditControlsModel {
                 gtk::Button {
                      set_icon_name: "rotate-left",
                      add_css_class: "flat",
+
+                    connect_clicked => EditControlsMsg::RotateLeft90,
                 },
 
                 gtk::Button {
                     set_icon_name: "panorama-horizontal",
+                    connect_clicked => EditControlsMsg::FlipHorizontally,
                 },
 
                 gtk::Button {
                     set_icon_name: "panorama-vertical",
-
+                    connect_clicked => EditControlsMsg::FlipVertically,
                 },
 
                 gtk::Box{
@@ -152,7 +158,7 @@ impl SimpleComponent for EditControlsModel {
             EditControlsMsg::ExportVideo => sender.output(EditControlsOutput::ExportVideo).unwrap(),
             EditControlsMsg::RotateRight90 => {
                 self.rotation_angle += 90;
-                if self.rotation_angle > 360 {
+                if self.rotation_angle == 360 {
                     self.rotation_angle = 0;
                 }
                 self.update_video_orientation_val();
@@ -160,6 +166,20 @@ impl SimpleComponent for EditControlsModel {
                     .output(EditControlsOutput::OrientVideo(self.orientation))
                     .unwrap()
             }
+            EditControlsMsg::RotateLeft90 => {
+                self.rotation_angle = if self.rotation_angle == 0 {
+                    270
+                } else {
+                    self.rotation_angle - 90
+                };
+                self.update_video_orientation_val();
+
+                sender
+                    .output(EditControlsOutput::OrientVideo(self.orientation))
+                    .unwrap()
+            }
+            EditControlsMsg::FlipHorizontally => {}
+            EditControlsMsg::FlipVertically => {}
         }
     }
 }
