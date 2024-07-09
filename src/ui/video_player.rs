@@ -1,13 +1,15 @@
 use std::thread;
 use std::time::{Duration, SystemTime};
 
-use ges::gst_pbutils;
+use ges::gst_pbutils::EncodingContainerProfile;
 use ges::prelude::{
-    EncodingProfileBuilder, ExtractableExt, GESPipelineExt, LayerExt, TimelineElementExt,
-    TimelineExt, UriClipAssetExt,
+    EncodingProfileBuilder, ExtractableExt, GESContainerExt, GESPipelineExt, LayerExt,
+    TimelineElementExt, TimelineExt, UriClipAssetExt, UriClipExt,
 };
+use ges::{gst_pbutils, PipelineFlags};
 use gst::prelude::*;
 use gst::{ClockTime, Element, SeekFlags, State};
+use gst_video::VideoOrientationMethod;
 use gtk4::prelude::{BoxExt, ButtonExt, OrientableExt, WidgetExt};
 use relm4::adw::gdk;
 use relm4::*;
@@ -19,6 +21,7 @@ struct PlayingInfo {
     clip: ges::UriClip,
     layer: ges::Layer,
     timeline: ges::Timeline,
+    orientation_effect: Option<ges::Effect>,
 }
 
 // todo: dispose of stuff on quit
@@ -41,6 +44,7 @@ pub enum VideoPlayerMsg {
     TogglePlayPause,
     ToggleMute,
     SeekToPercent(f64),
+    OrientVideo(VideoOrientationMethod),
     NewVideo(String),
     ExportVideo,
 }
@@ -223,72 +227,10 @@ impl Component for VideoPlayerModel {
                 }
             }
             VideoPlayerMsg::ExportVideo => {
-                let now = SystemTime::now();
-                let info = self.playing_info.as_ref().unwrap();
-                info.pipeline.set_state(State::Paused).unwrap();
-
-                let audio_profile = gst_pbutils::EncodingAudioProfile::builder(
-                    &gst::Caps::builder("audio/mpeg").build(),
-                )
-                    .build();
-                let video_profile = gst_pbutils::EncodingVideoProfile::builder(
-                    &gst::Caps::builder("video/x-h265").build(),
-                )
-                    .build();
-
-                let container_profile = gst_pbutils::EncodingContainerProfile::builder(
-                    &gst::Caps::builder("video/x-matroska").build(),
-                )
-                    .name("Container")
-                    .add_profile(video_profile)
-                    .add_profile(audio_profile)
-                    .build();
-
-                let out_uri = "file:///home/fareed/Videos/out.mkv";
-
-                info.pipeline
-                    .set_render_settings(&out_uri, &container_profile)
-                    .expect("unable to set render settings");
-                info.pipeline
-                    .set_mode(ges::PipelineFlags::RENDER)
-                    .expect("failed to set to render");
-
-                let start_time = self.video_duration.unwrap().mseconds() as f64
-                    * self.timeline.model().get_target_start_percent();
-                let end_time = self.video_duration.unwrap().mseconds() as f64
-                    * self.timeline.model().get_target_end_percent();
-                let duration = (end_time - start_time) as u64;
-
-                info.clip
-                    .set_inpoint(ClockTime::from_mseconds(start_time as u64));
-                info.clip.set_duration(ClockTime::from_mseconds(duration));
-
-                info.pipeline.set_state(State::Playing).unwrap();
-
-                let bus = info.pipeline.bus().unwrap();
-
-                thread::spawn(move || {
-                    for msg in bus.iter_timed(gst::ClockTime::NONE) {
-                        use gst::MessageView;
-
-                        match msg.view() {
-                            MessageView::Eos(..) => {
-                                println!("Done? in {:?}", now.elapsed());
-                                break;
-                            }
-                            MessageView::Error(err) => {
-                                println!(
-                                    "Error from {:?}: {} ({:?})",
-                                    err.src().map(|s| s.path_string()),
-                                    err.error(),
-                                    err.debug()
-                                );
-                                break;
-                            }
-                            _ => (),
-                        }
-                    }
-                });
+                self.export_video();
+            }
+            VideoPlayerMsg::OrientVideo(orientation) => {
+                self.add_orientation(orientation);
             }
         }
 
@@ -405,6 +347,11 @@ impl VideoPlayerModel {
     fn toggle_mute(&mut self) {
         // fixme: work with gesPipeline
         self.is_mute = !self.is_mute;
+        self.playing_info
+            .as_ref()
+            .unwrap()
+            .clip
+            .set_mute(self.is_mute);
     }
 
     fn video_toggle_play_pause(&mut self) {
@@ -446,18 +393,23 @@ impl VideoPlayerModel {
 
             let clip =
                 ges::UriClip::new(self.video_uri.as_ref().unwrap()).expect("failed to create clip");
+            clip.set_mute(false);
             layer.add_clip(&clip).unwrap();
 
+            pipeline
+                .set_mode(PipelineFlags::FULL_PREVIEW)
+                .expect("unable to preview");
             pipeline.set_video_sink(Some(&self.gtk_sink));
             // fixme: audio does not play
             let audio_sink = gst::ElementFactory::make("autoaudiosink").build().unwrap();
-            pipeline.preview_set_audio_sink(Some(&audio_sink));
+            pipeline.set_audio_sink(Some(&audio_sink));
 
             let info = PlayingInfo {
                 pipeline,
                 layer,
                 clip,
                 timeline,
+                orientation_effect: None,
             };
 
             self.playing_info = Some(info);
@@ -471,5 +423,117 @@ impl VideoPlayerModel {
             .unwrap();
 
         self.is_mute = false;
+    }
+
+    fn build_container_profile() -> EncodingContainerProfile {
+        // todo: pass in audio and video targets
+        let audio_profile =
+            gst_pbutils::EncodingAudioProfile::builder(&gst::Caps::builder("audio/mpeg").build())
+                .build();
+        let video_profile =
+            gst_pbutils::EncodingVideoProfile::builder(&gst::Caps::builder("video/x-h264").build())
+                .build();
+
+        EncodingContainerProfile::builder(&gst::Caps::builder("video/x-matroska").build())
+            .name("Container")
+            .add_profile(video_profile)
+            .add_profile(audio_profile)
+            .build()
+    }
+    fn video_orientation_method_to_val(method: VideoOrientationMethod) -> u8 {
+        match method {
+            VideoOrientationMethod::Identity => 0,
+            VideoOrientationMethod::_90r => 1,
+            VideoOrientationMethod::_180 => 2,
+            VideoOrientationMethod::_90l => 3,
+            VideoOrientationMethod::Horiz => 4,
+            VideoOrientationMethod::Vert => 5,
+            VideoOrientationMethod::UlLr => 6,
+            VideoOrientationMethod::UrLl => 7,
+            VideoOrientationMethod::Auto => 8,
+            VideoOrientationMethod::Custom => 9,
+            _ => panic!("unknown value given"),
+        }
+    }
+    fn add_orientation(&self, orientation: VideoOrientationMethod) {
+        // todo: delete previous effect on clip.
+        let info = self.playing_info.as_ref().unwrap();
+        let val = Self::video_orientation_method_to_val(orientation);
+
+        let effect = format!("autovideoflip video-direction={val}");
+        let flip = ges::Effect::new(effect.as_str()).expect("could not make flip");
+        flip.set_name(Some("orientation"))
+            .expect("Unable to set name");
+
+        let prev_flip = info
+            .clip
+            .children(false)
+            .into_iter()
+            .find(|child| child.name().unwrap() == "orientation");
+
+        if let Some(pre_flip) = prev_flip {
+            info.clip
+                .remove(&pre_flip)
+                .expect("could not delete previous effect");
+        }
+        for child in info.clip.children(false) {
+            println!("child name: {:?}", child.name());
+        }
+
+        info.clip.add(&flip).unwrap();
+    }
+
+    fn export_video(&self) {
+        let now = SystemTime::now();
+        let info = self.playing_info.as_ref().unwrap();
+        info.pipeline.set_state(State::Paused).unwrap();
+
+        let out_uri = "file:///home/fareed/Videos/out.mkv";
+        let container_profile = Self::build_container_profile();
+
+        info.pipeline
+            .set_render_settings(&out_uri, &container_profile)
+            .expect("unable to set render settings");
+        // todo: use smart_render?
+        info.pipeline
+            .set_mode(ges::PipelineFlags::RENDER)
+            .expect("failed to set to render");
+
+        let start_time = self.video_duration.unwrap().mseconds() as f64
+            * self.timeline.model().get_target_start_percent();
+        let end_time = self.video_duration.unwrap().mseconds() as f64
+            * self.timeline.model().get_target_end_percent();
+        let duration = (end_time - start_time) as u64;
+
+        info.clip
+            .set_inpoint(ClockTime::from_mseconds(start_time as u64));
+        info.clip.set_duration(ClockTime::from_mseconds(duration));
+
+        info.pipeline.set_state(State::Playing).unwrap();
+
+        let bus = info.pipeline.bus().unwrap();
+
+        thread::spawn(move || {
+            for msg in bus.iter_timed(gst::ClockTime::NONE) {
+                use gst::MessageView;
+
+                match msg.view() {
+                    MessageView::Eos(..) => {
+                        println!("Done? in {:?}", now.elapsed());
+                        break;
+                    }
+                    MessageView::Error(err) => {
+                        println!(
+                            "Error from {:?}: {} ({:?})",
+                            err.src().map(|s| s.path_string()),
+                            err.error(),
+                            err.debug()
+                        );
+                        break;
+                    }
+                    _ => (),
+                }
+            }
+        });
     }
 }

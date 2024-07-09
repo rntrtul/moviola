@@ -1,3 +1,4 @@
+use gst_video::VideoOrientationMethod;
 use gtk::glib;
 use gtk::prelude::{ApplicationExt, GtkWindowExt, OrientableExt, WidgetExt};
 use gtk4::gio;
@@ -22,6 +23,7 @@ pub(super) enum AppMsg {
     ExportVideo,
     OpenFile,
     SetVideo(String),
+    Orient(VideoOrientationMethod),
     Quit,
 }
 
@@ -137,6 +139,7 @@ impl SimpleComponent for App {
             .forward(sender.input_sender(), |msg| match msg {
                 EditControlsOutput::ExportFrame => AppMsg::ExportFrame,
                 EditControlsOutput::ExportVideo => AppMsg::ExportVideo,
+                EditControlsOutput::OrientVideo(orientation) => AppMsg::Orient(orientation),
             });
 
         let model = Self {
@@ -171,10 +174,15 @@ impl SimpleComponent for App {
                 self.video_is_open = true;
             }
             AppMsg::ExportFrame => {
+                // todo: do directly in controller init
                 self.video_player.emit(VideoPlayerMsg::ExportFrame);
             }
             AppMsg::ExportVideo => {
                 self.video_player.emit(VideoPlayerMsg::ExportVideo);
+            }
+            AppMsg::Orient(orientation) => {
+                self.video_player
+                    .emit(VideoPlayerMsg::OrientVideo(orientation));
             }
         }
     }
