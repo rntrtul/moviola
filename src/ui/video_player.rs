@@ -371,7 +371,7 @@ impl VideoPlayerModel {
 
     fn play_new_video(&mut self) {
         if self.playing_info.is_some() {
-            let mut play_info = self.playing_info.as_mut().unwrap();
+            let play_info = self.playing_info.as_mut().unwrap();
             play_info.pipeline.set_state(State::Null).unwrap();
 
             let clip =
@@ -474,6 +474,7 @@ impl VideoPlayerModel {
 
     fn add_orientation(&self, orientation: VideoOrientationMethod) {
         // todo: delete previous effect on clip.
+        // todo: apply on preview
         let val = Self::video_orientation_method_to_val(orientation);
 
         let effect = format!("autovideoflip video-direction={val}");
@@ -497,7 +498,7 @@ impl VideoPlayerModel {
             .expect("unable to set render settings");
         // todo: use smart_render?
         info.pipeline
-            .set_mode(ges::PipelineFlags::RENDER)
+            .set_mode(PipelineFlags::RENDER)
             .expect("failed to set to render");
 
         let start_time = self.video_duration.unwrap().mseconds() as f64
@@ -515,7 +516,7 @@ impl VideoPlayerModel {
         let bus = info.pipeline.bus().unwrap();
 
         thread::spawn(move || {
-            for msg in bus.iter_timed(gst::ClockTime::NONE) {
+            for msg in bus.iter_timed(ClockTime::NONE) {
                 use gst::MessageView;
 
                 match msg.view() {

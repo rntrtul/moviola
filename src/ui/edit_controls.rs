@@ -178,7 +178,13 @@ impl SimpleComponent for EditControlsModel {
                     .output(EditControlsOutput::OrientVideo(self.orientation))
                     .unwrap()
             }
-            EditControlsMsg::FlipHorizontally => {}
+            EditControlsMsg::FlipHorizontally => {
+                self.is_flip_horizontal = !self.is_flip_horizontal;
+                self.update_video_orientation_val();
+                sender
+                    .output(EditControlsOutput::OrientVideo(self.orientation))
+                    .unwrap()
+            }
             EditControlsMsg::FlipVertically => {}
         }
     }
