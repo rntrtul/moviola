@@ -185,13 +185,20 @@ impl SimpleComponent for EditControlsModel {
                     .output(EditControlsOutput::OrientVideo(self.orientation))
                     .unwrap()
             }
-            EditControlsMsg::FlipVertically => {}
+            EditControlsMsg::FlipVertically => {
+                self.is_flip_vertical = !self.is_flip_vertical;
+                self.update_video_orientation_val();
+                sender
+                    .output(EditControlsOutput::OrientVideo(self.orientation))
+                    .unwrap()
+            }
         }
     }
 }
 
 impl EditControlsModel {
     fn update_video_orientation_val(&mut self) {
+        // todo: check scenarios for horizontal and rotations
         self.orientation = if self.is_flip_horizontal {
             VideoOrientationMethod::Horiz
         } else if self.is_flip_vertical {
