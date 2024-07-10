@@ -113,7 +113,7 @@ impl HandleWidget {
 }
 
 impl crate::ui::HandleWidget {
-    fn new(x: i32, is_handle: bool, is_start: bool) -> Self {
+    pub(crate) fn new(x: i32, is_handle: bool, is_start: bool) -> Self {
         glib::Object::builder()
             .property("x", x)
             .property("rel_x", 0)
