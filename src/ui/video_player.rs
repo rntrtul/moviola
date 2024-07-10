@@ -67,11 +67,10 @@ impl Component for VideoPlayerModel {
     view! {
         gtk::Box {
             set_orientation: gtk::Orientation::Vertical,
-            set_width_request: 670,
-            set_height_request: 390,
+            set_width_request: 640,
+            set_height_request: 360,
             set_halign: gtk::Align::Center,
             set_valign: gtk::Align::Center,
-            inline_css: "margin: 15px",
 
             gtk::Spinner {
                 #[watch]

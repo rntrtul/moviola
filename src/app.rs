@@ -2,10 +2,10 @@ use gst_video::VideoOrientationMethod;
 use gtk::glib;
 use gtk::prelude::{ApplicationExt, GtkWindowExt, OrientableExt, WidgetExt};
 use gtk4::gio;
-use gtk4::prelude::{ButtonExt, FileExt, GtkApplicationExt};
+use gtk4::prelude::{BoxExt, ButtonExt, FileExt, GtkApplicationExt};
 use relm4::{
     adw, gtk, main_application, Component, ComponentController, ComponentParts, ComponentSender,
-    Controller, SimpleComponent,
+    Controller, RelmWidgetExt, SimpleComponent,
 };
 
 use super::ui::edit_controls::{CropType, EditControlsModel, EditControlsOutput};
@@ -71,8 +71,7 @@ impl SimpleComponent for App {
     type Init = u8;
     view! {
         main_window = adw::ApplicationWindow::new(&main_application()) {
-            set_visible: true,
-            set_default_height: 480,
+            set_default_height: 600,
             set_default_width: 640,
 
             connect_close_request[sender] => move |_| {
@@ -94,6 +93,7 @@ impl SimpleComponent for App {
                 #[name = "content"]
                 gtk::Box{
                     set_orientation: gtk::Orientation::Vertical,
+                    set_margin_all: 10,
 
                     adw::StatusPage {
                         set_title: "Select Video",
@@ -115,15 +115,10 @@ impl SimpleComponent for App {
                         set_visible: false,
                     },
 
-                    #[name="stack"]
-                    adw::ViewStack {
-                        add_titled_with_icon: (model.edit_controls.widget(), Some("Edit"), "Edit", "cut"),
-                        add_titled: (&adw::StatusPage::builder().title("FFF").description("HERE").build(), Some("Convert"), "Convert"),
-                    },
+                    model.edit_controls.widget() {
+                        set_visible: false,
+                    }
                 },
-
-                #[name="switch_bar"]
-                add_bottom_bar = &adw::ViewSwitcherBar{},
             }
 
         }
@@ -158,10 +153,6 @@ impl SimpleComponent for App {
 
         let widgets = view_output!();
 
-        widgets.switch_bar.set_reveal(true);
-        widgets.switch_bar.set_stack(Some(&widgets.stack));
-        widgets.tool_bar_view.set_content(Some(&widgets.content));
-
         widgets.open_file_btn.connect_clicked(move |_| {
             sender.input(AppMsg::OpenFile);
         });
@@ -178,8 +169,10 @@ impl SimpleComponent for App {
             AppMsg::OpenFile => App::launch_file_opener(_sender),
             AppMsg::SetVideo(file_name) => {
                 self.video_player.emit(VideoPlayerMsg::NewVideo(file_name));
-                self.video_player.widget().set_visible(true);
                 self.video_is_open = true;
+
+                self.video_player.widget().set_visible(true);
+                self.edit_controls.widget().set_visible(true);
             }
             // todo: do directly in controller init
             AppMsg::ExportFrame => self.video_player.emit(VideoPlayerMsg::ExportFrame),
