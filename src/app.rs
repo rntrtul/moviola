@@ -8,7 +8,7 @@ use relm4::{
     Controller, SimpleComponent,
 };
 
-use super::ui::edit_controls::{EditControlsModel, EditControlsOutput};
+use super::ui::edit_controls::{CropType, EditControlsModel, EditControlsOutput};
 use super::ui::video_player::{VideoPlayerModel, VideoPlayerMsg};
 
 pub(super) struct App {
@@ -24,6 +24,9 @@ pub(super) enum AppMsg {
     OpenFile,
     SetVideo(String),
     Orient(VideoOrientationMethod),
+    ShowCropBox,
+    HideCropBox,
+    SetCropMode(CropType),
     Quit,
 }
 
@@ -134,12 +137,17 @@ impl SimpleComponent for App {
         let video_player: Controller<VideoPlayerModel> =
             VideoPlayerModel::builder().launch(2).detach();
 
+        // fixme: should stuff be pulled out of video player? only have gstreamer stuff there.
+        //          timeline and other ui out of it? VideoController?
         let edit_controls: Controller<EditControlsModel> = EditControlsModel::builder()
             .launch(())
             .forward(sender.input_sender(), |msg| match msg {
                 EditControlsOutput::ExportFrame => AppMsg::ExportFrame,
                 EditControlsOutput::ExportVideo => AppMsg::ExportVideo,
                 EditControlsOutput::OrientVideo(orientation) => AppMsg::Orient(orientation),
+                EditControlsOutput::ShowCropBox => AppMsg::ShowCropBox,
+                EditControlsOutput::HideCropBox => AppMsg::HideCropBox,
+                EditControlsOutput::SetCropMode(mode) => AppMsg::SetCropMode(mode),
             });
 
         let model = Self {
@@ -173,17 +181,15 @@ impl SimpleComponent for App {
                 self.video_player.widget().set_visible(true);
                 self.video_is_open = true;
             }
-            AppMsg::ExportFrame => {
-                // todo: do directly in controller init
-                self.video_player.emit(VideoPlayerMsg::ExportFrame);
-            }
-            AppMsg::ExportVideo => {
-                self.video_player.emit(VideoPlayerMsg::ExportVideo);
-            }
-            AppMsg::Orient(orientation) => {
-                self.video_player
-                    .emit(VideoPlayerMsg::OrientVideo(orientation));
-            }
+            // todo: do directly in controller init
+            AppMsg::ExportFrame => self.video_player.emit(VideoPlayerMsg::ExportFrame),
+            AppMsg::ExportVideo => self.video_player.emit(VideoPlayerMsg::ExportVideo),
+            AppMsg::Orient(orientation) => self
+                .video_player
+                .emit(VideoPlayerMsg::OrientVideo(orientation)),
+            AppMsg::ShowCropBox => self.video_player.emit(VideoPlayerMsg::ShowCropBox),
+            AppMsg::HideCropBox => self.video_player.emit(VideoPlayerMsg::HideCropBox),
+            AppMsg::SetCropMode(mode) => self.video_player.emit(VideoPlayerMsg::SetCropMode(mode)),
         }
     }
 }

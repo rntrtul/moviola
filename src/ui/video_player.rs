@@ -14,6 +14,7 @@ use gtk4::prelude::{BoxExt, ButtonExt, OrientableExt, WidgetExt};
 use relm4::adw::gdk;
 use relm4::*;
 
+use crate::ui::edit_controls::CropType;
 use crate::ui::timeline::{TimelineModel, TimelineMsg, TimelineOutput};
 
 struct PlayingInfo {
@@ -30,6 +31,7 @@ pub struct VideoPlayerModel {
     video_is_loaded: bool,
     is_playing: bool,
     is_mute: bool,
+    show_crop_box: bool,
     gtk_sink: Element,
     timeline: Controller<TimelineModel>,
     video_duration: Option<ClockTime>,
@@ -45,6 +47,9 @@ pub enum VideoPlayerMsg {
     SeekToPercent(f64),
     OrientVideo(VideoOrientationMethod),
     NewVideo(String),
+    ShowCropBox,
+    HideCropBox,
+    SetCropMode(CropType),
     ExportVideo,
 }
 
@@ -75,17 +80,24 @@ impl Component for VideoPlayerModel {
                 set_valign: gtk::Align::Center,
             },
 
-            #[name = "vid_frame"]
-            gtk::Box {
-                #[watch]
-                set_visible: model.video_is_loaded,
-                set_orientation: gtk::Orientation::Vertical,
+            gtk::Overlay{
+                #[wrap(Some)]
+                set_child : vid_frame = &gtk::Box {
+                    #[watch]
+                    set_visible: model.video_is_loaded,
+                    set_orientation: gtk::Orientation::Vertical,
 
-                add_controller = gtk::GestureClick {
-                    connect_pressed[sender] => move |_,_,_,_| {
-                        sender.input(VideoPlayerMsg::TogglePlayPause)
+                    add_controller = gtk::GestureClick {
+                        connect_pressed[sender] => move |_,_,_,_| {
+                            sender.input(VideoPlayerMsg::TogglePlayPause)
+                        }
                     }
-                }
+                },
+
+                add_overlay: crop_box = &super::CropBoxWidget::default(){
+                    #[watch]
+                    set_visible: model.show_crop_box,
+                },
             },
 
             gtk::Box {
@@ -160,6 +172,7 @@ impl Component for VideoPlayerModel {
             video_is_loaded: false,
             is_playing: false,
             is_mute: false,
+            show_crop_box: false,
             gtk_sink,
             timeline,
             video_duration: None,
@@ -230,6 +243,20 @@ impl Component for VideoPlayerModel {
             }
             VideoPlayerMsg::OrientVideo(orientation) => {
                 self.add_orientation(orientation);
+            }
+            VideoPlayerMsg::ShowCropBox => {
+                println!(
+                    "vid_frame w{}, h{}",
+                    widgets.vid_frame.width(),
+                    widgets.vid_frame.height()
+                );
+                widgets.crop_box.set_width(widgets.vid_frame.width());
+                widgets.crop_box.set_height(widgets.vid_frame.height());
+                self.show_crop_box = true
+            }
+            VideoPlayerMsg::HideCropBox => self.show_crop_box = false,
+            VideoPlayerMsg::SetCropMode(_mode) => {
+                //     todo: pass mode to widget
             }
         }
 
@@ -399,7 +426,7 @@ impl VideoPlayerModel {
                 .set_mode(PipelineFlags::FULL_PREVIEW)
                 .expect("unable to preview");
             pipeline.set_video_sink(Some(&self.gtk_sink));
-            // fixme: audio does not play (maybe need to choose audio sink)
+            // fixme: audio does not play (maybe need to choose audio stream)
             let audio_sink = gst::ElementFactory::make("autoaudiosink").build().unwrap();
             pipeline.set_audio_sink(Some(&audio_sink));
 
@@ -454,8 +481,8 @@ impl VideoPlayerModel {
         }
     }
 
-    fn replace_or_add_effect(&self, effect: &Effect, effect_name: &str) {
-        let info = self.playing_info.as_ref().unwrap();
+    fn replace_or_add_effect(&mut self, effect: &Effect, effect_name: &str) {
+        let info = self.playing_info.as_mut().unwrap();
 
         let found_element = info
             .clip
@@ -472,8 +499,7 @@ impl VideoPlayerModel {
         info.clip.add(effect).unwrap();
     }
 
-    fn add_orientation(&self, orientation: VideoOrientationMethod) {
-        // todo: delete previous effect on clip.
+    fn add_orientation(&mut self, orientation: VideoOrientationMethod) {
         // todo: apply on preview
         let val = Self::video_orientation_method_to_val(orientation);
 
@@ -488,6 +514,7 @@ impl VideoPlayerModel {
     fn export_video(&self) {
         let now = SystemTime::now();
         let info = self.playing_info.as_ref().unwrap();
+        // todo: use toggle_play_pause for setting state to keep ui insync
         info.pipeline.set_state(State::Paused).unwrap();
 
         let out_uri = "file:///home/fareed/Videos/out.mkv";

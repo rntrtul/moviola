@@ -5,17 +5,19 @@ use relm4::{gtk, ComponentParts, ComponentSender, SimpleComponent};
 use crate::ui::edit_controls::CropType::{
     Crop16To9, Crop3To2, Crop4To3, Crop5To4, CropFree, CropOriginal, CropSquare,
 };
+use crate::ui::edit_controls::EditControlsOutput::{HideCropBox, ShowCropBox};
 
 pub struct EditControlsModel {
-    crop_mode: EditControlsMsg,
+    crop_mode: CropType,
     orientation: VideoOrientationMethod,
     rotation_angle: i32,
+    show_crop_box: bool,
     is_flip_vertical: bool,
     is_flip_horizontal: bool,
 }
 
-#[derive(Debug)]
-enum CropType {
+#[derive(Debug, Clone, Copy)]
+pub enum CropType {
     CropFree = 0,
     CropOriginal,
     CropSquare,
@@ -29,7 +31,8 @@ enum CropType {
 pub enum EditControlsMsg {
     ExportFrame,
     ExportVideo,
-    CropMode(CropType),
+    SetCropMode(CropType),
+    ToggleCropBox,
     RotateRight90,
     RotateLeft90,
     FlipHorizontally,
@@ -41,6 +44,9 @@ pub enum EditControlsOutput {
     ExportFrame,
     ExportVideo,
     OrientVideo(VideoOrientationMethod),
+    ShowCropBox,
+    HideCropBox,
+    SetCropMode(CropType),
 }
 
 #[relm4::component(pub)]
@@ -65,6 +71,7 @@ impl SimpleComponent for EditControlsModel {
 
                     gtk::Button {
                         set_icon_name: "crop",
+                        connect_clicked => EditControlsMsg::ToggleCropBox,
                     },
 
                     #[name = "crop_mode_dropdown"]
@@ -80,7 +87,7 @@ impl SimpleComponent for EditControlsModel {
                                 6 => Crop16To9,
                                 _ => panic!("Unknown crop mode selected")
                             };
-                            sender.input(EditControlsMsg::CropMode(mode));
+                            sender.input(EditControlsMsg::SetCropMode(mode));
                         }
                     },
                 },
@@ -137,9 +144,10 @@ impl SimpleComponent for EditControlsModel {
     ) -> ComponentParts<Self> {
         let widgets = view_output!();
         let model = EditControlsModel {
-            crop_mode: EditControlsMsg::CropMode(CropFree),
+            crop_mode: CropFree,
             orientation: VideoOrientationMethod::Identity,
             rotation_angle: 0,
+            show_crop_box: false,
             is_flip_vertical: false,
             is_flip_horizontal: false,
         };
@@ -149,8 +157,24 @@ impl SimpleComponent for EditControlsModel {
 
     fn update(&mut self, message: Self::Input, sender: ComponentSender<Self>) {
         match message {
-            EditControlsMsg::CropMode(_) => {
-                self.crop_mode = message;
+            EditControlsMsg::SetCropMode(mode) => {
+                self.crop_mode = mode;
+                self.show_crop_box = true;
+                sender
+                    .output(EditControlsOutput::SetCropMode(mode))
+                    .unwrap();
+                sender.output(ShowCropBox).unwrap();
+            }
+            EditControlsMsg::ToggleCropBox => {
+                self.show_crop_box = !self.show_crop_box;
+
+                let msg = if self.show_crop_box {
+                    ShowCropBox
+                } else {
+                    HideCropBox
+                };
+
+                sender.output(msg).unwrap()
             }
             EditControlsMsg::ExportFrame => {
                 sender.output(EditControlsOutput::ExportFrame).unwrap();
