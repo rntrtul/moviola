@@ -26,7 +26,6 @@ impl ThumbnailManager {
         let mut got_current = lock.lock().unwrap();
 
         if *got_current {
-            println!("GOT CURRENT");
             return Err(gst::FlowError::Eos);
         }
         *got_current = true;
@@ -87,6 +86,7 @@ impl ThumbnailManager {
                 target_width as u32,
                 target_height,
             );
+
             let thumbnail_save_path = std::path::PathBuf::from(format!(
                 "/{}/thumbnail_{}.jpg",
                 THUMBNAIL_PATH, curr_thumbnail
@@ -125,14 +125,14 @@ impl ThumbnailManager {
         let pipeline = gst::parse::launch(&format!(
             "uridecodebin uri={video_uri} ! videoconvert ! appsink name=sink"
         ))
-            .unwrap()
-            .downcast::<gst::Pipeline>()
-            .expect("Expected a gst::pipeline");
+        .unwrap()
+        .downcast::<gst::Pipeline>()
+        .expect("Expected a gst::pipeline");
 
         let appsink = pipeline
             .by_name("sink")
             .expect("sink element not found")
-            .downcast::<gst_app::AppSink>()
+            .downcast::<AppSink>()
             .expect("Sink element is expected to be appsink!");
 
         appsink.set_property("sync", false);
@@ -176,7 +176,7 @@ impl ThumbnailManager {
                 Arc::clone(&current_thumbnail_started),
                 Arc::clone(&num_started),
             )
-                .expect("could not create thumbnail pipeline");
+            .expect("could not create thumbnail pipeline");
 
             pipeline.set_state(gst::State::Paused).unwrap();
 
@@ -236,7 +236,6 @@ mod tests {
 
         let uri = "file:///home/fareed/Videos/mp3e1.mkv";
         let barrier = Arc::new(Barrier::new((NUM_THUMBNAILS + 1) as usize));
-
         ThumbnailManager::launch_thumbnail_threads(uri.parse().unwrap(), Arc::clone(&barrier));
         barrier.wait();
 
