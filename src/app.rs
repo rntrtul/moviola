@@ -135,7 +135,7 @@ impl SimpleComponent for App {
         sender: ComponentSender<Self>,
     ) -> ComponentParts<Self> {
         let video_player: Controller<VideoPlayerModel> =
-            VideoPlayerModel::builder().launch(2).detach();
+            VideoPlayerModel::builder().launch(()).detach();
 
         // fixme: should stuff be pulled out of video player? only have gstreamer stuff there.
         //          timeline and other ui out of it? VideoController?

@@ -80,17 +80,13 @@ impl Component for VideoPlayerModel {
                 set_valign: gtk::Align::Center,
             },
 
+            #[name = "vid_container"]
             gtk::Overlay{
-                #[wrap(Some)]
-                set_child : vid_frame = &gtk::Box {
-                    #[watch]
-                    set_visible: model.video_is_loaded,
-                    set_orientation: gtk::Orientation::Vertical,
-
-                    add_controller = gtk::GestureClick {
-                        connect_pressed[sender] => move |_,_,_,_| {
-                            sender.input(VideoPlayerMsg::TogglePlayPause)
-                        }
+                #[watch]
+                set_visible: model.video_is_loaded,
+                add_controller = gtk::GestureClick {
+                    connect_pressed[sender] => move |_,_,_,_| {
+                        sender.input(VideoPlayerMsg::TogglePlayPause)
                     }
                 },
 
@@ -136,8 +132,7 @@ impl Component for VideoPlayerModel {
         }
     }
 
-    // todo: remove init u8, not used
-    type Init = u8;
+    type Init = ();
 
     fn init(
         _: Self::Init,
@@ -182,7 +177,7 @@ impl Component for VideoPlayerModel {
 
         let widgets = view_output!();
 
-        widgets.vid_frame.append(&offload);
+        widgets.vid_container.set_child(Some(&offload));
 
         ComponentParts { model, widgets }
     }
@@ -229,6 +224,7 @@ impl Component for VideoPlayerModel {
             VideoPlayerMsg::TogglePlayPause => self.video_toggle_play_pause(),
             VideoPlayerMsg::ToggleMute => self.toggle_mute(),
             VideoPlayerMsg::ExportFrame => {
+                // todo: get actual video width and height
                 if self.video_is_loaded {
                     self.playing_info
                         .as_ref()
@@ -245,13 +241,12 @@ impl Component for VideoPlayerModel {
                 self.add_orientation(orientation);
             }
             VideoPlayerMsg::ShowCropBox => {
-                println!(
-                    "vid_frame w{}, h{}",
-                    widgets.vid_frame.width(),
-                    widgets.vid_frame.height()
-                );
-                widgets.crop_box.set_width(widgets.vid_frame.width());
-                widgets.crop_box.set_height(widgets.vid_frame.height());
+                widgets
+                    .crop_box
+                    .set_width(widgets.vid_container.child().unwrap().width());
+                widgets
+                    .crop_box
+                    .set_height(widgets.vid_container.child().unwrap().height());
                 self.show_crop_box = true
             }
             VideoPlayerMsg::HideCropBox => self.show_crop_box = false,
