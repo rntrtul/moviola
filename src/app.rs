@@ -2,13 +2,15 @@ use gst_video::VideoOrientationMethod;
 use gtk::glib;
 use gtk::prelude::{ApplicationExt, GtkWindowExt, OrientableExt, WidgetExt};
 use gtk4::gio;
-use gtk4::prelude::{BoxExt, ButtonExt, FileExt, GtkApplicationExt};
+use gtk4::prelude::{ButtonExt, FileExt, GtkApplicationExt};
 use relm4::{
     adw, gtk, main_application, Component, ComponentController, ComponentParts, ComponentSender,
     Controller, RelmWidgetExt, SimpleComponent,
 };
 
-use super::ui::edit_controls::{CropType, EditControlsModel, EditControlsOutput};
+use crate::ui::crop_box::CropType;
+
+use super::ui::edit_controls::{EditControlsModel, EditControlsOutput};
 use super::ui::video_player::{VideoPlayerModel, VideoPlayerMsg};
 
 pub(super) struct App {

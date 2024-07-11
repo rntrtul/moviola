@@ -1,7 +1,7 @@
 use gst::glib;
 use relm4::gtk;
 
-mod crop_box;
+pub mod crop_box;
 pub mod edit_controls;
 mod handle;
 mod handle_manager;

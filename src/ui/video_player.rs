@@ -14,7 +14,7 @@ use gtk4::prelude::{BoxExt, ButtonExt, OrientableExt, WidgetExt};
 use relm4::adw::gdk;
 use relm4::*;
 
-use crate::ui::edit_controls::CropType;
+use crate::ui::crop_box::CropType;
 use crate::ui::timeline::{TimelineModel, TimelineMsg, TimelineOutput};
 
 struct PlayingInfo {
@@ -239,15 +239,7 @@ impl Component for VideoPlayerModel {
             VideoPlayerMsg::OrientVideo(orientation) => {
                 self.add_orientation(orientation);
             }
-            VideoPlayerMsg::ShowCropBox => {
-                widgets
-                    .crop_box
-                    .set_width(widgets.vid_container.child().unwrap().width());
-                widgets
-                    .crop_box
-                    .set_height(widgets.vid_container.child().unwrap().height());
-                self.show_crop_box = true
-            }
+            VideoPlayerMsg::ShowCropBox => self.show_crop_box = true,
             VideoPlayerMsg::HideCropBox => self.show_crop_box = false,
             VideoPlayerMsg::SetCropMode(_mode) => {
                 //     todo: pass mode to widget
