@@ -21,13 +21,18 @@ pub enum CropType {
     Crop16To9,
 }
 
+// properties are represented in percentages since preview is not 1:1 to output
 #[derive(glib::Properties, Default, Debug)]
 #[properties(wrapper_type = super::CropBoxWidget)]
 pub struct CropBoxWidget {
     #[property(get, set)]
-    pub x: Cell<i32>,
+    pub x: Cell<f32>,
     #[property(get, set)]
-    pub y: Cell<i32>,
+    pub y: Cell<f32>,
+    #[property(get, set)]
+    pub target_width: Cell<f32>,
+    #[property(get, set)]
+    pub target_height: Cell<f32>,
 }
 
 #[glib::object_subclass]
@@ -101,8 +106,35 @@ impl WidgetImpl for CropBoxWidget {
 impl Default for crate::ui::CropBoxWidget {
     fn default() -> Self {
         glib::Object::builder()
-            .property("x", 0)
-            .property("y", 0)
+            .property("x", 0f32)
+            .property("y", 0f32)
             .build()
+    }
+}
+
+impl crate::ui::CropBoxWidget {
+    pub fn is_point_in_handle(&self, x: f64, y: f64) {
+        // removing margin from dimensions to get actual video dimensions
+        let width = self.width() as f32 - (MARGIN * 2.);
+        let height = self.height() as f32 - (MARGIN * 2.);
+
+        let target = graphene::Point::new(x as f32, y as f32);
+
+        let circle_points = [
+            graphene::Point::new(MARGIN, MARGIN),
+            graphene::Point::new(MARGIN, height + MARGIN),
+            graphene::Point::new(width + MARGIN, MARGIN),
+            graphene::Point::new(width + MARGIN, height + MARGIN),
+        ];
+
+        for (idx, point) in circle_points.iter().enumerate() {
+            let path_builder = gsk::PathBuilder::new();
+            path_builder.add_circle(&point, MARGIN);
+            let circle = path_builder.to_path();
+
+            if circle.in_fill(&target, gsk::FillRule::Winding) {
+                println!("Circle num {idx} was clicked");
+            }
+        }
     }
 }

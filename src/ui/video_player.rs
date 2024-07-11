@@ -51,6 +51,7 @@ pub enum VideoPlayerMsg {
     HideCropBox,
     SetCropMode(CropType),
     ExportVideo,
+    CropBoxClick((f64, f64)), //fixme: rename
 }
 
 #[derive(Debug)]
@@ -95,7 +96,7 @@ impl Component for VideoPlayerModel {
 
                     add_controller = gtk::GestureClick {
                         connect_pressed[sender] => move |_,_,x,y| {
-                            println!("cropBox click at {x}, {y}");
+                            sender.input(VideoPlayerMsg::CropBoxClick((x,y)));
                         }
                     },
                 },
@@ -250,6 +251,9 @@ impl Component for VideoPlayerModel {
             VideoPlayerMsg::HideCropBox => self.show_crop_box = false,
             VideoPlayerMsg::SetCropMode(_mode) => {
                 //     todo: pass mode to widget
+            }
+            VideoPlayerMsg::CropBoxClick(pos) => {
+                widgets.crop_box.is_point_in_handle(pos.0, pos.1);
             }
         }
 
