@@ -14,7 +14,7 @@ use gtk4::prelude::{BoxExt, ButtonExt, OrientableExt, WidgetExt};
 use relm4::adw::gdk;
 use relm4::*;
 
-use crate::ui::crop_box::CropType;
+use crate::ui::crop_box::{CropType, OFFSET};
 use crate::ui::timeline::{TimelineModel, TimelineMsg, TimelineOutput};
 
 struct PlayingInfo {
@@ -92,6 +92,12 @@ impl Component for VideoPlayerModel {
                 add_overlay: crop_box = &super::CropBoxWidget::default(){
                     #[watch]
                     set_visible: model.show_crop_box,
+
+                    add_controller = gtk::GestureClick {
+                        connect_pressed[sender] => move |_,_,x,y| {
+                            println!("cropBox click at {x}, {y}");
+                        }
+                    },
                 },
             },
 
@@ -148,6 +154,7 @@ impl Component for VideoPlayerModel {
         let picture = gtk::Picture::new();
 
         picture.set_paintable(Some(&paintable));
+        picture.set_margin_all(OFFSET as i32);
 
         let offload = gtk4::GraphicsOffload::new(Some(&picture));
         offload.set_enabled(gtk::GraphicsOffloadEnabled::Enabled);
