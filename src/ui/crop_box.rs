@@ -8,8 +8,7 @@ use gtk4::subclass::widget::WidgetImpl;
 use gtk4::{gdk, glib, graphene, gsk, Snapshot};
 use relm4::gtk;
 
-// todo: better name. RADIUS, INSTEP, MARGIN
-pub static OFFSET: f32 = 4.;
+pub static MARGIN: f32 = 4.;
 
 #[derive(Debug, Clone, Copy)]
 pub enum CropType {
@@ -46,10 +45,10 @@ impl WidgetImpl for CropBoxWidget {
         let widget = self.obj();
 
         // removing margin from dimensions to get actual video dimensions
-        let width = widget.width() as f32 - (OFFSET * 2.);
-        let height = widget.height() as f32 - (OFFSET * 2.);
+        let width = widget.width() as f32 - (MARGIN * 2.);
+        let height = widget.height() as f32 - (MARGIN * 2.);
 
-        let border_rect = graphene::Rect::new(OFFSET, OFFSET, width, height);
+        let border_rect = graphene::Rect::new(MARGIN, MARGIN, width, height);
 
         let border = gsk::RoundedRect::from_rect(border_rect, 0.);
         let border_widths = [1.; 4];
@@ -62,7 +61,7 @@ impl WidgetImpl for CropBoxWidget {
             let x = horizontal_step * step as f32;
 
             let path_builder = gsk::PathBuilder::new();
-            path_builder.move_to(x, OFFSET);
+            path_builder.move_to(x, MARGIN);
             path_builder.line_to(x, height);
 
             let line = path_builder.to_path();
@@ -74,7 +73,7 @@ impl WidgetImpl for CropBoxWidget {
             let y = vertical_step * step as f32;
 
             let path_builder = gsk::PathBuilder::new();
-            path_builder.move_to(OFFSET, y);
+            path_builder.move_to(MARGIN, y);
             path_builder.line_to(width, y);
 
             let line = path_builder.to_path();
@@ -82,15 +81,15 @@ impl WidgetImpl for CropBoxWidget {
         }
 
         let circle_points = [
-            graphene::Point::new(OFFSET, OFFSET),
-            graphene::Point::new(OFFSET, height + OFFSET),
-            graphene::Point::new(width + OFFSET, OFFSET),
-            graphene::Point::new(width + OFFSET, height + OFFSET),
+            graphene::Point::new(MARGIN, MARGIN),
+            graphene::Point::new(MARGIN, height + MARGIN),
+            graphene::Point::new(width + MARGIN, MARGIN),
+            graphene::Point::new(width + MARGIN, height + MARGIN),
         ];
 
         for point in circle_points {
             let path_builder = gsk::PathBuilder::new();
-            path_builder.add_circle(&point, OFFSET);
+            path_builder.add_circle(&point, MARGIN);
             let circle = path_builder.to_path();
             snapshot.append_fill(&circle, gsk::FillRule::Winding, &gdk::RGBA::GREEN);
         }

@@ -14,7 +14,7 @@ use gtk4::prelude::{BoxExt, ButtonExt, OrientableExt, WidgetExt};
 use relm4::adw::gdk;
 use relm4::*;
 
-use crate::ui::crop_box::{CropType, OFFSET};
+use crate::ui::crop_box::{CropType, MARGIN};
 use crate::ui::timeline::{TimelineModel, TimelineMsg, TimelineOutput};
 
 struct PlayingInfo {
@@ -154,7 +154,7 @@ impl Component for VideoPlayerModel {
         let picture = gtk::Picture::new();
 
         picture.set_paintable(Some(&paintable));
-        picture.set_margin_all(OFFSET as i32);
+        picture.set_margin_all(MARGIN as i32);
 
         let offload = gtk4::GraphicsOffload::new(Some(&picture));
         offload.set_enabled(gtk::GraphicsOffloadEnabled::Enabled);
