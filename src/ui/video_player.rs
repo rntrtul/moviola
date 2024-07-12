@@ -16,7 +16,7 @@ use gtk4::prelude::{
 use relm4::adw::gdk;
 use relm4::*;
 
-use crate::ui::crop_box::{CropType, MARGIN};
+use crate::ui::crop_box::{CropBoxWidget, CropType, MARGIN};
 use crate::ui::timeline::{TimelineModel, TimelineMsg, TimelineOutput};
 
 struct PlayingInfo {
@@ -53,8 +53,8 @@ pub enum VideoPlayerMsg {
     HideCropBox,
     SetCropMode(CropType),
     ExportVideo,
-    CropBoxDragStart((f64, f64)),
-    CropBoxDrag((f64, f64)),
+    CropBoxDetectHandle((f32, f32)),
+    CropBoxDrag((f32, f32)),
 }
 
 #[derive(Debug)]
@@ -99,12 +99,18 @@ impl Component for VideoPlayerModel {
 
                     add_controller = gtk::GestureDrag {
                         connect_drag_begin[sender] => move |_,x,y| {
-                            sender.input(VideoPlayerMsg::CropBoxDragStart((x,y)));
+
+                            sender.input(VideoPlayerMsg::CropBoxDetectHandle((x as f32,y as f32)));
                         },
                         connect_drag_update[sender] => move |drag, x_offset, y_offset| {
                             let (start_x, start_y) = drag.start_point().unwrap();
-                            let x = (start_x + x_offset) / drag.widget().width() as f64;
-                            let y = (start_y + y_offset) / drag.widget().height() as f64;
+
+                            let (x, y) = CropBoxWidget::get_cordinate_percent_from_drag(
+                                drag.widget().width(),
+                                drag.widget().height(),
+                                start_x + x_offset,
+                                start_y + y_offset,
+                            );
 
                             sender.input(VideoPlayerMsg::CropBoxDrag((x,y)));
                         }
@@ -262,11 +268,11 @@ impl Component for VideoPlayerModel {
             VideoPlayerMsg::SetCropMode(_mode) => {
                 //     todo: pass mode to widget
             }
-            VideoPlayerMsg::CropBoxDragStart(pos) => {
+            VideoPlayerMsg::CropBoxDetectHandle(pos) => {
                 widgets.crop_box.is_point_in_handle(pos.0, pos.1);
             }
             VideoPlayerMsg::CropBoxDrag(pos) => {
-                widgets.crop_box.update_drag_pos(pos.0 as f32, pos.1 as f32);
+                widgets.crop_box.update_drag_pos(pos.0, pos.1);
                 widgets.crop_box.queue_draw();
             }
         }

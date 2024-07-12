@@ -58,14 +58,16 @@ impl WidgetImpl for CropBoxWidget {
     fn snapshot(&self, snapshot: &Snapshot) {
         let widget = self.obj();
 
-        // removing margin from dimensions to get actual video dimensions
-        let right_x = Self::get_box_width(widget.width() as f32, widget.target_width());
-        let bottom_y = Self::get_box_height(widget.height() as f32, widget.target_height());
+        let (left_x, top_y, right_x, bottom_y) = Self::get_box_bounds(
+            widget.width() as f32,
+            widget.height() as f32,
+            widget.target_width(),
+            widget.target_height(),
+            widget.x(),
+            widget.y(),
+        );
 
-        let left_x = (widget.width() as f32 * widget.x()) + MARGIN;
-        let top_y = (widget.height() as f32 * widget.y()) + MARGIN;
-
-        let border_rect = graphene::Rect::new(left_x, top_y, right_x, bottom_y);
+        let border_rect = graphene::Rect::new(left_x, top_y, right_x - left_x, bottom_y - top_y);
 
         let border = gsk::RoundedRect::from_rect(border_rect, 0.);
         let border_widths = [1.; 4];
@@ -132,12 +134,22 @@ impl Default for crate::ui::CropBoxWidget {
 
 // fixme: figure out scope of functions to allow &self and be called from widgetImpl and ui:CropBoxWidget
 impl CropBoxWidget {
-    fn get_box_width(widget_width: f32, target_width_precent: f32) -> f32 {
-        (widget_width - (MARGIN * 2.)) * target_width_precent
-    }
+    fn get_box_bounds(
+        widget_width: f32,
+        widget_height: f32,
+        target_width: f32,
+        target_height: f32,
+        x: f32,
+        y: f32,
+    ) -> (f32, f32, f32, f32) {
+        let left_x = (widget_width * x) + MARGIN;
+        let top_y = (widget_height * y) + MARGIN;
 
-    fn get_box_height(widget_height: f32, target_height_precent: f32) -> f32 {
-        (widget_height - (MARGIN * 2.)) * target_height_precent
+        // subtract margin to convert percent to
+        let right_x = (widget_width - (MARGIN * 2.)) * target_width + MARGIN;
+        let bottom_y = (widget_height - (MARGIN * 2.)) * target_height + MARGIN;
+
+        (left_x, top_y, right_x, bottom_y)
     }
 
     fn get_circle_points(
@@ -148,13 +160,14 @@ impl CropBoxWidget {
         x: f32,
         y: f32,
     ) -> [graphene::Point; 4] {
-        let right_x = Self::get_box_width(widget_width, target_width) + MARGIN;
-        let bottom_y = Self::get_box_height(widget_height, target_height) + MARGIN;
-
-        let left_x = (widget_width * x) + MARGIN;
-        let top_y = (widget_height * y) + MARGIN;
-
-        println!("for with {left_x}x{top_y} until {right_x}x{bottom_y}");
+        let (left_x, top_y, right_x, bottom_y) = Self::get_box_bounds(
+            widget_width,
+            widget_height,
+            target_width,
+            target_height,
+            x,
+            y,
+        );
 
         [
             graphene::Point::new(left_x, top_y),
@@ -163,14 +176,24 @@ impl CropBoxWidget {
             graphene::Point::new(right_x, bottom_y),
         ]
     }
+
+    pub fn get_cordinate_percent_from_drag(width: i32, height: i32, x: f64, y: f64) -> (f32, f32) {
+        let frame_width = width as f32 - (MARGIN * 2.);
+        let frame_height = height as f32 - (MARGIN * 2.);
+
+        let x_adj = (x as f32 - MARGIN).clamp(0., frame_width);
+        let y_adj = (y as f32 - MARGIN).clamp(0., frame_height);
+
+        (x_adj / frame_width, y_adj / frame_height)
+    }
 }
 
 impl crate::ui::CropBoxWidget {
-    pub fn is_point_in_handle(&self, x: f64, y: f64) {
+    pub fn is_point_in_handle(&self, x: f32, y: f32) {
         // removing margin from dimensions to get actual video dimensions
         // todo: remove duplicate code
 
-        let target_point = graphene::Point::new(x as f32, y as f32);
+        let target_point = graphene::Point::new(x, y);
 
         let circle_points = CropBoxWidget::get_circle_points(
             self.width() as f32,
@@ -187,7 +210,6 @@ impl crate::ui::CropBoxWidget {
             let circle = path_builder.to_path();
 
             if circle.in_fill(&target_point, gsk::FillRule::Winding) {
-                println!("Circle num {idx} was clicked");
                 self.set_drag_circle(idx as i32);
                 break;
             }
@@ -200,15 +222,12 @@ impl crate::ui::CropBoxWidget {
         //        2: update target_width, y
         //        3: update target_width ,target_height
         // todo: use enum for circl position
-        // todo: clamp x and y values
-        // println!("drag update {x} {y}");
         match self.drag_circle() {
             0 => {
                 self.set_x(x);
                 self.set_y(y);
             }
             1 => {
-                // println!("x{x} y{y}");
                 self.set_x(x);
                 self.set_target_height(y);
             }
