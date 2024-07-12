@@ -204,6 +204,8 @@ impl crate::ui::CropBoxWidget {
             self.y(),
         );
 
+        let mut point_in_circle = false;
+
         for (idx, point) in circle_points.iter().enumerate() {
             let path_builder = gsk::PathBuilder::new();
             path_builder.add_circle(&point, MARGIN);
@@ -211,8 +213,13 @@ impl crate::ui::CropBoxWidget {
 
             if circle.in_fill(&target_point, gsk::FillRule::Winding) {
                 self.set_drag_circle(idx as i32);
+                point_in_circle = true;
                 break;
             }
+        }
+
+        if !point_in_circle {
+            self.set_drag_circle(-1);
         }
     }
 

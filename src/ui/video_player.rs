@@ -99,7 +99,6 @@ impl Component for VideoPlayerModel {
 
                     add_controller = gtk::GestureDrag {
                         connect_drag_begin[sender] => move |_,x,y| {
-
                             sender.input(VideoPlayerMsg::CropBoxDetectHandle((x as f32,y as f32)));
                         },
                         connect_drag_update[sender] => move |drag, x_offset, y_offset| {
@@ -113,7 +112,7 @@ impl Component for VideoPlayerModel {
                             );
 
                             sender.input(VideoPlayerMsg::CropBoxDrag((x,y)));
-                        }
+                        },
                      },
                 },
             },
