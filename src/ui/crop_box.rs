@@ -224,27 +224,43 @@ impl crate::ui::CropBoxWidget {
     }
 
     pub fn update_drag_pos(&self, x: f32, y: f32) {
-        // circle 0: update x, y
-        //        1: update x, target_height
-        //        2: update target_width, y
-        //        3: update target_width ,target_height
         // todo: use enum for circl position
         match self.drag_circle() {
             0 => {
-                self.set_x(x);
-                self.set_y(y);
+                if x < self.target_width() {
+                    self.set_x(x);
+                }
+
+                if y < self.target_height() {
+                    self.set_y(y);
+                }
             }
             1 => {
-                self.set_x(x);
-                self.set_target_height(y);
+                if x < self.target_width() {
+                    self.set_x(x);
+                }
+
+                if y > self.y() {
+                    self.set_target_height(y);
+                }
             }
             2 => {
-                self.set_target_width(x);
-                self.set_y(y);
+                if x > self.x() {
+                    self.set_target_width(x);
+                }
+
+                if y < self.target_height() {
+                    self.set_y(y);
+                }
             }
             3 => {
-                self.set_target_width(x);
-                self.set_target_height(y);
+                if x > self.x() {
+                    self.set_target_width(x);
+                }
+
+                if y > self.y() {
+                    self.set_target_height(y);
+                }
             }
             _ => {}
         }
