@@ -2,21 +2,25 @@ use gst_video::VideoOrientationMethod;
 use gtk::glib;
 use gtk::prelude::{ApplicationExt, GtkWindowExt, OrientableExt, WidgetExt};
 use gtk4::gio;
-use gtk4::prelude::{ButtonExt, FileExt, GtkApplicationExt};
+use gtk4::prelude::{BoxExt, ButtonExt, FileExt, GtkApplicationExt};
 use relm4::{
     adw, gtk, main_application, Component, ComponentController, ComponentParts, ComponentSender,
     Controller, RelmWidgetExt, SimpleComponent,
 };
 
 use crate::ui::crop_box::CropType;
+use crate::ui::timeline::{TimelineModel, TimelineMsg, TimelineOutput};
 
 use super::ui::edit_controls::{EditControlsModel, EditControlsOutput};
-use super::ui::video_player::{VideoPlayerModel, VideoPlayerMsg};
+use super::ui::video_player::{VideoPlayerModel, VideoPlayerMsg, VideoPlayerOutput};
 
 pub(super) struct App {
     video_player: Controller<VideoPlayerModel>,
     edit_controls: Controller<EditControlsModel>,
+    timeline: Controller<TimelineModel>,
     video_is_open: bool,
+    video_is_playing: bool,
+    video_is_mute: bool,
 }
 
 #[derive(Debug)]
@@ -29,6 +33,10 @@ pub(super) enum AppMsg {
     ShowCropBox,
     HideCropBox,
     SetCropMode(CropType),
+    SeekToPercent(f64),
+    UpdateSeekBarPos(f64),
+    TogglePlayPause,
+    ToggleMute,
     Quit,
 }
 
@@ -117,6 +125,42 @@ impl SimpleComponent for App {
                         set_visible: false,
                     },
 
+                    gtk::Box{
+                        #[watch]
+                        set_spacing: 10,
+                        add_css_class: "toolbar",
+                        #[watch]
+                        set_visible: model.video_is_open,
+
+                        gtk::Button {
+                            #[watch]
+                            set_icon_name: if model.video_is_playing {
+                                "pause"
+                            } else {
+                                "play"
+                            },
+
+                            connect_clicked[sender] => move |_| {
+                                    sender.input(AppMsg::TogglePlayPause)
+                            }
+                        },
+
+                        model.timeline.widget() {},
+
+                        gtk::Button {
+                            #[watch]
+                             set_icon_name: if model.video_is_mute {
+                                "audio-volume-muted"
+                            } else {
+                                "audio-volume-high"
+                            },
+                            connect_clicked[sender] => move |_| {
+                                    sender.input(AppMsg::ToggleMute)
+                            }
+                        },
+
+                    },
+
                     model.edit_controls.widget() {
                         set_visible: false,
                     }
@@ -131,8 +175,11 @@ impl SimpleComponent for App {
         root: Self::Root,
         sender: ComponentSender<Self>,
     ) -> ComponentParts<Self> {
-        let video_player: Controller<VideoPlayerModel> =
-            VideoPlayerModel::builder().launch(()).detach();
+        let video_player: Controller<VideoPlayerModel> = VideoPlayerModel::builder()
+            .launch(())
+            .forward(sender.input_sender(), |msg| match msg {
+                VideoPlayerOutput::UpdateSeekBarPos(percent) => AppMsg::UpdateSeekBarPos(percent),
+            });
 
         // fixme: should stuff be pulled out of video player? only have gstreamer stuff there.
         //          timeline and other ui out of it? VideoController?
@@ -147,10 +194,20 @@ impl SimpleComponent for App {
                 EditControlsOutput::SetCropMode(mode) => AppMsg::SetCropMode(mode),
             });
 
+        let timeline: Controller<TimelineModel> =
+            TimelineModel::builder()
+                .launch(())
+                .forward(sender.input_sender(), |msg| match msg {
+                    TimelineOutput::SeekToPercent(percent) => AppMsg::SeekToPercent(percent),
+                });
+
         let model = Self {
             video_player,
             edit_controls,
+            timeline,
             video_is_open: false,
+            video_is_playing: false,
+            video_is_mute: false,
         };
 
         let widgets = view_output!();
@@ -170,7 +227,10 @@ impl SimpleComponent for App {
             }
             AppMsg::OpenFile => App::launch_file_opener(_sender),
             AppMsg::SetVideo(file_name) => {
-                self.video_player.emit(VideoPlayerMsg::NewVideo(file_name));
+                self.video_player
+                    .emit(VideoPlayerMsg::NewVideo(file_name.clone()));
+                // thread::sleep(Duration::from_millis(850));
+                // self.timeline.emit(TimelineMsg::GenerateThumbnails(file_name.clone()));
                 self.video_is_open = true;
 
                 self.video_player.widget().set_visible(true);
@@ -185,6 +245,14 @@ impl SimpleComponent for App {
             AppMsg::ShowCropBox => self.video_player.emit(VideoPlayerMsg::ShowCropBox),
             AppMsg::HideCropBox => self.video_player.emit(VideoPlayerMsg::HideCropBox),
             AppMsg::SetCropMode(mode) => self.video_player.emit(VideoPlayerMsg::SetCropMode(mode)),
+            AppMsg::SeekToPercent(percent) => self
+                .video_player
+                .emit(VideoPlayerMsg::SeekToPercent(percent)),
+            AppMsg::UpdateSeekBarPos(percent) => {
+                self.timeline.emit(TimelineMsg::UpdateSeekBarPos(percent))
+            }
+            AppMsg::TogglePlayPause => self.video_player.emit(VideoPlayerMsg::TogglePlayPause),
+            AppMsg::ToggleMute => self.video_player.emit(VideoPlayerMsg::ToggleMute),
         }
     }
 }

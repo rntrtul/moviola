@@ -10,14 +10,11 @@ use ges::{gst_pbutils, Effect, PipelineFlags};
 use gst::prelude::*;
 use gst::{ClockTime, Element, SeekFlags, State};
 use gst_video::VideoOrientationMethod;
-use gtk4::prelude::{
-    BoxExt, ButtonExt, EventControllerExt, GestureDragExt, OrientableExt, WidgetExt,
-};
+use gtk4::prelude::{EventControllerExt, GestureDragExt, OrientableExt, WidgetExt};
 use relm4::adw::gdk;
 use relm4::*;
 
 use crate::ui::crop_box::{CropBoxWidget, CropType, MARGIN};
-use crate::ui::timeline::{TimelineModel, TimelineMsg, TimelineOutput};
 
 struct PlayingInfo {
     pipeline: ges::Pipeline,
@@ -35,7 +32,6 @@ pub struct VideoPlayerModel {
     is_mute: bool,
     show_crop_box: bool,
     gtk_sink: Element,
-    timeline: Controller<TimelineModel>,
     video_duration: Option<ClockTime>,
     video_uri: Option<String>,
     playing_info: Option<PlayingInfo>,
@@ -58,6 +54,11 @@ pub enum VideoPlayerMsg {
 }
 
 #[derive(Debug)]
+pub enum VideoPlayerOutput {
+    UpdateSeekBarPos(f64),
+}
+
+#[derive(Debug)]
 pub enum VideoPlayerCommandMsg {
     VideoInit(bool),
     UpdateSeekPos,
@@ -67,7 +68,7 @@ pub enum VideoPlayerCommandMsg {
 impl Component for VideoPlayerModel {
     type CommandOutput = VideoPlayerCommandMsg;
     type Input = VideoPlayerMsg;
-    type Output = TimelineMsg;
+    type Output = VideoPlayerOutput;
     view! {
         gtk::Box {
             set_orientation: gtk::Orientation::Vertical,
@@ -116,40 +117,6 @@ impl Component for VideoPlayerModel {
                      },
                 },
             },
-
-            gtk::Box {
-                #[watch]
-                set_visible: model.video_is_loaded,
-                set_spacing: 10,
-                add_css_class: "toolbar",
-
-                gtk::Button {
-                    #[watch]
-                    set_icon_name: if model.is_playing {
-                        "pause"
-                    } else {
-                        "play"
-                    },
-
-                    connect_clicked[sender] => move |_| {
-                            sender.input(VideoPlayerMsg::TogglePlayPause)
-                    }
-                },
-
-                model.timeline.widget(){},
-
-                gtk::Button {
-                    #[watch]
-                     set_icon_name: if model.is_mute {
-                        "audio-volume-muted"
-                    } else {
-                        "audio-volume-high"
-                    },
-                    connect_clicked[sender] => move |_| {
-                            sender.input(VideoPlayerMsg::ToggleMute)
-                    }
-                },
-            },
         }
     }
 
@@ -175,15 +142,6 @@ impl Component for VideoPlayerModel {
         let offload = gtk4::GraphicsOffload::new(Some(&picture));
         offload.set_enabled(gtk::GraphicsOffloadEnabled::Enabled);
 
-        let timeline: Controller<TimelineModel> =
-            TimelineModel::builder()
-                .launch(())
-                .forward(sender.input_sender(), |msg| match msg {
-                    TimelineOutput::SeekToPercent(percent) => {
-                        VideoPlayerMsg::SeekToPercent(percent)
-                    }
-                });
-
         let model = VideoPlayerModel {
             video_is_selected: false,
             video_is_loaded: false,
@@ -191,7 +149,6 @@ impl Component for VideoPlayerModel {
             is_mute: false,
             show_crop_box: false,
             gtk_sink,
-            timeline,
             video_duration: None,
             video_uri: None,
             playing_info: None,
@@ -212,9 +169,10 @@ impl Component for VideoPlayerModel {
         _root: &Self::Root,
     ) {
         match message {
-            VideoPlayerMsg::NewVideo(value) => {
+            VideoPlayerMsg::NewVideo(uri) => {
+                println!("uri is: {uri}");
                 self.video_is_selected = true;
-                self.video_uri = Some(value);
+                self.video_uri = Some(uri);
                 self.video_is_loaded = false;
                 self.is_playing = false;
                 self.video_duration = None;
@@ -235,12 +193,6 @@ impl Component for VideoPlayerModel {
 
                     VideoPlayerCommandMsg::VideoInit(true)
                 });
-
-                let uri = self.video_uri.as_ref().unwrap().clone();
-                self.timeline
-                    .sender()
-                    .send(TimelineMsg::GenerateThumbnails(uri))
-                    .unwrap();
             }
             VideoPlayerMsg::SeekToPercent(percent) => self.seek_to_percent(percent),
             VideoPlayerMsg::TogglePlayPause => self.video_toggle_play_pause(),
@@ -326,9 +278,8 @@ impl Component for VideoPlayerModel {
                     Some(curr_position) => {
                         let percent = curr_position.mseconds() as f64
                             / self.video_duration.unwrap().mseconds() as f64;
-                        self.timeline
-                            .sender()
-                            .send(TimelineMsg::UpdateSeekBarPos(percent))
+                        sender
+                            .output(VideoPlayerOutput::UpdateSeekBarPos(percent))
                             .unwrap();
                     }
                     None => {}
@@ -544,10 +495,10 @@ impl VideoPlayerModel {
             .set_mode(PipelineFlags::RENDER)
             .expect("failed to set to render");
 
-        let start_time = self.video_duration.unwrap().mseconds() as f64
-            * self.timeline.model().get_target_start_percent();
-        let end_time = self.video_duration.unwrap().mseconds() as f64
-            * self.timeline.model().get_target_end_percent();
+        let start_time = 1500;
+        // self.video_duration.unwrap().mseconds() as f64 * self.timeline.model().get_target_start_percent();
+        let end_time = 35000;
+        // self.video_duration.unwrap().mseconds() as f64 * self.timeline.model().get_target_end_percent();
         let duration = (end_time - start_time) as u64;
 
         info.clip

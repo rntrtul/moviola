@@ -6,7 +6,7 @@ pub mod edit_controls;
 mod handle;
 mod handle_manager;
 mod thumbnail_manager;
-mod timeline;
+pub mod timeline;
 pub mod video_player;
 
 glib::wrapper! {
