@@ -51,10 +51,10 @@ impl SimpleComponent for EditControlsModel {
             set_spacing: 20,
 
             gtk::Box {
-                set_spacing: 10,
+                add_css_class: "toolbar",
 
                 gtk::Box {
-                add_css_class: "linked",
+                    add_css_class: "linked",
 
                     gtk::Button {
                         set_icon_name: "crop",
@@ -82,16 +82,11 @@ impl SimpleComponent for EditControlsModel {
                 // todo: make icons in buttons bigger
                 gtk::Button {
                     set_icon_name: "rotate-right",
-                    set_height_request: 32,
-                    add_css_class: "circular",
-
                     connect_clicked => EditControlsMsg::RotateRight90,
                 },
 
                 gtk::Button {
                      set_icon_name: "rotate-left",
-                     add_css_class: "flat",
-
                     connect_clicked => EditControlsMsg::RotateLeft90,
                 },
 
@@ -105,19 +100,14 @@ impl SimpleComponent for EditControlsModel {
                     connect_clicked => EditControlsMsg::FlipVertically,
                 },
 
-                gtk::Box{
-                    set_halign: gtk::Align::End,
-                    gtk::Button {
-                        set_label: "Export Frame",
-                        add_css_class: "pill",
-
-                        connect_clicked => EditControlsMsg::ExportFrame,
-                    },
+                 gtk::Button {
+                    set_label: "Export Frame",
+                    connect_clicked => EditControlsMsg::ExportFrame,
                 },
 
                 gtk::Button {
-                    set_label: "save",
-
+                    set_label: "Save",
+                    add_css_class: "suggested-action",
                     connect_clicked => EditControlsMsg::ExportVideo
                 }
             },
