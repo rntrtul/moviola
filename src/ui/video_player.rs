@@ -16,7 +16,7 @@ use relm4::*;
 
 use crate::ui::crop_box::{CropBoxWidget, CropType, MARGIN};
 
-struct PlayingInfo {
+pub struct PlayingInfo {
     pipeline: ges::Pipeline,
     clip: ges::UriClip,
     layer: ges::Layer,
@@ -79,12 +79,12 @@ impl Component for VideoPlayerModel {
             set_orientation: gtk::Orientation::Vertical,
             set_width_request: 640,
             set_height_request: 360,
-            set_halign: gtk::Align::Center,
-            set_valign: gtk::Align::Center,
 
             gtk::Spinner {
                 #[watch]
                 set_spinning: !model.video_is_loaded,
+                #[watch]
+                set_visible: !model.video_is_loaded,
                 set_halign: gtk::Align::Center,
                 set_valign: gtk::Align::Center,
             },

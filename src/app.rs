@@ -192,8 +192,6 @@ impl SimpleComponent for App {
                 VideoPlayerOutput::VideoPaused => AppMsg::VideoPaused,
             });
 
-        // fixme: should stuff be pulled out of video player? only have gstreamer stuff there.
-        //          timeline and other ui out of it? VideoController?
         let edit_controls: Controller<EditControlsModel> = EditControlsModel::builder()
             .launch(())
             .forward(sender.input_sender(), |msg| match msg {
