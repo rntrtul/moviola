@@ -484,6 +484,7 @@ impl VideoPlayerModel {
         }
 
         info.clip.add(effect).unwrap();
+        info.timeline.commit_sync();
     }
 
     fn add_orientation(&mut self, orientation: VideoOrientationMethod) {
