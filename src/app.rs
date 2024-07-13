@@ -26,6 +26,8 @@ pub(super) struct App {
 
 #[derive(Debug)]
 pub(super) enum AppMsg {
+    AudioMute,
+    AudioPlaying,
     ExportFrame,
     ExportVideo,
     OpenFile,
@@ -39,6 +41,8 @@ pub(super) enum AppMsg {
     TogglePlayPause,
     ToggleMute,
     VideoLoaded,
+    VideoPaused,
+    VideoPlaying,
     Quit,
 }
 
@@ -180,8 +184,12 @@ impl SimpleComponent for App {
         let video_player: Controller<VideoPlayerModel> = VideoPlayerModel::builder()
             .launch(())
             .forward(sender.input_sender(), |msg| match msg {
+                VideoPlayerOutput::AudioMute => AppMsg::AudioMute,
+                VideoPlayerOutput::AudioPlaying => AppMsg::AudioPlaying,
                 VideoPlayerOutput::UpdateSeekBarPos(percent) => AppMsg::UpdateSeekBarPos(percent),
                 VideoPlayerOutput::VideoLoaded => AppMsg::VideoLoaded,
+                VideoPlayerOutput::VideoPlaying => AppMsg::VideoPlaying,
+                VideoPlayerOutput::VideoPaused => AppMsg::VideoPaused,
             });
 
         // fixme: should stuff be pulled out of video player? only have gstreamer stuff there.
@@ -261,6 +269,10 @@ impl SimpleComponent for App {
                 self.timeline
                     .emit(TimelineMsg::GenerateThumbnails(self.uri.clone().unwrap()));
             }
+            AppMsg::VideoPaused => self.video_is_playing = false,
+            AppMsg::VideoPlaying => self.video_is_playing = true,
+            AppMsg::AudioMute => self.video_is_mute = true,
+            AppMsg::AudioPlaying => self.video_is_mute = false,
         }
     }
 }

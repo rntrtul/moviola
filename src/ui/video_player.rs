@@ -55,8 +55,12 @@ pub enum VideoPlayerMsg {
 
 #[derive(Debug)]
 pub enum VideoPlayerOutput {
+    AudioMute,
+    AudioPlaying,
     UpdateSeekBarPos(f64),
     VideoLoaded,
+    VideoPaused,
+    VideoPlaying,
 }
 
 #[derive(Debug)]
@@ -196,8 +200,22 @@ impl Component for VideoPlayerModel {
                 sender.output(VideoPlayerOutput::VideoLoaded).unwrap();
             }
             VideoPlayerMsg::SeekToPercent(percent) => self.seek_to_percent(percent),
-            VideoPlayerMsg::TogglePlayPause => self.video_toggle_play_pause(),
-            VideoPlayerMsg::ToggleMute => self.toggle_mute(),
+            VideoPlayerMsg::TogglePlayPause => {
+                self.video_toggle_play_pause();
+                if self.is_playing {
+                    sender.output(VideoPlayerOutput::VideoPlaying).unwrap();
+                } else {
+                    sender.output(VideoPlayerOutput::VideoPaused).unwrap();
+                }
+            }
+            VideoPlayerMsg::ToggleMute => {
+                self.toggle_mute();
+                if self.is_mute {
+                    sender.output(VideoPlayerOutput::AudioMute).unwrap();
+                } else {
+                    sender.output(VideoPlayerOutput::AudioPlaying).unwrap();
+                }
+            }
             VideoPlayerMsg::ExportFrame => {
                 // todo: get actual video width and height
                 if self.video_is_loaded {
@@ -265,6 +283,7 @@ impl Component for VideoPlayerModel {
                         })
                         .drop_on_shutdown()
                 });
+                sender.output(VideoPlayerOutput::VideoPlaying).unwrap();
             }
             VideoPlayerCommandMsg::UpdateSeekPos => {
                 let info = self.playing_info.as_ref().unwrap();
