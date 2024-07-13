@@ -8,7 +8,7 @@ use gtk4::subclass::widget::WidgetImpl;
 use gtk4::{gdk, glib, graphene, gsk, Snapshot};
 use relm4::gtk;
 
-pub static MARGIN: f32 = 4.;
+pub static MARGIN: f32 = 5.;
 
 enum CircleType {
     TopLeft,
