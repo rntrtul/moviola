@@ -3,7 +3,7 @@ use std::thread;
 
 use anyhow::Error;
 use gst::prelude::{Cast, ElementExt, ElementExtManual, GstBinExt, ObjectExt};
-use gst::{element_error, ClockTime, SeekFlags};
+use gst::{element_error, ClockTime, SeekFlags, State};
 use gst_app::AppSink;
 use gst_video::VideoFrameExt;
 
@@ -125,9 +125,9 @@ impl ThumbnailManager {
         let pipeline = gst::parse::launch(&format!(
             "uridecodebin uri={video_uri} ! videoconvert ! appsink name=sink"
         ))
-        .unwrap()
-        .downcast::<gst::Pipeline>()
-        .expect("Expected a gst::pipeline");
+            .unwrap()
+            .downcast::<gst::Pipeline>()
+            .expect("Expected a gst::pipeline");
 
         let appsink = pipeline
             .by_name("sink")
@@ -161,50 +161,48 @@ impl ThumbnailManager {
     // fixme: speed up
     // try to reuse existing pipeline or thumbnail pipeline. would be ~1.3 sec quicker for
     // subsequent videos
-    fn launch_thumbnail_threads(video_uri: String, barrier: Arc<Barrier>) {
-        let uri = video_uri.clone();
+    // after calling should wait on barrier otherwise thumbnails not done
+    fn launch_thumbnail_threads(video_uri: String, barrier: Arc<Barrier>) -> gst::Pipeline {
+        let current_thumbnail_started: Arc<(Mutex<bool>, Condvar)> =
+            Arc::new((Mutex::new(false), Condvar::new()));
+        let num_started = Arc::new(Mutex::new(0));
 
-        // todo: figure way to return pipeline or use static pipeline to dispose of or null this pipeline
-        thread::spawn(move || {
-            let current_thumbnail_started: Arc<(Mutex<bool>, Condvar)> =
-                Arc::new((Mutex::new(false), Condvar::new()));
-            let num_started = Arc::new(Mutex::new(0));
-
-            let pipeline = Self::create_thumbnail_pipeline(
-                uri,
-                barrier,
-                Arc::clone(&current_thumbnail_started),
-                Arc::clone(&num_started),
-            )
+        let pipeline = Self::create_thumbnail_pipeline(
+            video_uri,
+            barrier,
+            Arc::clone(&current_thumbnail_started),
+            Arc::clone(&num_started),
+        )
             .expect("could not create thumbnail pipeline");
 
-            pipeline.set_state(gst::State::Paused).unwrap();
+        pipeline.set_state(State::Paused).unwrap();
 
-            let pipe_clone = pipeline.clone();
-            VideoPlayerModel::wait_for_playbin_done(&gst::Element::from(pipe_clone));
+        let pipe_clone = pipeline.clone();
+        VideoPlayerModel::wait_for_playbin_done(&gst::Element::from(pipe_clone));
 
-            let duration = pipeline.query_duration::<ClockTime>().unwrap();
-            let step = duration.mseconds() / (NUM_THUMBNAILS + 2); // + 2 so first and last frame not chosen
+        let duration = pipeline.query_duration::<ClockTime>().unwrap();
+        let step = duration.mseconds() / (NUM_THUMBNAILS + 2); // + 2 so first and last frame not chosen
 
-            for i in 0..NUM_THUMBNAILS {
-                let timestamp =
-                    gst::GenericFormattedValue::from(ClockTime::from_mseconds(step + (step * i)));
-                if pipeline
-                    .seek_simple(SeekFlags::FLUSH | SeekFlags::KEY_UNIT, timestamp)
-                    .is_err()
-                {
-                    println!("Failed to seek");
-                }
-                pipeline.set_state(gst::State::Playing).unwrap();
-                let (lock, started_thumbnail) = &*current_thumbnail_started;
-                let mut started = started_thumbnail
-                    .wait_while(lock.lock().unwrap(), |pending| !*pending)
-                    .unwrap();
-
-                pipeline.set_state(gst::State::Paused).unwrap();
-                *started = false;
+        for i in 0..NUM_THUMBNAILS {
+            let timestamp =
+                gst::GenericFormattedValue::from(ClockTime::from_mseconds(step + (step * i)));
+            if pipeline
+                .seek_simple(SeekFlags::FLUSH | SeekFlags::KEY_UNIT, timestamp)
+                .is_err()
+            {
+                println!("Failed to seek");
             }
-        });
+            pipeline.set_state(State::Playing).unwrap();
+            let (lock, started_thumbnail) = &*current_thumbnail_started;
+            let mut started = started_thumbnail
+                .wait_while(lock.lock().unwrap(), |pending| !*pending)
+                .unwrap();
+
+            pipeline.set_state(State::Paused).unwrap();
+            *started = false;
+        }
+
+        return pipeline;
     }
 
     pub fn get_thumbnail_paths() -> Vec<String> {
@@ -221,8 +219,10 @@ impl ThumbnailManager {
 
     pub async fn generate_thumbnails(video_uri: String) {
         let all_thumbnails_generated = Arc::new(Barrier::new((NUM_THUMBNAILS + 1) as usize));
-        Self::launch_thumbnail_threads(video_uri, Arc::clone(&all_thumbnails_generated));
+        let pipeline =
+            Self::launch_thumbnail_threads(video_uri, Arc::clone(&all_thumbnails_generated));
         all_thumbnails_generated.wait();
+        pipeline.set_state(State::Null).unwrap();
     }
 }
 
