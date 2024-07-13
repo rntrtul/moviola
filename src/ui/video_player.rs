@@ -56,6 +56,7 @@ pub enum VideoPlayerMsg {
 #[derive(Debug)]
 pub enum VideoPlayerOutput {
     UpdateSeekBarPos(f64),
+    VideoLoaded,
 }
 
 #[derive(Debug)]
@@ -170,7 +171,6 @@ impl Component for VideoPlayerModel {
     ) {
         match message {
             VideoPlayerMsg::NewVideo(uri) => {
-                println!("uri is: {uri}");
                 self.video_is_selected = true;
                 self.video_uri = Some(uri);
                 self.video_is_loaded = false;
@@ -193,6 +193,7 @@ impl Component for VideoPlayerModel {
 
                     VideoPlayerCommandMsg::VideoInit(true)
                 });
+                sender.output(VideoPlayerOutput::VideoLoaded).unwrap();
             }
             VideoPlayerMsg::SeekToPercent(percent) => self.seek_to_percent(percent),
             VideoPlayerMsg::TogglePlayPause => self.video_toggle_play_pause(),

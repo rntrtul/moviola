@@ -21,6 +21,7 @@ pub(super) struct App {
     video_is_open: bool,
     video_is_playing: bool,
     video_is_mute: bool,
+    uri: Option<String>,
 }
 
 #[derive(Debug)]
@@ -37,6 +38,7 @@ pub(super) enum AppMsg {
     UpdateSeekBarPos(f64),
     TogglePlayPause,
     ToggleMute,
+    VideoLoaded,
     Quit,
 }
 
@@ -179,6 +181,7 @@ impl SimpleComponent for App {
             .launch(())
             .forward(sender.input_sender(), |msg| match msg {
                 VideoPlayerOutput::UpdateSeekBarPos(percent) => AppMsg::UpdateSeekBarPos(percent),
+                VideoPlayerOutput::VideoLoaded => AppMsg::VideoLoaded,
             });
 
         // fixme: should stuff be pulled out of video player? only have gstreamer stuff there.
@@ -208,6 +211,7 @@ impl SimpleComponent for App {
             video_is_open: false,
             video_is_playing: false,
             video_is_mute: false,
+            uri: None,
         };
 
         let widgets = view_output!();
@@ -229,9 +233,9 @@ impl SimpleComponent for App {
             AppMsg::SetVideo(file_name) => {
                 self.video_player
                     .emit(VideoPlayerMsg::NewVideo(file_name.clone()));
-                // thread::sleep(Duration::from_millis(850));
-                // self.timeline.emit(TimelineMsg::GenerateThumbnails(file_name.clone()));
+
                 self.video_is_open = true;
+                self.uri.replace(file_name);
 
                 self.video_player.widget().set_visible(true);
                 self.edit_controls.widget().set_visible(true);
@@ -253,6 +257,10 @@ impl SimpleComponent for App {
             }
             AppMsg::TogglePlayPause => self.video_player.emit(VideoPlayerMsg::TogglePlayPause),
             AppMsg::ToggleMute => self.video_player.emit(VideoPlayerMsg::ToggleMute),
+            AppMsg::VideoLoaded => {
+                self.timeline
+                    .emit(TimelineMsg::GenerateThumbnails(self.uri.clone().unwrap()));
+            }
         }
     }
 }
