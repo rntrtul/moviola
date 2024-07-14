@@ -201,6 +201,10 @@ impl Component for VideoPlayerModel {
             }
             VideoPlayerMsg::SeekToPercent(percent) => self.seek_to_percent(percent),
             VideoPlayerMsg::TogglePlayPause => {
+                if widgets.crop_box.drag_active() {
+                    return;
+                }
+
                 self.video_toggle_play_pause();
                 if self.is_playing {
                     sender.output(VideoPlayerOutput::VideoPlaying).unwrap();

@@ -9,8 +9,12 @@ use gtk4::{gdk, glib, graphene, gsk, Snapshot};
 use relm4::gtk;
 
 pub static MARGIN: f32 = 5.;
+static HANDLE_FILL_RULE: gsk::FillRule = gsk::FillRule::Winding;
 
-enum CircleType {
+#[derive(Debug, Default, Clone, Copy, Eq, PartialEq, glib::Enum)]
+#[enum_type(name = "CircleType")]
+enum HandleType {
+    #[default]
     TopLeft,
     TopRight,
     BottomLeft,
@@ -41,7 +45,9 @@ pub struct CropBoxWidget {
     #[property(get, set)]
     pub target_height: Cell<f32>,
     #[property(get, set)]
-    drag_circle: Cell<i32>,
+    pub drag_active: Cell<bool>,
+    #[property(get, set, builder(HandleType::TopLeft))]
+    active_handle: Cell<HandleType>,
 }
 
 #[glib::object_subclass]
@@ -101,7 +107,7 @@ impl WidgetImpl for CropBoxWidget {
             snapshot.append_stroke(&line, &thirds_box_stroke, &gdk::RGBA::GREEN);
         }
 
-        let circle_points = CropBoxWidget::get_circle_points(
+        let circle_points = CropBoxWidget::get_handle_centers(
             widget.width() as f32,
             widget.height() as f32,
             widget.target_width(),
@@ -114,7 +120,7 @@ impl WidgetImpl for CropBoxWidget {
             let path_builder = gsk::PathBuilder::new();
             path_builder.add_circle(&point, MARGIN);
             let circle = path_builder.to_path();
-            snapshot.append_fill(&circle, gsk::FillRule::Winding, &gdk::RGBA::GREEN);
+            snapshot.append_fill(&circle, HANDLE_FILL_RULE, &gdk::RGBA::GREEN);
         }
 
         snapshot.append_border(&border, &border_widths, &border_colours);
@@ -128,6 +134,7 @@ impl Default for crate::ui::CropBoxWidget {
             .property("y", 0f32)
             .property("target_width", 1f32)
             .property("target_height", 1f32)
+            .property("drag_active", false)
             .build()
     }
 }
@@ -152,7 +159,7 @@ impl CropBoxWidget {
         (left_x, top_y, right_x, bottom_y)
     }
 
-    fn get_circle_points(
+    fn get_handle_centers(
         widget_width: f32,
         widget_height: f32,
         target_width: f32,
@@ -190,12 +197,9 @@ impl CropBoxWidget {
 
 impl crate::ui::CropBoxWidget {
     pub fn is_point_in_handle(&self, x: f32, y: f32) {
-        // removing margin from dimensions to get actual video dimensions
-        // todo: remove duplicate code
-
         let target_point = graphene::Point::new(x, y);
 
-        let circle_points = CropBoxWidget::get_circle_points(
+        let handle_centers = CropBoxWidget::get_handle_centers(
             self.width() as f32,
             self.height() as f32,
             self.target_width(),
@@ -206,27 +210,35 @@ impl crate::ui::CropBoxWidget {
 
         let mut point_in_circle = false;
 
-        for (idx, point) in circle_points.iter().enumerate() {
+        for (idx, point) in handle_centers.iter().enumerate() {
             let path_builder = gsk::PathBuilder::new();
             path_builder.add_circle(&point, MARGIN);
             let circle = path_builder.to_path();
 
-            if circle.in_fill(&target_point, gsk::FillRule::Winding) {
-                self.set_drag_circle(idx as i32);
+            if circle.in_fill(&target_point, HANDLE_FILL_RULE) {
+                let handle = match idx {
+                    0 => HandleType::TopLeft,
+                    1 => HandleType::BottomLeft,
+                    2 => HandleType::TopRight,
+                    3 => HandleType::BottomRight,
+                    _ => panic!("too many handle indicies"),
+                };
+                self.set_active_handle(handle);
                 point_in_circle = true;
                 break;
             }
         }
 
-        if !point_in_circle {
-            self.set_drag_circle(-1);
-        }
+        self.set_drag_active(point_in_circle);
     }
 
     pub fn update_drag_pos(&self, x: f32, y: f32) {
-        // todo: use enum for circl position
-        match self.drag_circle() {
-            0 => {
+        if !self.drag_active() {
+            return;
+        }
+
+        match self.active_handle() {
+            HandleType::TopLeft => {
                 if x < self.target_width() {
                     self.set_x(x);
                 }
@@ -235,7 +247,7 @@ impl crate::ui::CropBoxWidget {
                     self.set_y(y);
                 }
             }
-            1 => {
+            HandleType::BottomLeft => {
                 if x < self.target_width() {
                     self.set_x(x);
                 }
@@ -244,7 +256,7 @@ impl crate::ui::CropBoxWidget {
                     self.set_target_height(y);
                 }
             }
-            2 => {
+            HandleType::TopRight => {
                 if x > self.x() {
                     self.set_target_width(x);
                 }
@@ -253,7 +265,7 @@ impl crate::ui::CropBoxWidget {
                     self.set_y(y);
                 }
             }
-            3 => {
+            HandleType::BottomRight => {
                 if x > self.x() {
                     self.set_target_width(x);
                 }
@@ -262,7 +274,6 @@ impl crate::ui::CropBoxWidget {
                     self.set_target_height(y);
                 }
             }
-            _ => {}
         }
     }
 }
