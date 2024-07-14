@@ -12,7 +12,7 @@ use crate::ui::crop_box::CropMode;
 use crate::ui::timeline::{TimelineModel, TimelineMsg, TimelineOutput};
 
 use super::ui::edit_controls::{EditControlsModel, EditControlsOutput};
-use super::ui::video_player::{VideoPlayerModel, VideoPlayerMsg, VideoPlayerOutput};
+use super::ui::video_player::{FrameInfo, VideoPlayerModel, VideoPlayerMsg, VideoPlayerOutput};
 
 pub(super) struct App {
     video_player: Controller<VideoPlayerModel>,
@@ -28,6 +28,7 @@ pub(super) struct App {
 pub(super) enum AppMsg {
     AudioMute,
     AudioPlaying,
+    FrameInfo(FrameInfo),
     ExportFrame,
     ExportVideo,
     OpenFile,
@@ -208,6 +209,7 @@ impl SimpleComponent for App {
                 .launch(())
                 .forward(sender.input_sender(), |msg| match msg {
                     TimelineOutput::SeekToPercent(percent) => AppMsg::SeekToPercent(percent),
+                    TimelineOutput::FrameInfo(info) => AppMsg::FrameInfo(info),
                 });
 
         let model = Self {
@@ -271,6 +273,7 @@ impl SimpleComponent for App {
             AppMsg::VideoPlaying => self.video_is_playing = true,
             AppMsg::AudioMute => self.video_is_mute = true,
             AppMsg::AudioPlaying => self.video_is_mute = false,
+            AppMsg::FrameInfo(info) => self.video_player.emit(VideoPlayerMsg::FrameInfo(info)),
         }
     }
 }

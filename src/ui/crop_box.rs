@@ -48,6 +48,8 @@ pub struct CropBoxWidget {
     pub target_height: Cell<f32>,
     #[property(get, set)]
     pub drag_active: Cell<bool>,
+    #[property(get, set = Self::set_aspect_ratio)]
+    pub asepct_ratio: Cell<f64>,
     #[property(get, set, builder(HandleType::TopLeft))]
     active_handle: Cell<HandleType>,
     #[property(get, set, builder(CropMode::Free))]
@@ -168,6 +170,11 @@ impl CropBoxWidget {
         let y_adj = (y as f32 - MARGIN).clamp(0., frame_height);
 
         (x_adj / frame_width, y_adj / frame_height)
+    }
+
+    pub fn set_aspect_ratio(&self, aspect_ratio: f64) {
+        // todo: update target x,y
+        self.asepct_ratio.set(aspect_ratio);
     }
 }
 

@@ -9,12 +9,19 @@ use ges::prelude::{
 use ges::{gst_pbutils, Effect, PipelineFlags};
 use gst::prelude::*;
 use gst::{ClockTime, Element, SeekFlags, State};
-use gst_video::VideoOrientationMethod;
+use gst_video::{VideoFrameExt, VideoOrientationMethod};
 use gtk4::prelude::{EventControllerExt, GestureDragExt, OrientableExt, WidgetExt};
 use relm4::adw::gdk;
 use relm4::*;
 
 use crate::ui::crop_box::{CropBoxWidget, CropMode, MARGIN};
+
+#[derive(Debug)]
+pub struct FrameInfo {
+    width: u32,
+    height: u32,
+    aspect_ratio: f64,
+}
 
 pub struct PlayingInfo {
     pipeline: ges::Pipeline,
@@ -35,11 +42,13 @@ pub struct VideoPlayerModel {
     video_duration: Option<ClockTime>,
     video_uri: Option<String>,
     playing_info: Option<PlayingInfo>,
+    frame_info: FrameInfo,
 }
 
 #[derive(Debug)]
 pub enum VideoPlayerMsg {
     ExportFrame,
+    FrameInfo(FrameInfo),
     TogglePlayPause,
     ToggleMute,
     SeekToPercent(f64),
@@ -150,7 +159,6 @@ impl Component for VideoPlayerModel {
 
         let offload = gtk4::GraphicsOffload::new(Some(&picture));
         offload.set_enabled(gtk::GraphicsOffloadEnabled::Enabled);
-
         let model = VideoPlayerModel {
             video_is_selected: false,
             video_is_loaded: false,
@@ -161,6 +169,11 @@ impl Component for VideoPlayerModel {
             video_duration: None,
             video_uri: None,
             playing_info: None,
+            frame_info: FrameInfo {
+                width: 0,
+                height: 0,
+                aspect_ratio: 0.,
+            },
         };
 
         let widgets = view_output!();
@@ -256,6 +269,12 @@ impl Component for VideoPlayerModel {
                 widgets.crop_box.set_drag_active(false);
                 widgets.crop_box.queue_draw()
             }
+            VideoPlayerMsg::FrameInfo(info) => {
+                self.frame_info = info;
+                widgets
+                    .crop_box
+                    .set_asepct_ratio(self.frame_info.aspect_ratio);
+            }
         }
 
         self.update_view(widgets, sender);
@@ -272,10 +291,8 @@ impl Component for VideoPlayerModel {
                 self.is_playing = true;
                 self.video_is_loaded = true;
 
-                let asset = self
-                    .playing_info
-                    .as_ref()
-                    .unwrap()
+                let info = self.playing_info.as_ref().unwrap();
+                let asset = info
                     .clip
                     .asset()
                     .unwrap()
@@ -321,6 +338,23 @@ impl Component for VideoPlayerModel {
 }
 
 impl VideoPlayerModel {
+    pub fn get_sample_frame_info(sample: gst::Sample) -> FrameInfo {
+        let buffer = sample.buffer().unwrap();
+
+        let caps = sample.caps().expect("Sample without caps");
+        let info = gst_video::VideoInfo::from_caps(caps).expect("Failed to parse caps");
+
+        let frame = gst_video::VideoFrameRef::from_buffer_ref_readable(buffer, &info).unwrap();
+        let display_aspect_ratio = (frame.width() as f64 * info.par().numer() as f64)
+            / (frame.height() as f64 * info.par().denom() as f64);
+
+        FrameInfo {
+            width: frame.width(),
+            height: frame.height(),
+            aspect_ratio: display_aspect_ratio,
+        }
+    }
+
     // fixme: sometimes new video just hangs
     pub fn wait_for_playbin_done(playbin: &Element) {
         let bus = playbin.bus().unwrap();
