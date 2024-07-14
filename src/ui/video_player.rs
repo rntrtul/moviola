@@ -51,6 +51,7 @@ pub enum VideoPlayerMsg {
     ExportVideo,
     CropBoxDetectHandle((f32, f32)),
     CropBoxDrag((f32, f32)),
+    CropBoxDragEnd,
 }
 
 #[derive(Debug)]
@@ -118,6 +119,9 @@ impl Component for VideoPlayerModel {
                             );
 
                             sender.input(VideoPlayerMsg::CropBoxDrag((x,y)));
+                        },
+                        connect_drag_end[sender] => move |_,x,y| {
+                            sender.input(VideoPlayerMsg::CropBoxDragEnd);
                         },
                      },
                 },
@@ -248,6 +252,10 @@ impl Component for VideoPlayerModel {
             VideoPlayerMsg::CropBoxDrag(pos) => {
                 widgets.crop_box.update_drag_pos(pos.0, pos.1);
                 widgets.crop_box.queue_draw();
+            }
+            VideoPlayerMsg::CropBoxDragEnd => {
+                widgets.crop_box.set_drag_active(false);
+                widgets.crop_box.queue_draw()
             }
         }
 

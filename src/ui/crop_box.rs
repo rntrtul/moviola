@@ -13,7 +13,7 @@ static HANDLE_FILL_RULE: gsk::FillRule = gsk::FillRule::Winding;
 
 #[derive(Debug, Default, Clone, Copy, Eq, PartialEq, glib::Enum)]
 #[enum_type(name = "CircleType")]
-enum HandleType {
+pub enum HandleType {
     #[default]
     TopLeft,
     TopRight,
@@ -73,41 +73,21 @@ impl WidgetImpl for CropBoxWidget {
         let border_widths = [1.; 4];
         let border_colours = [gdk::RGBA::GREEN; 4];
 
-        let thirds_box_stroke = gsk::Stroke::builder(1.).build();
+        if self.drag_active.get() {
+            let horizontal_step = (right_x - left_x) / 3.;
+            Self::draw_evenly_spaced_line(snapshot, true, horizontal_step, left_x, top_y, bottom_y);
 
-        let horizontal_step = (right_x - left_x) / 3.;
-        for step in 1..3 {
-            let x_step = horizontal_step * step as f32;
-            let x = left_x + x_step;
-
-            let path_builder = gsk::PathBuilder::new();
-            path_builder.move_to(x, top_y);
-            path_builder.line_to(x, bottom_y);
-
-            let line = path_builder.to_path();
-            snapshot.append_stroke(&line, &thirds_box_stroke, &gdk::RGBA::GREEN);
+            let vertical_step = (bottom_y - top_y) / 3.;
+            Self::draw_evenly_spaced_line(snapshot, false, vertical_step, top_y, left_x, right_x);
         }
 
-        let vertical_step = (bottom_y - top_y) / 3.;
-        for step in 1..3 {
-            let y_step = vertical_step * step as f32;
-            let y = y_step + top_y;
+        let handle_center = self.get_handle_centers(widget.width() as f32, widget.height() as f32);
 
+        for center in handle_center {
             let path_builder = gsk::PathBuilder::new();
-            path_builder.move_to(left_x, y);
-            path_builder.line_to(right_x, y);
-
-            let line = path_builder.to_path();
-            snapshot.append_stroke(&line, &thirds_box_stroke, &gdk::RGBA::GREEN);
-        }
-
-        let circle_points = self.get_handle_centers(widget.width() as f32, widget.height() as f32);
-
-        for point in circle_points {
-            let path_builder = gsk::PathBuilder::new();
-            path_builder.add_circle(&point, MARGIN);
-            let circle = path_builder.to_path();
-            snapshot.append_fill(&circle, HANDLE_FILL_RULE, &gdk::RGBA::GREEN);
+            path_builder.add_circle(&center, MARGIN);
+            let handle = path_builder.to_path();
+            snapshot.append_fill(&handle, HANDLE_FILL_RULE, &gdk::RGBA::GREEN);
         }
 
         snapshot.append_border(&border, &border_widths, &border_colours);
@@ -127,11 +107,38 @@ impl Default for crate::ui::CropBoxWidget {
 }
 
 impl CropBoxWidget {
+    fn draw_evenly_spaced_line(
+        snapshot: &Snapshot,
+        is_horizontal: bool,
+        step_size: f32,
+        step_start: f32,
+        start: f32,
+        end: f32,
+    ) {
+        let thirds_box_stroke = gsk::Stroke::builder(1.).build();
+
+        for step in 1..3 {
+            let pos = step_start + (step_size * step as f32);
+            let path_builder = gsk::PathBuilder::new();
+
+            if is_horizontal {
+                path_builder.move_to(pos, start);
+                path_builder.line_to(pos, end);
+            } else {
+                path_builder.move_to(start, pos);
+                path_builder.line_to(end, pos);
+            }
+
+            let line = path_builder.to_path();
+            snapshot.append_stroke(&line, &thirds_box_stroke, &gdk::RGBA::GREEN);
+        }
+    }
+
     fn get_box_bounds(&self, widget_width: f32, widget_height: f32) -> (f32, f32, f32, f32) {
         let left_x = (widget_width * self.x.get()) + MARGIN;
         let top_y = (widget_height * self.y.get()) + MARGIN;
 
-        // subtract margin to convert percent to
+        // subtract margin to convert percent to actual frame cords
         let right_x = (widget_width - (MARGIN * 2.)) * self.target_width.get() + MARGIN;
         let bottom_y = (widget_height - (MARGIN * 2.)) * self.target_height.get() + MARGIN;
 
