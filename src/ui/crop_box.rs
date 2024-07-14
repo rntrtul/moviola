@@ -2,7 +2,7 @@ use std::cell::Cell;
 
 use gtk4::prelude::{ObjectExt, SnapshotExt, SnapshotExtManual, WidgetExt};
 use gtk4::subclass::prelude::{
-    DerivedObjectProperties, ObjectImpl, ObjectSubclass, ObjectSubclassExt,
+    DerivedObjectProperties, ObjectImpl, ObjectSubclass, ObjectSubclassExt, ObjectSubclassIsExt,
 };
 use gtk4::subclass::widget::WidgetImpl;
 use gtk4::{gdk, glib, graphene, gsk, Snapshot};
@@ -64,14 +64,8 @@ impl WidgetImpl for CropBoxWidget {
     fn snapshot(&self, snapshot: &Snapshot) {
         let widget = self.obj();
 
-        let (left_x, top_y, right_x, bottom_y) = Self::get_box_bounds(
-            widget.width() as f32,
-            widget.height() as f32,
-            widget.target_width(),
-            widget.target_height(),
-            widget.x(),
-            widget.y(),
-        );
+        let (left_x, top_y, right_x, bottom_y) =
+            self.get_box_bounds(widget.width() as f32, widget.height() as f32);
 
         let border_rect = graphene::Rect::new(left_x, top_y, right_x - left_x, bottom_y - top_y);
 
@@ -107,14 +101,7 @@ impl WidgetImpl for CropBoxWidget {
             snapshot.append_stroke(&line, &thirds_box_stroke, &gdk::RGBA::GREEN);
         }
 
-        let circle_points = CropBoxWidget::get_handle_centers(
-            widget.width() as f32,
-            widget.height() as f32,
-            widget.target_width(),
-            widget.target_height(),
-            widget.x(),
-            widget.y(),
-        );
+        let circle_points = self.get_handle_centers(widget.width() as f32, widget.height() as f32);
 
         for point in circle_points {
             let path_builder = gsk::PathBuilder::new();
@@ -139,42 +126,20 @@ impl Default for crate::ui::CropBoxWidget {
     }
 }
 
-// fixme: figure out scope of functions to allow &self and be called from widgetImpl and ui:CropBoxWidget
 impl CropBoxWidget {
-    fn get_box_bounds(
-        widget_width: f32,
-        widget_height: f32,
-        target_width: f32,
-        target_height: f32,
-        x: f32,
-        y: f32,
-    ) -> (f32, f32, f32, f32) {
-        let left_x = (widget_width * x) + MARGIN;
-        let top_y = (widget_height * y) + MARGIN;
+    fn get_box_bounds(&self, widget_width: f32, widget_height: f32) -> (f32, f32, f32, f32) {
+        let left_x = (widget_width * self.x.get()) + MARGIN;
+        let top_y = (widget_height * self.y.get()) + MARGIN;
 
         // subtract margin to convert percent to
-        let right_x = (widget_width - (MARGIN * 2.)) * target_width + MARGIN;
-        let bottom_y = (widget_height - (MARGIN * 2.)) * target_height + MARGIN;
+        let right_x = (widget_width - (MARGIN * 2.)) * self.target_width.get() + MARGIN;
+        let bottom_y = (widget_height - (MARGIN * 2.)) * self.target_height.get() + MARGIN;
 
         (left_x, top_y, right_x, bottom_y)
     }
 
-    fn get_handle_centers(
-        widget_width: f32,
-        widget_height: f32,
-        target_width: f32,
-        target_height: f32,
-        x: f32,
-        y: f32,
-    ) -> [graphene::Point; 4] {
-        let (left_x, top_y, right_x, bottom_y) = Self::get_box_bounds(
-            widget_width,
-            widget_height,
-            target_width,
-            target_height,
-            x,
-            y,
-        );
+    fn get_handle_centers(&self, widget_width: f32, widget_height: f32) -> [graphene::Point; 4] {
+        let (left_x, top_y, right_x, bottom_y) = self.get_box_bounds(widget_width, widget_height);
 
         [
             graphene::Point::new(left_x, top_y),
@@ -199,14 +164,9 @@ impl crate::ui::CropBoxWidget {
     pub fn is_point_in_handle(&self, x: f32, y: f32) {
         let target_point = graphene::Point::new(x, y);
 
-        let handle_centers = CropBoxWidget::get_handle_centers(
-            self.width() as f32,
-            self.height() as f32,
-            self.target_width(),
-            self.target_height(),
-            self.x(),
-            self.y(),
-        );
+        let handle_centers = self
+            .imp()
+            .get_handle_centers(self.width() as f32, self.height() as f32);
 
         let mut point_in_circle = false;
 
