@@ -2,11 +2,11 @@ use gst_video::VideoOrientationMethod;
 use gtk4::prelude::{BoxExt, ButtonExt, OrientableExt, WidgetExt};
 use relm4::{gtk, ComponentParts, ComponentSender, SimpleComponent};
 
-use crate::ui::crop_box::CropType;
+use crate::ui::crop_box::CropMode;
 use crate::ui::edit_controls::EditControlsOutput::{HideCropBox, ShowCropBox};
 
 pub struct EditControlsModel {
-    crop_mode: CropType,
+    crop_mode: CropMode,
     orientation: VideoOrientationMethod,
     rotation_angle: i32,
     show_crop_box: bool,
@@ -18,7 +18,7 @@ pub struct EditControlsModel {
 pub enum EditControlsMsg {
     ExportFrame,
     ExportVideo,
-    SetCropMode(CropType),
+    SetCropMode(CropMode),
     ToggleCropBox,
     RotateRight90,
     RotateLeft90,
@@ -33,7 +33,7 @@ pub enum EditControlsOutput {
     OrientVideo(VideoOrientationMethod),
     ShowCropBox,
     HideCropBox,
-    SetCropMode(CropType),
+    SetCropMode(CropMode),
 }
 
 #[relm4::component(pub)]
@@ -65,13 +65,13 @@ impl SimpleComponent for EditControlsModel {
                     gtk::DropDown::from_strings(&["Free", "Original", "Square", "5:4", "4:3", "3:2", "16:9"]) {
                         connect_selected_item_notify [sender] => move |dropdown| {
                             let mode = match dropdown.selected() {
-                                0 => CropType::CropFree,
-                                1 => CropType::CropOriginal,
-                                2 => CropType::CropSquare,
-                                3 => CropType::Crop5To4,
-                                4 => CropType::Crop4To3,
-                                5 => CropType::Crop3To2,
-                                6 => CropType::Crop16To9,
+                                0 => CropMode::Free,
+                                1 => CropMode::Original,
+                                2 => CropMode::Square,
+                                3 => CropMode::_5To4,
+                                4 => CropMode::_4To3,
+                                5 => CropMode::_3To2,
+                                6 => CropMode::_16To9,
                                 _ => panic!("Unknown crop mode selected")
                             };
                             sender.input(EditControlsMsg::SetCropMode(mode));
@@ -121,7 +121,7 @@ impl SimpleComponent for EditControlsModel {
     ) -> ComponentParts<Self> {
         let widgets = view_output!();
         let model = EditControlsModel {
-            crop_mode: CropType::CropFree,
+            crop_mode: CropMode::Free,
             orientation: VideoOrientationMethod::Identity,
             rotation_angle: 0,
             show_crop_box: false,

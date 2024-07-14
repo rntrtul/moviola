@@ -12,7 +12,7 @@ pub static MARGIN: f32 = 5.;
 static HANDLE_FILL_RULE: gsk::FillRule = gsk::FillRule::Winding;
 
 #[derive(Debug, Default, Clone, Copy, Eq, PartialEq, glib::Enum)]
-#[enum_type(name = "CircleType")]
+#[enum_type(name = "HandleType")]
 pub enum HandleType {
     #[default]
     TopLeft,
@@ -21,15 +21,17 @@ pub enum HandleType {
     BottomRight,
 }
 
-#[derive(Debug, Clone, Copy)]
-pub enum CropType {
-    CropFree = 0,
-    CropOriginal,
-    CropSquare,
-    Crop5To4,
-    Crop4To3,
-    Crop3To2,
-    Crop16To9,
+#[derive(Debug, Default, Clone, Copy, Eq, PartialEq, glib::Enum)]
+#[enum_type(name = "CropMode")]
+pub enum CropMode {
+    #[default]
+    Free,
+    Original,
+    Square,
+    _5To4,
+    _4To3,
+    _3To2,
+    _16To9,
 }
 
 // properties are represented in percentages since preview is not 1:1 to output
@@ -48,6 +50,8 @@ pub struct CropBoxWidget {
     pub drag_active: Cell<bool>,
     #[property(get, set, builder(HandleType::TopLeft))]
     active_handle: Cell<HandleType>,
+    #[property(get, set, builder(CropMode::Free))]
+    crop_mode: Cell<CropMode>,
 }
 
 #[glib::object_subclass]

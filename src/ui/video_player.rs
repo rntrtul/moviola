@@ -14,7 +14,7 @@ use gtk4::prelude::{EventControllerExt, GestureDragExt, OrientableExt, WidgetExt
 use relm4::adw::gdk;
 use relm4::*;
 
-use crate::ui::crop_box::{CropBoxWidget, CropType, MARGIN};
+use crate::ui::crop_box::{CropBoxWidget, CropMode, MARGIN};
 
 pub struct PlayingInfo {
     pipeline: ges::Pipeline,
@@ -47,7 +47,7 @@ pub enum VideoPlayerMsg {
     NewVideo(String),
     ShowCropBox,
     HideCropBox,
-    SetCropMode(CropType),
+    SetCropMode(CropMode),
     ExportVideo,
     CropBoxDetectHandle((f32, f32)),
     CropBoxDrag((f32, f32)),
@@ -120,7 +120,7 @@ impl Component for VideoPlayerModel {
 
                             sender.input(VideoPlayerMsg::CropBoxDrag((x,y)));
                         },
-                        connect_drag_end[sender] => move |_,x,y| {
+                        connect_drag_end[sender] => move |_,_,_| {
                             sender.input(VideoPlayerMsg::CropBoxDragEnd);
                         },
                      },
@@ -226,6 +226,7 @@ impl Component for VideoPlayerModel {
             }
             VideoPlayerMsg::ExportFrame => {
                 // todo: get actual video width and height
+                // todo: ask for file location and name
                 if self.video_is_loaded {
                     self.playing_info
                         .as_ref()
@@ -243,11 +244,9 @@ impl Component for VideoPlayerModel {
             }
             VideoPlayerMsg::ShowCropBox => self.show_crop_box = true,
             VideoPlayerMsg::HideCropBox => self.show_crop_box = false,
-            VideoPlayerMsg::SetCropMode(_mode) => {
-                //     todo: pass mode to widget
-            }
+            VideoPlayerMsg::SetCropMode(mode) => widgets.crop_box.set_crop_mode(mode),
             VideoPlayerMsg::CropBoxDetectHandle(pos) => {
-                widgets.crop_box.is_point_in_handle(pos.0, pos.1);
+                widgets.crop_box.is_point_in_handle(pos.0, pos.1)
             }
             VideoPlayerMsg::CropBoxDrag(pos) => {
                 widgets.crop_box.update_drag_pos(pos.0, pos.1);

@@ -8,7 +8,7 @@ use relm4::{
     Controller, RelmWidgetExt, SimpleComponent,
 };
 
-use crate::ui::crop_box::CropType;
+use crate::ui::crop_box::CropMode;
 use crate::ui::timeline::{TimelineModel, TimelineMsg, TimelineOutput};
 
 use super::ui::edit_controls::{EditControlsModel, EditControlsOutput};
@@ -35,7 +35,7 @@ pub(super) enum AppMsg {
     Orient(VideoOrientationMethod),
     ShowCropBox,
     HideCropBox,
-    SetCropMode(CropType),
+    SetCropMode(CropMode),
     SeekToPercent(f64),
     UpdateSeekBarPos(f64),
     TogglePlayPause,
