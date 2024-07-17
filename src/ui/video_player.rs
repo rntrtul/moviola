@@ -259,7 +259,8 @@ impl Component for VideoPlayerModel {
             VideoPlayerMsg::HideCropBox => self.show_crop_box = false,
             VideoPlayerMsg::SetCropMode(mode) => widgets.crop_box.set_crop_mode(mode),
             VideoPlayerMsg::CropBoxDetectHandle(pos) => {
-                widgets.crop_box.is_point_in_handle(pos.0, pos.1)
+                widgets.crop_box.is_point_in_handle(pos.0, pos.1);
+                widgets.crop_box.queue_draw();
             }
             VideoPlayerMsg::CropBoxDrag(pos) => {
                 widgets.crop_box.update_drag_pos(pos.0, pos.1);
