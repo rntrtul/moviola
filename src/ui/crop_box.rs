@@ -34,6 +34,20 @@ pub enum CropMode {
     _16To9,
 }
 
+impl CropMode {
+    fn value(&self) -> f32 {
+        match *self {
+            CropMode::Free => 0.,
+            CropMode::Original => 0.,
+            CropMode::Square => 1.,
+            CropMode::_5To4 => 1.25,
+            CropMode::_4To3 => 1.33333,
+            CropMode::_3To2 => 1.5,
+            CropMode::_16To9 => 1.77777,
+        }
+    }
+}
+
 // properties are represented in percentages since preview is not 1:1 to output
 #[derive(glib::Properties, Default, Debug)]
 #[properties(wrapper_type = super::CropBoxWidget)]
@@ -52,7 +66,7 @@ pub struct CropBoxWidget {
     pub asepct_ratio: Cell<f64>,
     #[property(get, set, builder(HandleType::TopLeft))]
     active_handle: Cell<HandleType>,
-    #[property(get, set, builder(CropMode::Free))]
+    #[property(get, set = Self::set_crop_mode, builder(CropMode::Free))]
     crop_mode: Cell<CropMode>,
 }
 
@@ -173,12 +187,54 @@ impl CropBoxWidget {
     }
 
     pub fn set_aspect_ratio(&self, aspect_ratio: f64) {
-        // todo: update target x,y
         self.asepct_ratio.set(aspect_ratio);
+    }
+
+    pub fn set_crop_mode(&self, mode: CropMode) {
+        self.crop_mode.set(mode);
+        // todo: deal with landscape vs portrait
+
+        let height_relative_to_width =
+            (self.target_height.get() - self.y.get()) / self.asepct_ratio.get() as f32;
+        let new_width = match self.crop_mode.get() {
+            CropMode::Free => self.target_width.get() - self.x.get(),
+            CropMode::Original => height_relative_to_width * self.asepct_ratio.get() as f32,
+            _ => height_relative_to_width * mode.value(),
+        };
+
+        // todo: deal with new width being too big
+        let new_targ_width = new_width + self.x.get();
+        self.target_width.set(new_targ_width);
     }
 }
 
 impl crate::ui::CropBoxWidget {
+    fn box_respects_aspect_ratio(&self) -> bool {
+        let w = self.target_width() - self.x();
+        let h = self.target_height() - self.y();
+        let ar = (w * self.asepct_ratio() as f32) / h;
+
+        match self.crop_mode() {
+            CropMode::Free => true,
+            CropMode::Original => w - h < f32::EPSILON,
+            _ => self.crop_mode().value() - ar < f32::EPSILON,
+        }
+    }
+    fn update_box(&self, x: f32, y: f32, changing_left_x: bool, changing_top_y: bool) {
+        // todo: respect aspect ratio now
+        if changing_left_x && x < self.target_width() {
+            self.set_x(x);
+        } else if !changing_left_x && x > self.x() {
+            self.set_target_width(x);
+        }
+
+        if changing_top_y && y < self.target_height() {
+            self.set_y(y);
+        } else if !changing_top_y && y > self.y() {
+            self.set_target_height(y);
+        }
+    }
+
     pub fn is_point_in_handle(&self, x: f32, y: f32) {
         let target_point = graphene::Point::new(x, y);
 
@@ -217,40 +273,16 @@ impl crate::ui::CropBoxWidget {
 
         match self.active_handle() {
             HandleType::TopLeft => {
-                if x < self.target_width() {
-                    self.set_x(x);
-                }
-
-                if y < self.target_height() {
-                    self.set_y(y);
-                }
+                self.update_box(x, y, true, true);
             }
             HandleType::BottomLeft => {
-                if x < self.target_width() {
-                    self.set_x(x);
-                }
-
-                if y > self.y() {
-                    self.set_target_height(y);
-                }
+                self.update_box(x, y, true, false);
             }
             HandleType::TopRight => {
-                if x > self.x() {
-                    self.set_target_width(x);
-                }
-
-                if y < self.target_height() {
-                    self.set_y(y);
-                }
+                self.update_box(x, y, false, true);
             }
             HandleType::BottomRight => {
-                if x > self.x() {
-                    self.set_target_width(x);
-                }
-
-                if y > self.y() {
-                    self.set_target_height(y);
-                }
+                self.update_box(x, y, false, false);
             }
         }
     }
