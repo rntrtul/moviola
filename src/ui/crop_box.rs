@@ -289,4 +289,13 @@ impl crate::ui::CropBoxWidget {
             }
         }
     }
+
+    pub fn reset_box(&self) {
+        self.set_top_y(0f32);
+        self.set_left_x(0f32);
+        self.set_bottom_y(1f32);
+        self.set_right_x(1f32);
+
+        self.set_asepct_ratio(0f64);
+    }
 }

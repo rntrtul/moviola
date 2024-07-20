@@ -291,6 +291,7 @@ impl Component for App {
 
                 self.video_is_open = true;
                 self.uri.replace(file_name);
+                widgets.crop_box.reset_box();
 
                 self.video_player.widget().set_visible(true);
                 self.edit_controls.widget().set_visible(true);
