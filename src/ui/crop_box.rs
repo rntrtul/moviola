@@ -53,13 +53,13 @@ impl CropMode {
 #[properties(wrapper_type = super::CropBoxWidget)]
 pub struct CropBoxWidget {
     #[property(get, set)]
-    pub x: Cell<f32>,
+    pub left_x: Cell<f32>,
     #[property(get, set)]
-    pub y: Cell<f32>,
+    pub top_y: Cell<f32>,
     #[property(get, set)]
-    pub target_width: Cell<f32>,
+    pub right_x: Cell<f32>,
     #[property(get, set)]
-    pub target_height: Cell<f32>,
+    pub bottom_y: Cell<f32>,
     #[property(get, set)]
     pub drag_active: Cell<bool>,
     #[property(get, set = Self::set_aspect_ratio)]
@@ -117,10 +117,10 @@ impl WidgetImpl for CropBoxWidget {
 impl Default for crate::ui::CropBoxWidget {
     fn default() -> Self {
         glib::Object::builder()
-            .property("x", 0f32)
-            .property("y", 0f32)
-            .property("target_width", 1f32)
-            .property("target_height", 1f32)
+            .property("left_x", 0f32)
+            .property("top_y", 0f32)
+            .property("right_x", 1f32)
+            .property("bottom_y", 1f32)
             .property("drag_active", false)
             .build()
     }
@@ -155,12 +155,12 @@ impl CropBoxWidget {
     }
 
     fn get_box_bounds(&self, widget_width: f32, widget_height: f32) -> (f32, f32, f32, f32) {
-        let left_x = (widget_width * self.x.get()) + MARGIN;
-        let top_y = (widget_height * self.y.get()) + MARGIN;
+        let left_x = (widget_width * self.left_x.get()) + MARGIN;
+        let top_y = (widget_height * self.top_y.get()) + MARGIN;
 
         // subtract margin to convert percent to actual frame cords
-        let right_x = (widget_width - (MARGIN * 2.)) * self.target_width.get() + MARGIN;
-        let bottom_y = (widget_height - (MARGIN * 2.)) * self.target_height.get() + MARGIN;
+        let right_x = (widget_width - (MARGIN * 2.)) * self.right_x.get() + MARGIN;
+        let bottom_y = (widget_height - (MARGIN * 2.)) * self.bottom_y.get() + MARGIN;
 
         (left_x, top_y, right_x, bottom_y)
     }
@@ -188,23 +188,23 @@ impl CropBoxWidget {
         //          is based on the videos aspect ratio.
 
         let height_relative_to_width =
-            (self.target_height.get() - self.y.get()) / self.asepct_ratio.get() as f32;
+            (self.bottom_y.get() - self.top_y.get()) / self.asepct_ratio.get() as f32;
         let new_width = match self.crop_mode.get() {
-            CropMode::Free => self.target_width.get() - self.x.get(),
+            CropMode::Free => self.right_x.get() - self.left_x.get(),
             CropMode::Original => height_relative_to_width * self.asepct_ratio.get() as f32,
             _ => height_relative_to_width * mode.value(),
         };
 
         // todo: deal with new width being too big
-        let new_targ_width = new_width + self.x.get();
-        self.target_width.set(new_targ_width);
+        let new_targ_width = new_width + self.left_x.get();
+        self.right_x.set(new_targ_width);
     }
 }
 
 impl crate::ui::CropBoxWidget {
     fn box_respects_aspect_ratio(&self) -> bool {
-        let w = self.target_width() - self.x();
-        let h = self.target_height() - self.y();
+        let w = self.right_x() - self.left_x();
+        let h = self.bottom_y() - self.top_y();
         let ar = (w * self.asepct_ratio() as f32) / h;
 
         match self.crop_mode() {
@@ -215,16 +215,16 @@ impl crate::ui::CropBoxWidget {
     }
     fn update_box(&self, x: f32, y: f32, changing_left_x: bool, changing_top_y: bool) {
         // todo: respect aspect ratio now
-        if changing_left_x && x < self.target_width() {
-            self.set_x(x);
-        } else if !changing_left_x && x > self.x() {
-            self.set_target_width(x);
+        if changing_left_x && x < self.right_x() {
+            self.set_left_x(x);
+        } else if !changing_left_x && x > self.left_x() {
+            self.set_right_x(x);
         }
 
-        if changing_top_y && y < self.target_height() {
-            self.set_y(y);
-        } else if !changing_top_y && y > self.y() {
-            self.set_target_height(y);
+        if changing_top_y && y < self.bottom_y() {
+            self.set_top_y(y);
+        } else if !changing_top_y && y > self.top_y() {
+            self.set_bottom_y(y);
         }
     }
 
