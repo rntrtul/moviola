@@ -51,6 +51,7 @@ pub enum VideoPlayerMsg {
     SeekToPercent(f64),
     OrientVideo(VideoOrientationMethod),
     CropVideo(i32, i32, i32, i32),
+    HideCrop,
     NewVideo(String),
     ExportVideo,
 }
@@ -220,6 +221,9 @@ impl Component for VideoPlayerModel {
             VideoPlayerMsg::FrameInfo(info) => self.frame_info = info,
             VideoPlayerMsg::CropVideo(left, top, right, bottom) => {
                 self.set_video_crop(left, top, right, bottom);
+            }
+            VideoPlayerMsg::HideCrop => {
+                self.playing_info.as_mut().unwrap().timeline.commit_sync();
             }
         }
 
@@ -460,8 +464,8 @@ impl VideoPlayerModel {
         }
     }
 
-    fn replace_or_add_effect(&mut self, effect: &Effect, effect_name: &str) {
-        let info = self.playing_info.as_mut().unwrap();
+    fn remove_effect(&self, effect_name: &str) {
+        let info = self.playing_info.as_ref().unwrap();
 
         let found_element = info
             .clip
@@ -474,7 +478,10 @@ impl VideoPlayerModel {
                 .remove(&prev_effect)
                 .expect("could not delete previous effect");
         }
+    }
 
+    fn add_effect(&mut self, effect: &Effect) {
+        let info = self.playing_info.as_mut().unwrap();
         info.clip.add(effect).unwrap();
         info.timeline.commit_sync();
     }
@@ -488,15 +495,17 @@ impl VideoPlayerModel {
         flip.set_name(Some("orientation"))
             .expect("Unable to set name");
 
-        self.replace_or_add_effect(&flip, "orientation");
+        self.remove_effect("orientation");
+        self.add_effect(&flip);
     }
 
     fn set_video_crop(&mut self, left: i32, top: i32, right: i32, bottom: i32) {
         let effect = format!("videocrop top={top} left={left} right={right} bottom={bottom}");
         let crop = Effect::new(effect.as_str()).expect("could not make crop");
-        crop.set_name(Some("crop")).expect("unableto_set_name");
+        crop.set_name(Some("crop")).expect("unable to set name");
 
-        self.replace_or_add_effect(&crop, "crop");
+        self.remove_effect("crop");
+        self.add_effect(&crop);
     }
 
     fn export_video(&self) {

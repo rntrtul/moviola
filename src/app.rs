@@ -301,7 +301,10 @@ impl Component for App {
             AppMsg::Orient(orientation) => self
                 .video_player
                 .emit(VideoPlayerMsg::OrientVideo(orientation)),
-            AppMsg::ShowCropBox => self.show_crop_box = true,
+            AppMsg::ShowCropBox => {
+                self.show_crop_box = true;
+                self.video_player.emit(VideoPlayerMsg::HideCrop);
+            }
             AppMsg::HideCropBox => {
                 let crop_box = &widgets.crop_box;
 
