@@ -10,17 +10,17 @@ use ges::{gst_pbutils, Effect, PipelineFlags};
 use gst::prelude::*;
 use gst::{ClockTime, Element, SeekFlags, State};
 use gst_video::{VideoFrameExt, VideoOrientationMethod};
-use gtk4::prelude::{EventControllerExt, GestureDragExt, OrientableExt, WidgetExt};
+use gtk4::prelude::{BoxExt, OrientableExt, WidgetExt};
 use relm4::adw::gdk;
 use relm4::*;
 
-use crate::ui::crop_box::{CropBoxWidget, CropMode, MARGIN};
+use crate::ui::crop_box::MARGIN;
 
 #[derive(Debug)]
 pub struct FrameInfo {
     width: u32,
     height: u32,
-    aspect_ratio: f64,
+    pub(crate) aspect_ratio: f64,
 }
 
 pub struct PlayingInfo {
@@ -37,7 +37,6 @@ pub struct VideoPlayerModel {
     video_is_loaded: bool,
     is_playing: bool,
     is_mute: bool,
-    show_crop_box: bool,
     gtk_sink: Element,
     video_duration: Option<ClockTime>,
     video_uri: Option<String>,
@@ -54,13 +53,7 @@ pub enum VideoPlayerMsg {
     SeekToPercent(f64),
     OrientVideo(VideoOrientationMethod),
     NewVideo(String),
-    ShowCropBox,
-    HideCropBox,
-    SetCropMode(CropMode),
     ExportVideo,
-    CropBoxDetectHandle((f32, f32)),
-    CropBoxDrag((f32, f32)),
-    CropBoxDragEnd,
 }
 
 #[derive(Debug)]
@@ -100,39 +93,15 @@ impl Component for VideoPlayerModel {
             },
 
             #[name = "vid_container"]
-            gtk::Overlay{
+            gtk::Box{
+                set_width_request: 640,
+                set_height_request: 360,
                 #[watch]
                 set_visible: model.video_is_loaded,
                 add_controller = gtk::GestureClick {
                     connect_pressed[sender] => move |_,_,_,_| {
                         sender.input(VideoPlayerMsg::TogglePlayPause)
                     }
-                },
-
-                add_overlay: crop_box = &super::CropBoxWidget::default(){
-                    #[watch]
-                    set_visible: model.show_crop_box,
-
-                    add_controller = gtk::GestureDrag {
-                        connect_drag_begin[sender] => move |_,x,y| {
-                            sender.input(VideoPlayerMsg::CropBoxDetectHandle((x as f32,y as f32)));
-                        },
-                        connect_drag_update[sender] => move |drag, x_offset, y_offset| {
-                            let (start_x, start_y) = drag.start_point().unwrap();
-
-                            let (x, y) = CropBoxWidget::get_cordinate_percent_from_drag(
-                                drag.widget().width(),
-                                drag.widget().height(),
-                                start_x + x_offset,
-                                start_y + y_offset,
-                            );
-
-                            sender.input(VideoPlayerMsg::CropBoxDrag((x,y)));
-                        },
-                        connect_drag_end[sender] => move |_,_,_| {
-                            sender.input(VideoPlayerMsg::CropBoxDragEnd);
-                        },
-                     },
                 },
             },
         }
@@ -159,12 +128,12 @@ impl Component for VideoPlayerModel {
 
         let offload = gtk4::GraphicsOffload::new(Some(&picture));
         offload.set_enabled(gtk::GraphicsOffloadEnabled::Enabled);
+
         let model = VideoPlayerModel {
             video_is_selected: false,
             video_is_loaded: false,
             is_playing: false,
             is_mute: false,
-            show_crop_box: false,
             gtk_sink,
             video_duration: None,
             video_uri: None,
@@ -178,7 +147,7 @@ impl Component for VideoPlayerModel {
 
         let widgets = view_output!();
 
-        widgets.vid_container.set_child(Some(&offload));
+        widgets.vid_container.append(&offload);
 
         ComponentParts { model, widgets }
     }
@@ -218,9 +187,9 @@ impl Component for VideoPlayerModel {
             }
             VideoPlayerMsg::SeekToPercent(percent) => self.seek_to_percent(percent),
             VideoPlayerMsg::TogglePlayPause => {
-                if widgets.crop_box.drag_active() {
-                    return;
-                }
+                // if widgets.crop_box.drag_active() {
+                //     return;
+                // }
 
                 self.video_toggle_play_pause();
                 if self.is_playing {
@@ -255,30 +224,7 @@ impl Component for VideoPlayerModel {
             VideoPlayerMsg::OrientVideo(orientation) => {
                 self.add_orientation(orientation);
             }
-            VideoPlayerMsg::ShowCropBox => self.show_crop_box = true,
-            VideoPlayerMsg::HideCropBox => self.show_crop_box = false,
-            VideoPlayerMsg::SetCropMode(mode) => {
-                widgets.crop_box.set_crop_mode(mode);
-                widgets.crop_box.queue_draw();
-            }
-            VideoPlayerMsg::CropBoxDetectHandle(pos) => {
-                widgets.crop_box.is_point_in_handle(pos.0, pos.1);
-                widgets.crop_box.queue_draw();
-            }
-            VideoPlayerMsg::CropBoxDrag(pos) => {
-                widgets.crop_box.update_drag_pos(pos.0, pos.1);
-                widgets.crop_box.queue_draw();
-            }
-            VideoPlayerMsg::CropBoxDragEnd => {
-                widgets.crop_box.set_drag_active(false);
-                widgets.crop_box.queue_draw()
-            }
-            VideoPlayerMsg::FrameInfo(info) => {
-                self.frame_info = info;
-                widgets
-                    .crop_box
-                    .set_asepct_ratio(self.frame_info.aspect_ratio);
-            }
+            VideoPlayerMsg::FrameInfo(info) => self.frame_info = info,
         }
 
         self.update_view(widgets, sender);
@@ -537,7 +483,7 @@ impl VideoPlayerModel {
     }
 
     fn add_orientation(&mut self, orientation: VideoOrientationMethod) {
-        // todo: apply on preview
+        // todo: split flip and rotates
         let val = Self::video_orientation_method_to_val(orientation);
 
         let effect = format!("autovideoflip video-direction={val}");

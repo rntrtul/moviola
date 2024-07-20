@@ -2,14 +2,17 @@ use gst_video::VideoOrientationMethod;
 use gtk::glib;
 use gtk::prelude::{ApplicationExt, GtkWindowExt, OrientableExt, WidgetExt};
 use gtk4::gio;
-use gtk4::prelude::{BoxExt, ButtonExt, FileExt, GtkApplicationExt};
+use gtk4::prelude::{
+    BoxExt, ButtonExt, EventControllerExt, FileExt, GestureDragExt, GtkApplicationExt,
+};
 use relm4::{
     adw, gtk, main_application, Component, ComponentController, ComponentParts, ComponentSender,
-    Controller, RelmWidgetExt, SimpleComponent,
+    Controller, RelmWidgetExt,
 };
 
 use crate::ui::crop_box::CropMode;
 use crate::ui::timeline::{TimelineModel, TimelineMsg, TimelineOutput};
+use crate::ui::CropBoxWidget;
 
 use super::ui::edit_controls::{EditControlsModel, EditControlsOutput};
 use super::ui::video_player::{FrameInfo, VideoPlayerModel, VideoPlayerMsg, VideoPlayerOutput};
@@ -21,6 +24,7 @@ pub(super) struct App {
     video_is_open: bool,
     video_is_playing: bool,
     video_is_mute: bool,
+    show_crop_box: bool,
     uri: Option<String>,
 }
 
@@ -37,6 +41,9 @@ pub(super) enum AppMsg {
     ShowCropBox,
     HideCropBox,
     SetCropMode(CropMode),
+    CropBoxDetectHandle((f32, f32)),
+    CropBoxDragUpdate((f32, f32)),
+    CropBoxDragEnd,
     SeekToPercent(f64),
     UpdateSeekBarPos(f64),
     TogglePlayPause,
@@ -48,7 +55,7 @@ pub(super) enum AppMsg {
 }
 
 impl App {
-    fn launch_file_opener(sender: ComponentSender<Self>) {
+    fn launch_file_opener(sender: &ComponentSender<Self>) {
         let filters = gio::ListStore::new::<gtk::FileFilter>();
 
         let video_filter = gtk::FileFilter::new();
@@ -71,6 +78,7 @@ impl App {
         let cancelable = gio::Cancellable::new();
         let window = relm4::main_adw_application().active_window().unwrap();
 
+        let sender = sender.clone();
         file_dialog.open(Some(&window), Some(&cancelable), move |result| {
             let file = match result {
                 Ok(f) => f,
@@ -82,14 +90,15 @@ impl App {
 }
 
 #[relm4::component(pub)]
-impl SimpleComponent for App {
+impl Component for App {
     type Input = AppMsg;
     type Output = ();
+    type CommandOutput = ();
     type Init = u8;
     view! {
         main_window = adw::ApplicationWindow::new(&main_application()) {
-            set_default_height: 600,
             set_default_width: 640,
+            set_default_height: 600,
 
             connect_close_request[sender] => move |_| {
                 sender.input(AppMsg::Quit);
@@ -128,9 +137,39 @@ impl SimpleComponent for App {
                         set_visible: !model.video_is_open,
                     },
 
-                    model.video_player.widget(){
-                        set_visible: false,
+                    gtk::Overlay{
+                        #[wrap(Some)]
+                        set_child = model.video_player.widget(),
+                        #[watch]
+                        set_visible: model.video_is_open,
+
+                        add_overlay: crop_box = &CropBoxWidget::default(){
+                            #[watch]
+                            set_visible: model.show_crop_box,
+                            add_controller = gtk::GestureDrag {
+                                connect_drag_begin[sender] => move |_,x,y| {
+                                    sender.input(AppMsg::CropBoxDetectHandle((x as f32,y as f32)));
+                                },
+                                connect_drag_update[sender] => move |drag, x_offset, y_offset| {
+                                    let (start_x, start_y) = drag.start_point().unwrap();
+
+                                    let (x, y) = CropBoxWidget::get_cordinate_percent_from_drag(
+                                        drag.widget().width(),
+                                        drag.widget().height(),
+                                        start_x + x_offset,
+                                        start_y + y_offset,
+                                    );
+
+                                    sender.input(AppMsg::CropBoxDragUpdate((x,y)));
+                                },
+                                connect_drag_end[sender] => move |_,_,_| {
+                                    sender.input(AppMsg::CropBoxDragEnd);
+                                },
+                             },
+                        },
                     },
+
+
 
                     gtk::Box{
                         #[watch]
@@ -148,7 +187,7 @@ impl SimpleComponent for App {
                             },
 
                             connect_clicked[sender] => move |_| {
-                                    sender.input(AppMsg::TogglePlayPause)
+                                sender.input(AppMsg::TogglePlayPause)
                             }
                         },
 
@@ -173,7 +212,6 @@ impl SimpleComponent for App {
                     }
                 },
             }
-
         }
     }
 
@@ -219,6 +257,7 @@ impl SimpleComponent for App {
             video_is_open: false,
             video_is_playing: false,
             video_is_mute: false,
+            show_crop_box: false,
             uri: None,
         };
 
@@ -231,13 +270,19 @@ impl SimpleComponent for App {
         ComponentParts { model, widgets }
     }
 
-    fn update(&mut self, message: Self::Input, _sender: ComponentSender<Self>) {
+    fn update_with_view(
+        &mut self,
+        widgets: &mut Self::Widgets,
+        message: Self::Input,
+        sender: ComponentSender<Self>,
+        _root: &Self::Root,
+    ) {
         match message {
             AppMsg::Quit => {
                 println!("QUIT");
                 main_application().quit()
             }
-            AppMsg::OpenFile => App::launch_file_opener(_sender),
+            AppMsg::OpenFile => App::launch_file_opener(&sender),
             AppMsg::SetVideo(file_name) => {
                 self.video_player
                     .emit(VideoPlayerMsg::NewVideo(file_name.clone()));
@@ -254,9 +299,24 @@ impl SimpleComponent for App {
             AppMsg::Orient(orientation) => self
                 .video_player
                 .emit(VideoPlayerMsg::OrientVideo(orientation)),
-            AppMsg::ShowCropBox => self.video_player.emit(VideoPlayerMsg::ShowCropBox),
-            AppMsg::HideCropBox => self.video_player.emit(VideoPlayerMsg::HideCropBox),
-            AppMsg::SetCropMode(mode) => self.video_player.emit(VideoPlayerMsg::SetCropMode(mode)),
+            AppMsg::ShowCropBox => self.show_crop_box = true,
+            AppMsg::HideCropBox => self.show_crop_box = false,
+            AppMsg::SetCropMode(mode) => {
+                widgets.crop_box.set_crop_mode(mode);
+                widgets.crop_box.queue_draw();
+            }
+            AppMsg::CropBoxDetectHandle(pos) => {
+                widgets.crop_box.is_point_in_handle(pos.0, pos.1);
+                widgets.crop_box.queue_draw();
+            }
+            AppMsg::CropBoxDragUpdate(pos) => {
+                widgets.crop_box.update_drag_pos(pos.0, pos.1);
+                widgets.crop_box.queue_draw();
+            }
+            AppMsg::CropBoxDragEnd => {
+                widgets.crop_box.set_drag_active(false);
+                widgets.crop_box.queue_draw();
+            }
             AppMsg::SeekToPercent(percent) => self
                 .video_player
                 .emit(VideoPlayerMsg::SeekToPercent(percent)),
@@ -273,7 +333,12 @@ impl SimpleComponent for App {
             AppMsg::VideoPlaying => self.video_is_playing = true,
             AppMsg::AudioMute => self.video_is_mute = true,
             AppMsg::AudioPlaying => self.video_is_mute = false,
-            AppMsg::FrameInfo(info) => self.video_player.emit(VideoPlayerMsg::FrameInfo(info)),
+            AppMsg::FrameInfo(info) => {
+                widgets.crop_box.set_asepct_ratio(info.aspect_ratio);
+                self.video_player.emit(VideoPlayerMsg::FrameInfo(info))
+            }
         }
+
+        self.update_view(widgets, sender);
     }
 }

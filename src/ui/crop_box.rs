@@ -176,16 +176,6 @@ impl CropBoxWidget {
         ]
     }
 
-    pub fn get_cordinate_percent_from_drag(width: i32, height: i32, x: f64, y: f64) -> (f32, f32) {
-        let frame_width = width as f32 - (MARGIN * 2.);
-        let frame_height = height as f32 - (MARGIN * 2.);
-
-        let x_adj = (x as f32 - MARGIN).clamp(0., frame_width);
-        let y_adj = (y as f32 - MARGIN).clamp(0., frame_height);
-
-        (x_adj / frame_width, y_adj / frame_height)
-    }
-
     pub fn set_aspect_ratio(&self, aspect_ratio: f64) {
         self.asepct_ratio.set(aspect_ratio);
     }
@@ -193,6 +183,9 @@ impl CropBoxWidget {
     pub fn set_crop_mode(&self, mode: CropMode) {
         self.crop_mode.set(mode);
         // todo: deal with landscape vs portrait
+        // fixme: when dealing with non 16:9, since ges pipeline puts it in 16:9 container,
+        //          the percents will be with respect to the container and not video. But conversion
+        //          is based on the videos aspect ratio.
 
         let height_relative_to_width =
             (self.target_height.get() - self.y.get()) / self.asepct_ratio.get() as f32;
@@ -233,6 +226,16 @@ impl crate::ui::CropBoxWidget {
         } else if !changing_top_y && y > self.y() {
             self.set_target_height(y);
         }
+    }
+
+    pub fn get_cordinate_percent_from_drag(width: i32, height: i32, x: f64, y: f64) -> (f32, f32) {
+        let frame_width = width as f32 - (MARGIN * 2.);
+        let frame_height = height as f32 - (MARGIN * 2.);
+
+        let x_adj = (x as f32 - MARGIN).clamp(0., frame_width);
+        let y_adj = (y as f32 - MARGIN).clamp(0., frame_height);
+
+        (x_adj / frame_width, y_adj / frame_height)
     }
 
     pub fn is_point_in_handle(&self, x: f32, y: f32) {
