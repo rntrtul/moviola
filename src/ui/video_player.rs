@@ -31,9 +31,7 @@ pub struct PlayingInfo {
 }
 
 // todo: dispose of stuff on quit
-// todo: do i need is_loaded and is_playing?
 pub struct VideoPlayerModel {
-    video_is_selected: bool,
     video_is_loaded: bool,
     is_playing: bool,
     is_mute: bool,
@@ -78,6 +76,7 @@ impl Component for VideoPlayerModel {
     type Input = VideoPlayerMsg;
     type Output = VideoPlayerOutput;
     view! {
+        #[name = "vid_container"]
         gtk::Box {
             set_orientation: gtk::Orientation::Vertical,
             set_width_request: 640,
@@ -92,17 +91,10 @@ impl Component for VideoPlayerModel {
                 set_valign: gtk::Align::Center,
             },
 
-            #[name = "vid_container"]
-            gtk::Box{
-                set_width_request: 640,
-                set_height_request: 360,
-                #[watch]
-                set_visible: model.video_is_loaded,
-                add_controller = gtk::GestureClick {
-                    connect_pressed[sender] => move |_,_,_,_| {
-                        sender.input(VideoPlayerMsg::TogglePlayPause)
-                    }
-                },
+            add_controller = gtk::GestureClick {
+                connect_pressed[sender] => move |_,_,_,_| {
+                    sender.input(VideoPlayerMsg::TogglePlayPause)
+                }
             },
         }
     }
@@ -128,9 +120,9 @@ impl Component for VideoPlayerModel {
 
         let offload = gtk4::GraphicsOffload::new(Some(&picture));
         offload.set_enabled(gtk::GraphicsOffloadEnabled::Enabled);
+        offload.set_visible(false);
 
         let model = VideoPlayerModel {
-            video_is_selected: false,
             video_is_loaded: false,
             is_playing: false,
             is_mute: false,
@@ -161,7 +153,6 @@ impl Component for VideoPlayerModel {
     ) {
         match message {
             VideoPlayerMsg::NewVideo(uri) => {
-                self.video_is_selected = true;
                 self.video_uri = Some(uri);
                 self.video_is_loaded = false;
                 self.is_playing = false;
@@ -187,10 +178,6 @@ impl Component for VideoPlayerModel {
             }
             VideoPlayerMsg::SeekToPercent(percent) => self.seek_to_percent(percent),
             VideoPlayerMsg::TogglePlayPause => {
-                // if widgets.crop_box.drag_active() {
-                //     return;
-                // }
-
                 self.video_toggle_play_pause();
                 if self.is_playing {
                     sender.output(VideoPlayerOutput::VideoPlaying).unwrap();
@@ -207,14 +194,19 @@ impl Component for VideoPlayerModel {
                 }
             }
             VideoPlayerMsg::ExportFrame => {
-                // todo: get actual video width and height
                 // todo: ask for file location and name
+                // is it taking the 720p playback and screenshotting that?
                 if self.video_is_loaded {
                     self.playing_info
                         .as_ref()
                         .unwrap()
                         .pipeline
-                        .save_thumbnail(1920, 1080, "image/jpeg", "/home/fareed/Videos/export.jpg")
+                        .save_thumbnail(
+                            self.frame_info.width as i32,
+                            self.frame_info.height as i32,
+                            "image/jpeg",
+                            "/home/fareed/Videos/export.jpg",
+                        )
                         .expect("unable to save exported frame");
                 }
             }
@@ -234,12 +226,13 @@ impl Component for VideoPlayerModel {
         &mut self,
         message: Self::CommandOutput,
         sender: ComponentSender<Self>,
-        _root: &Self::Root,
+        root: &Self::Root,
     ) {
         match message {
             VideoPlayerCommandMsg::VideoInit(_) => {
                 self.is_playing = true;
                 self.video_is_loaded = true;
+                root.last_child().unwrap().set_visible(true);
 
                 let info = self.playing_info.as_ref().unwrap();
                 let asset = info
