@@ -16,10 +16,10 @@ use relm4::*;
 
 use crate::ui::crop_box::MARGIN;
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub struct FrameInfo {
-    width: u32,
-    height: u32,
+    pub(crate) width: u32,
+    pub(crate) height: u32,
     pub(crate) aspect_ratio: f64,
 }
 
@@ -50,6 +50,7 @@ pub enum VideoPlayerMsg {
     ToggleMute,
     SeekToPercent(f64),
     OrientVideo(VideoOrientationMethod),
+    CropVideo(i32, i32, i32, i32),
     NewVideo(String),
     ExportVideo,
 }
@@ -214,9 +215,12 @@ impl Component for VideoPlayerModel {
                 self.export_video();
             }
             VideoPlayerMsg::OrientVideo(orientation) => {
-                self.add_orientation(orientation);
+                self.set_video_orientation(orientation);
             }
             VideoPlayerMsg::FrameInfo(info) => self.frame_info = info,
+            VideoPlayerMsg::CropVideo(left, top, right, bottom) => {
+                self.set_video_crop(left, top, right, bottom);
+            }
         }
 
         self.update_view(widgets, sender);
@@ -475,7 +479,7 @@ impl VideoPlayerModel {
         info.timeline.commit_sync();
     }
 
-    fn add_orientation(&mut self, orientation: VideoOrientationMethod) {
+    fn set_video_orientation(&mut self, orientation: VideoOrientationMethod) {
         // todo: split flip and rotates
         let val = Self::video_orientation_method_to_val(orientation);
 
@@ -485,6 +489,14 @@ impl VideoPlayerModel {
             .expect("Unable to set name");
 
         self.replace_or_add_effect(&flip, "orientation");
+    }
+
+    fn set_video_crop(&mut self, left: i32, top: i32, right: i32, bottom: i32) {
+        let effect = format!("videocrop top={top} left={left} right={right} bottom={bottom}");
+        let crop = Effect::new(effect.as_str()).expect("could not make crop");
+        crop.set_name(Some("crop")).expect("unableto_set_name");
+
+        self.replace_or_add_effect(&crop, "crop");
     }
 
     fn export_video(&self) {

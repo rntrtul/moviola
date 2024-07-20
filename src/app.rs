@@ -26,6 +26,7 @@ pub(super) struct App {
     video_is_mute: bool,
     show_crop_box: bool,
     uri: Option<String>,
+    frame_info: Option<FrameInfo>,
 }
 
 #[derive(Debug)]
@@ -259,6 +260,7 @@ impl Component for App {
             video_is_mute: false,
             show_crop_box: false,
             uri: None,
+            frame_info: None,
         };
 
         let widgets = view_output!();
@@ -300,7 +302,30 @@ impl Component for App {
                 .video_player
                 .emit(VideoPlayerMsg::OrientVideo(orientation)),
             AppMsg::ShowCropBox => self.show_crop_box = true,
-            AppMsg::HideCropBox => self.show_crop_box = false,
+            AppMsg::HideCropBox => {
+                let crop_box = &widgets.crop_box;
+
+                if crop_box.left_x() == 0f32
+                    && crop_box.top_y() == 0f32
+                    && crop_box.bottom_y() == 1f32
+                    && crop_box.right_x() == 1f32
+                {
+                    println!("Can skip adding effect");
+                } else {
+                    let width = self.frame_info.as_ref().unwrap().width as f32;
+                    let height = self.frame_info.as_ref().unwrap().height as f32;
+
+                    let left = (width * crop_box.left_x()) as i32;
+                    let top = (height * crop_box.top_y()) as i32;
+                    let right = (width - (width * crop_box.right_x())) as i32;
+                    let bottom = (height - (height * crop_box.bottom_y())) as i32;
+
+                    self.video_player
+                        .emit(VideoPlayerMsg::CropVideo(left, top, right, bottom));
+                }
+
+                self.show_crop_box = false
+            }
             AppMsg::SetCropMode(mode) => {
                 widgets.crop_box.set_crop_mode(mode);
                 widgets.crop_box.queue_draw();
@@ -335,6 +360,8 @@ impl Component for App {
             AppMsg::AudioPlaying => self.video_is_mute = false,
             AppMsg::FrameInfo(info) => {
                 widgets.crop_box.set_asepct_ratio(info.aspect_ratio);
+
+                self.frame_info = Some(info);
                 self.video_player.emit(VideoPlayerMsg::FrameInfo(info))
             }
         }
