@@ -4,7 +4,6 @@ use relm4::gtk;
 pub mod crop_box;
 pub mod edit_controls;
 mod handle;
-mod handle_manager;
 mod thumbnail_manager;
 pub mod timeline;
 pub mod video_player;

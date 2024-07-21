@@ -2,24 +2,26 @@ use std::cell::Cell;
 
 use gtk4::prelude::{ObjectExt, SnapshotExt, WidgetExt};
 use gtk4::subclass::prelude::*;
-use gtk4::{gdk, glib, graphene, gsk, Orientation, Snapshot};
+use gtk4::{gdk, glib, graphene, gsk, Snapshot};
 use relm4::gtk;
+
+static FILL_RULE: gsk::FillRule = gsk::FillRule::Winding;
+pub static HANDLE_WIDTH: i32 = 10;
+static SEEK_BAR_WIDTH: i32 = 5;
 
 #[derive(glib::Properties, Default, Debug)]
 #[properties(wrapper_type = super::HandleWidget)]
 pub struct HandleWidget {
     #[property(get, set)]
-    pub x: Cell<i32>,
+    start_x: Cell<f32>,
     #[property(get, set)]
-    pub rel_x: Cell<i32>,
+    end_x: Cell<f32>,
     #[property(get, set)]
-    pub target_x: Cell<i32>,
+    seek_x: Cell<f32>,
     #[property(get, set)]
-    pub percent_pos: Cell<f64>,
+    is_start_dragging: Cell<bool>,
     #[property(get, set)]
-    is_handle: Cell<bool>,
-    #[property(get, set)]
-    is_start: Cell<bool>,
+    is_end_dragging: Cell<bool>,
 }
 
 #[glib::object_subclass]
@@ -33,103 +35,120 @@ impl ObjectSubclass for HandleWidget {
 impl ObjectImpl for HandleWidget {}
 
 impl WidgetImpl for HandleWidget {
-    fn measure(&self, orientation: Orientation, _for_size: i32) -> (i32, i32, i32, i32) {
-        if orientation == Orientation::Horizontal {
-            // calc width range
-            if self.is_handle.get() {
-                (10, 10, -1, -1)
-            } else {
-                (5, 5, -1, -1)
-            }
-        } else {
-            // height range
-            (20, 200, -1, -1)
-        }
-    }
-
     fn snapshot(&self, snapshot: &Snapshot) {
-        let widget = self.obj();
-
-        let height_percent = if self.is_handle.get() { 0.75 } else { 1.0 };
-        let instep_percent = if self.is_handle.get() { 0.125 } else { 0. };
-
-        let target_height = (widget.height() as f32) * height_percent;
-        let y_instep = widget.height() as f32 * instep_percent;
+        // todo: have inside edge of widget be considered 0 (right for start+seel, left for end)
         // todo: have shadow on handle?
-        // todo: have center of widget be considered 0
 
+        snapshot.append_fill(&self.seek_bar_path(), FILL_RULE, &gdk::RGBA::WHITE);
+        snapshot.append_fill(&self.start_handle_path(), FILL_RULE, &gdk::RGBA::WHITE);
+        snapshot.append_fill(&self.end_handle_path(), FILL_RULE, &gdk::RGBA::WHITE);
+
+        // let not_playing_rect =
+        //     graphene::Rect::new(0f32, 0., widget.width() as f32, widget.height() as f32);
+        // let grey = gdk::RGBA::new(0.612, 0.612, 0.612, 0.89);
+        //
+        // snapshot.append_color(&grey, &not_playing_rect);
+    }
+}
+
+impl HandleWidget {
+    fn start_handle_path(&self) -> gsk::Path {
+        let width = (self.obj().width() - (HANDLE_WIDTH * 2)) as f32;
         let handle_rect = graphene::Rect::new(
-            self.rel_x.get() as f32,
-            y_instep,
-            widget.width() as f32,
-            target_height,
+            self.start_x.get() * width,
+            0f32,
+            HANDLE_WIDTH as f32,
+            self.obj().height() as f32,
         );
         let handle_outline = gsk::RoundedRect::from_rect(handle_rect, 6f32);
 
         let path_builder = gsk::PathBuilder::new();
         path_builder.add_rounded_rect(&handle_outline);
-        let path = path_builder.to_path();
-
-        let colour = if self.is_handle.get() {
-            &gdk::RGBA::WHITE
-        } else {
-            &gdk::RGBA::BLUE
-        };
-
-        snapshot.append_fill(&path, gsk::FillRule::Winding, colour);
-
-        if self.is_handle.get() {
-            let is_moving = self.rel_x.get() != 0;
-
-            let (overlay_start, overlay_width) = if self.is_start.get() {
-                (-self.x.get() as f32, self.target_x.get() as f32)
-            } else {
-                if is_moving {
-                    (
-                        (self.x.get() + widget.width()) as f32,
-                        (-self.x.get() + self.rel_x.get()) as f32,
-                    )
-                } else {
-                    (widget.width() as f32, self.x.get() as f32)
-                }
-            };
-
-            let not_playing_rect =
-                graphene::Rect::new(overlay_start, 0., overlay_width, widget.height() as f32);
-            let grey = gdk::RGBA::new(0.612, 0.612, 0.612, 0.89);
-            snapshot.append_color(&grey, &not_playing_rect);
-        }
-    }
-}
-
-impl HandleWidget {
-    pub fn set_rel_x(&self, pos: i32) {
-        self.rel_x.set(pos);
+        path_builder.to_path()
     }
 
-    pub fn set_target_x(&self, pos: i32) {
-        self.target_x.set(pos);
+    fn end_handle_path(&self) -> gsk::Path {
+        let width = (self.obj().width() - (HANDLE_WIDTH * 2)) as f32;
+        let handle_rect = graphene::Rect::new(
+            (self.end_x.get() * width) + HANDLE_WIDTH as f32,
+            0f32,
+            HANDLE_WIDTH as f32,
+            self.obj().height() as f32,
+        );
+        let handle_outline = gsk::RoundedRect::from_rect(handle_rect, 6f32);
+
+        let path_builder = gsk::PathBuilder::new();
+        path_builder.add_rounded_rect(&handle_outline);
+        path_builder.to_path()
+    }
+
+    fn seek_bar_path(&self) -> gsk::Path {
+        let width = (self.obj().width() - (HANDLE_WIDTH * 2)) as f32;
+        let bar_rect = graphene::Rect::new(
+            self.seek_x.get() * width,
+            0f32,
+            SEEK_BAR_WIDTH as f32,
+            self.obj().height() as f32,
+        );
+        let bar_outline = gsk::RoundedRect::from_rect(bar_rect, 6f32);
+
+        let path_builder = gsk::PathBuilder::new();
+        path_builder.add_rounded_rect(&bar_outline);
+        path_builder.to_path()
     }
 }
 
 impl crate::ui::HandleWidget {
-    pub(crate) fn new(x: i32, is_handle: bool, is_start: bool) -> Self {
-        glib::Object::builder()
-            .property("x", x)
-            .property("rel_x", 0)
-            .property("is_handle", is_handle)
-            .property("is_start", is_start)
-            .build()
+    pub fn drag_start(&self, x: f64, y: f64) {
+        let point = graphene::Point::new(x as f32, y as f32);
+
+        let start_path = self.imp().start_handle_path();
+        let end_path = self.imp().end_handle_path();
+
+        self.set_is_start_dragging(start_path.in_fill(&point, FILL_RULE));
+        self.set_is_end_dragging(end_path.in_fill(&point, FILL_RULE));
+    }
+
+    pub fn drag_update(&self, x: f32) {
+        let percent = (x) / (self.width() - (HANDLE_WIDTH * 2)) as f32;
+
+        if self.is_start_dragging() {
+            if percent < self.end_x() {
+                if percent >= 0f32 {
+                    self.set_start_x(percent);
+                } else if percent < 0f32 && self.start_x() > 0f32 {
+                    self.set_start_x(0f32);
+                }
+            }
+        } else if self.is_end_dragging() {
+            if percent > self.start_x() {
+                if percent <= 1f32 {
+                    self.set_end_x(percent);
+                } else if percent > 1f32 && self.end_x() < 1f32 {
+                    self.set_end_x(1f32);
+                }
+            }
+        } else {
+            if percent >= 0f32 && percent <= 1f32 {
+                self.set_seek_x(percent);
+            }
+        }
+    }
+
+    pub fn drag_end(&self) {
+        self.set_is_end_dragging(false);
+        self.set_is_start_dragging(false);
     }
 }
 
 impl Default for crate::ui::HandleWidget {
     fn default() -> Self {
         glib::Object::builder()
-            .property("x", 0)
-            .property("rel_x", 0)
-            .property("is_handle", true)
-            .property("is_start", true)
+            .property("start_x", 0f32)
+            .property("end_x", 1f32)
+            .property("seek_x", 0f32)
+            .property("is_start_dragging", false)
+            .property("is_end_dragging", false)
             .build()
     }
 }

@@ -1,29 +1,25 @@
-use std::rc::Rc;
-
 use gtk4::gio;
 use gtk4::prelude::{BoxExt, EventControllerExt, GestureDragExt, WidgetExt};
-use relm4::*;
 use relm4::{gtk, Component, ComponentParts, ComponentSender};
 
-use crate::ui::handle_manager::HandleManager;
+use crate::ui::handle::HANDLE_WIDTH;
 use crate::ui::thumbnail_manager::ThumbnailManager;
 use crate::ui::video_player::FrameInfo;
 
 #[derive(Debug)]
 pub struct TimelineModel {
     thumbnails_available: bool,
-    handle_manager: Option<HandleManager>,
+    start: f32,
+    end: f32,
 }
 
 #[derive(Debug)]
 pub enum TimelineMsg {
     GenerateThumbnails(String),
     PopulateTimeline,
-    MoveStartTo(i32),
-    MoveStartEnd,
-    MoveEndTo(i32),
-    MoveEndEnd,
-    DragBegin,
+    DragBegin(f64, f64),
+    DragUpdate(f64),
+    DragEnd,
     UpdateSeekBarPos(f64),
     SeekToPercent(f64),
 }
@@ -57,70 +53,34 @@ impl Component for TimelineModel {
             #[wrap(Some)]
             set_child: timeline = &gtk::Box {
                 set_hexpand: true,
-                inline_css: "background-color: grey",
-                set_margin_start: 5,
-                set_margin_end: 5,
+                set_margin_start: HANDLE_WIDTH,
+                set_margin_end: HANDLE_WIDTH,
+            },
 
-                add_controller = gtk::GestureClick {
+            add_overlay: seek_bar = &super::HandleWidget::default() {
+                add_controller = gtk::GestureDrag {
+                    connect_drag_begin[sender] => move |_,x,y| {
+                        sender.input(TimelineMsg::DragBegin(x, y))
+                    },
+
+                    connect_drag_update[sender] => move |drag,offset_x,_| {
+                        let (start_x, _) = drag.start_point().unwrap();
+                        let targ_x = start_x + offset_x;
+                        sender.input(TimelineMsg::DragUpdate(targ_x))
+                    },
+
+                    connect_drag_end[sender] => move |_, _,_| {
+                        sender.input(TimelineMsg::DragEnd);
+                    },
+                },
+
+                 add_controller = gtk::GestureClick {
                     connect_pressed[sender] => move |click,_,x,_| {
                         let width = click.widget().width() as f64;
                         let percent = x / width;
                         sender.input(TimelineMsg::SeekToPercent(percent));
                     }
                 },
-
-                add_controller = gtk::GestureDrag {
-                    connect_drag_update[sender] => move |drag,x_offset,_| {
-                        let (start_x, _) = drag.start_point().unwrap();
-                        let width = drag.widget().width() as f64;
-                        let percent_dragged = (start_x + x_offset) / width;
-
-                        sender.input(TimelineMsg::SeekToPercent(percent_dragged));
-                    },
-                }
-            },
-
-            add_overlay: start_handle = &super::HandleWidget::default() {
-                set_halign: gtk::Align::Start,
-                set_valign: gtk::Align::Center,
-
-                add_controller = gtk::GestureDrag {
-                    connect_drag_begin[sender] => move |_,_,_| {sender.input(TimelineMsg::DragBegin)},
-
-                    connect_drag_update[sender] => move |drag,offset_x,_| {
-                        let (start_x, _) = drag.start_point().unwrap();
-                        let targ_x = (start_x + offset_x) as i32;
-                        sender.input(TimelineMsg::MoveStartTo(targ_x))
-                    },
-
-                    connect_drag_end[sender] => move |_, _,_| {
-                        sender.input(TimelineMsg::MoveStartEnd);
-                    },
-                }
-            },
-
-            add_overlay: end_handle = &super::HandleWidget::new(0, true, false) {
-                set_halign: gtk::Align::End,
-                set_valign: gtk::Align::Center,
-
-                add_controller = gtk::GestureDrag {
-                    connect_drag_begin[sender] => move |_,_,_| {sender.input(TimelineMsg::DragBegin)},
-
-                    connect_drag_update[sender] => move |drag,offset_x,_| {
-                        let (start_x, _) = drag.start_point().unwrap();
-                        let targ_x = (start_x + offset_x) as i32;
-                        sender.input(TimelineMsg::MoveEndTo(targ_x))
-                    },
-
-                    connect_drag_end[sender] => move |_, _,_| {
-                        sender.input(TimelineMsg::MoveEndEnd);
-                    },
-                }
-            },
-
-            add_overlay: seek_bar = &super::HandleWidget::new(0, false, false) {
-                set_halign: gtk::Align::Start,
-                set_valign: gtk::Align::Center,
             },
         },
     }
@@ -130,21 +90,13 @@ impl Component for TimelineModel {
         root: Self::Root,
         sender: ComponentSender<Self>,
     ) -> ComponentParts<Self> {
-        let mut model = TimelineModel {
+        let model = TimelineModel {
             thumbnails_available: false,
-            handle_manager: None,
+            start: 0.,
+            end: 1.,
         };
 
         let widgets = view_output!();
-
-        let handle_manager = HandleManager {
-            start_handle: Rc::new(widgets.start_handle.clone()),
-            end_handle: Rc::new(widgets.end_handle.clone()),
-        };
-
-        handle_manager.set_end_pos(1.0);
-
-        model.handle_manager = Some(handle_manager);
 
         ComponentParts { model, widgets }
     }
@@ -171,63 +123,30 @@ impl Component for TimelineModel {
                 TimelineModel::populate_timeline(timeline);
             }
             TimelineMsg::SeekToPercent(percent) => {
-                let seek_bar_pos = (widgets.timeline.width() as f64 * percent) as i32;
-                if seek_bar_pos != widgets.seek_bar.margin_start() {
-                    widgets.seek_bar.set_margin_start(seek_bar_pos);
-                    sender
-                        .output(TimelineOutput::SeekToPercent(percent))
-                        .unwrap();
-                }
+                widgets.seek_bar.set_seek_x(percent as f32);
+                widgets.seek_bar.queue_draw();
+                sender
+                    .output(TimelineOutput::SeekToPercent(percent))
+                    .unwrap();
             }
             TimelineMsg::UpdateSeekBarPos(percent) => {
-                let target_bar_pos = (widgets.timeline.width() as f64 * percent) as i32;
-                // todo: animate between position so smoother.
-                if target_bar_pos != widgets.seek_bar.margin_start() {
-                    widgets.seek_bar.set_margin_start(target_bar_pos);
-                }
+                // todo: make smoother update. increase poll rate or use animation
+                widgets.seek_bar.set_seek_x(percent as f32);
+                widgets.seek_bar.queue_draw();
             }
-            TimelineMsg::DragBegin => {
-                widgets.seek_bar.set_visible(false);
+            TimelineMsg::DragBegin(x, y) => {
+                widgets.seek_bar.drag_start(x, y);
             }
-            TimelineMsg::MoveStartTo(pos) => {
-                if self
-                    .handle_manager
-                    .as_ref()
-                    .unwrap()
-                    .try_set_start_rel_x(pos, widgets.timeline.width())
-                {
-                    let seek_percent =
-                        widgets.start_handle.target_x() as f64 / widgets.timeline.width() as f64;
-                    self.handle_manager
-                        .as_ref()
-                        .unwrap()
-                        .set_start_pos(seek_percent);
-                    sender.input(TimelineMsg::SeekToPercent(seek_percent));
-                }
+            TimelineMsg::DragUpdate(percent) => {
+                widgets.seek_bar.drag_update(percent as f32);
+                widgets.seek_bar.queue_draw();
+                // fixme: get gstreamer critical warning start <= stop
+                // sender.input(TimelineMsg::SeekToPercent(percent));
             }
-            TimelineMsg::MoveEndTo(pos) => {
-                if self
-                    .handle_manager
-                    .as_ref()
-                    .unwrap()
-                    .try_set_end_rel_x(pos, widgets.timeline.width())
-                {
-                    let seek_percent =
-                        widgets.end_handle.target_x() as f64 / widgets.timeline.width() as f64;
-                    self.handle_manager
-                        .as_ref()
-                        .unwrap()
-                        .set_end_pos(seek_percent);
-                    sender.input(TimelineMsg::SeekToPercent(seek_percent));
-                }
-            }
-            TimelineMsg::MoveStartEnd => {
-                self.handle_manager.as_ref().unwrap().set_start_margin();
-                widgets.seek_bar.set_visible(true);
-            }
-            TimelineMsg::MoveEndEnd => {
-                self.handle_manager.as_ref().unwrap().set_end_margin();
-                widgets.seek_bar.set_visible(true);
+            TimelineMsg::DragEnd => {
+                widgets.seek_bar.drag_end();
+                self.start = widgets.seek_bar.start_x();
+                self.end = widgets.seek_bar.end_x();
             }
         }
     }
@@ -251,20 +170,13 @@ impl Component for TimelineModel {
 }
 
 impl TimelineModel {
-    pub fn get_target_start_percent(&self) -> f64 {
-        self.handle_manager
-            .as_ref()
-            .unwrap()
-            .start_handle
-            .percent_pos()
+    pub fn get_target_start_percent(&self) -> f32 {
+        // todo: get values from widget
+        self.start
     }
 
-    pub fn get_target_end_percent(&self) -> f64 {
-        self.handle_manager
-            .as_ref()
-            .unwrap()
-            .end_handle
-            .percent_pos()
+    pub fn get_target_end_percent(&self) -> f32 {
+        self.end
     }
 
     fn remove_timeline_thumbnails(timeline: &gtk::Box) {
