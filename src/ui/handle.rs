@@ -36,7 +36,7 @@ impl ObjectImpl for HandleWidget {}
 
 impl WidgetImpl for HandleWidget {
     fn snapshot(&self, snapshot: &Snapshot) {
-        // todo: have inside edge of widget be considered 0 (right for start+seel, left for end)
+        // todo: have inside edge of widget be considered 0 (right for start+seek, left for end)
         // todo: have shadow on handle?
 
         snapshot.append_fill(&self.seek_bar_path(), FILL_RULE, &gdk::RGBA::WHITE);
@@ -54,8 +54,9 @@ impl WidgetImpl for HandleWidget {
 impl HandleWidget {
     fn start_handle_path(&self) -> gsk::Path {
         let width = (self.obj().width() - (HANDLE_WIDTH * 2)) as f32;
+        let left_x = self.start_x.get() * width;
         let handle_rect = graphene::Rect::new(
-            self.start_x.get() * width,
+            left_x,
             0f32,
             HANDLE_WIDTH as f32,
             self.obj().height() as f32,
@@ -110,28 +111,15 @@ impl crate::ui::HandleWidget {
     }
 
     pub fn drag_update(&self, x: f32) {
-        let percent = (x) / (self.width() - (HANDLE_WIDTH * 2)) as f32;
+        // todo: accept x only if > handle_width and < widget_width - handle_width
+        let percent = (x - HANDLE_WIDTH as f32) / (self.width() - (HANDLE_WIDTH * 2)) as f32;
 
         if self.is_start_dragging() {
-            if percent < self.end_x() {
-                if percent >= 0f32 {
-                    self.set_start_x(percent);
-                } else if percent < 0f32 && self.start_x() > 0f32 {
-                    self.set_start_x(0f32);
-                }
-            }
+            self.set_start_x(percent.clamp(0f32, self.end_x()));
         } else if self.is_end_dragging() {
-            if percent > self.start_x() {
-                if percent <= 1f32 {
-                    self.set_end_x(percent);
-                } else if percent > 1f32 && self.end_x() < 1f32 {
-                    self.set_end_x(1f32);
-                }
-            }
-        } else {
-            if percent >= 0f32 && percent <= 1f32 {
-                self.set_seek_x(percent);
-            }
+            self.set_end_x(percent.clamp(self.start_x(), 1f32));
+        } else if !self.is_start_dragging() && !self.is_end_dragging() {
+            self.set_seek_x(percent.clamp(0f32, 1f32));
         }
     }
 

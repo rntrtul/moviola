@@ -409,9 +409,6 @@ impl VideoPlayerModel {
                 .set_mode(PipelineFlags::FULL_PREVIEW)
                 .expect("unable to preview");
             pipeline.set_video_sink(Some(&self.gtk_sink));
-            // fixme: audio does not play (maybe need to choose audio stream)
-            let audio_sink = gst::ElementFactory::make("autoaudiosink").build().unwrap();
-            pipeline.set_audio_sink(Some(&audio_sink));
 
             let info = PlayingInfo {
                 pipeline,
