@@ -287,12 +287,20 @@ impl Component for App {
             }
             AppMsg::OpenFile => App::launch_file_opener(&sender),
             AppMsg::SetVideo(file_name) => {
-                self.video_player
-                    .emit(VideoPlayerMsg::NewVideo(file_name.clone()));
-
                 self.video_is_open = true;
                 self.uri.replace(file_name.clone());
                 widgets.crop_box.reset_box();
+
+                self.discoverer.discover_uri(file_name.as_str());
+                let info = self.discoverer.video_info;
+
+                widgets.crop_box.set_asepct_ratio(info.aspect_ratio);
+
+                self.frame_info = Some(info);
+                self.video_player.emit(VideoPlayerMsg::FrameInfo(info));
+
+                self.video_player
+                    .emit(VideoPlayerMsg::NewVideo(file_name.clone()));
 
                 self.video_player.widget().set_visible(true);
                 self.edit_controls.widget().set_visible(true);
@@ -356,15 +364,6 @@ impl Component for App {
             AppMsg::TogglePlayPause => self.video_player.emit(VideoPlayerMsg::TogglePlayPause),
             AppMsg::ToggleMute => self.video_player.emit(VideoPlayerMsg::ToggleMute),
             AppMsg::VideoLoaded => {
-                self.discoverer
-                    .discover_uri(self.uri.as_ref().unwrap().as_str());
-                let info = self.discoverer.video_info.unwrap();
-
-                widgets.crop_box.set_asepct_ratio(info.aspect_ratio);
-
-                self.frame_info = Some(info);
-                self.video_player.emit(VideoPlayerMsg::FrameInfo(info));
-
                 self.timeline
                     .emit(TimelineMsg::GenerateThumbnails(self.uri.clone().unwrap()));
             }

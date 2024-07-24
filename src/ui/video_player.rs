@@ -124,13 +124,7 @@ impl Component for VideoPlayerModel {
             gtk_sink,
             video_uri: None,
             playing_info: None,
-            frame_info: VideoInfo {
-                duration: ClockTime::ZERO,
-                framerate: gst::Fraction::from(0),
-                width: 0,
-                height: 0,
-                aspect_ratio: 0.,
-            },
+            frame_info: VideoInfo::default(),
         };
 
         let widgets = view_output!();
@@ -166,7 +160,6 @@ impl Component for VideoPlayerModel {
                             _ => (),
                         }
                     }
-
                     VideoPlayerCommandMsg::VideoInit(true)
                 });
                 sender.output(VideoPlayerOutput::VideoLoaded).unwrap();

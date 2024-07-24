@@ -10,9 +10,21 @@ pub struct VideoInfo {
     pub(crate) aspect_ratio: f64,
 }
 
+impl Default for VideoInfo {
+    fn default() -> Self {
+        Self {
+            duration: ClockTime::ZERO,
+            framerate: gst::Fraction::from(0),
+            width: 0,
+            height: 0,
+            aspect_ratio: 0.,
+        }
+    }
+}
+
 pub struct VideoInfoDiscoverer {
     discoverer: Discoverer,
-    pub video_info: Option<VideoInfo>,
+    pub video_info: VideoInfo,
 }
 
 impl VideoInfoDiscoverer {
@@ -37,7 +49,7 @@ impl VideoInfoDiscoverer {
             aspect_ratio: width as f64 / height as f64,
         };
 
-        self.video_info.replace(video_info);
+        self.video_info = video_info;
 
         for audio in audio_streams {
             println!("audio lang: {:?}", audio.language());
@@ -45,9 +57,10 @@ impl VideoInfoDiscoverer {
     }
 
     pub fn new() -> Self {
+        // fixme: why does it take longer when called before other first
         Self {
-            discoverer: Discoverer::new(ClockTime::SECOND).unwrap(),
-            video_info: None,
+            discoverer: Discoverer::new(5 * ClockTime::SECOND).unwrap(),
+            video_info: VideoInfo::default(),
         }
     }
 }
