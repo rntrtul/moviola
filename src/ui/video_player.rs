@@ -102,8 +102,6 @@ impl Component for VideoPlayerModel {
         root: Self::Root,
         sender: ComponentSender<Self>,
     ) -> ComponentParts<Self> {
-        gst::init().unwrap();
-
         let gtk_sink = gst::ElementFactory::make("gtk4paintablesink")
             .build()
             .unwrap();
