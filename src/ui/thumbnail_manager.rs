@@ -7,8 +7,8 @@ use gst::{element_error, ClockTime, SeekFlags, State};
 use gst_app::AppSink;
 use gst_video::VideoFrameExt;
 
-use crate::ui::video_player;
 use crate::ui::video_player::VideoPlayerModel;
+use crate::ui::{video_info_discoverer, video_player};
 
 static THUMBNAIL_PATH: &str = "/home/fareed/Videos";
 static THUMBNAIL_HEIGHT: u32 = 180;
@@ -126,9 +126,9 @@ impl ThumbnailManager {
         let pipeline = gst::parse::launch(&format!(
             "uridecodebin uri={video_uri} ! videoconvert ! appsink name=sink"
         ))
-            .unwrap()
-            .downcast::<gst::Pipeline>()
-            .expect("Expected a gst::pipeline");
+        .unwrap()
+        .downcast::<gst::Pipeline>()
+        .expect("Expected a gst::pipeline");
 
         let appsink = pipeline
             .by_name("sink")
@@ -174,7 +174,7 @@ impl ThumbnailManager {
             Arc::clone(&current_thumbnail_started),
             Arc::clone(&num_started),
         )
-            .expect("could not create thumbnail pipeline");
+        .expect("could not create thumbnail pipeline");
 
         pipeline.set_state(State::Paused).unwrap();
 
@@ -218,21 +218,12 @@ impl ThumbnailManager {
         NUM_THUMBNAILS
     }
 
-    pub async fn generate_thumbnails(video_uri: String) -> video_player::FrameInfo {
+    pub async fn generate_thumbnails(video_uri: String) {
         let all_thumbnails_generated = Arc::new(Barrier::new((NUM_THUMBNAILS + 1) as usize));
         let pipeline =
             Self::launch_thumbnail_threads(video_uri, Arc::clone(&all_thumbnails_generated));
         all_thumbnails_generated.wait();
-        // getting frame info from this pipeline since ges seemingly 720p 16:9 always
-        // need to figure out better place to get this info
-        let appsink = pipeline
-            .by_name("sink")
-            .unwrap()
-            .downcast::<AppSink>()
-            .unwrap();
-        let sample = appsink.pull_preroll().unwrap();
         pipeline.set_state(State::Null).unwrap();
-        VideoPlayerModel::get_sample_frame_info(sample)
     }
 }
 

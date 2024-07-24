@@ -12,10 +12,11 @@ use relm4::{
 
 use crate::ui::crop_box::CropMode;
 use crate::ui::timeline::{TimelineModel, TimelineMsg, TimelineOutput};
+use crate::ui::video_info_discoverer::{VideoInfo, VideoInfoDiscoverer};
 use crate::ui::CropBoxWidget;
 
 use super::ui::edit_controls::{EditControlsModel, EditControlsOutput};
-use super::ui::video_player::{FrameInfo, VideoPlayerModel, VideoPlayerMsg, VideoPlayerOutput};
+use super::ui::video_player::{VideoPlayerModel, VideoPlayerMsg, VideoPlayerOutput};
 
 pub(super) struct App {
     video_player: Controller<VideoPlayerModel>,
@@ -25,15 +26,15 @@ pub(super) struct App {
     video_is_playing: bool,
     video_is_mute: bool,
     show_crop_box: bool,
+    discoverer: VideoInfoDiscoverer,
     uri: Option<String>,
-    frame_info: Option<FrameInfo>,
+    frame_info: Option<VideoInfo>,
 }
 
 #[derive(Debug)]
 pub(super) enum AppMsg {
     AudioMute,
     AudioPlaying,
-    FrameInfo(FrameInfo),
     ExportFrame,
     ExportVideo,
     OpenFile,
@@ -248,7 +249,6 @@ impl Component for App {
                 .launch(())
                 .forward(sender.input_sender(), |msg| match msg {
                     TimelineOutput::SeekToPercent(percent) => AppMsg::SeekToPercent(percent),
-                    TimelineOutput::FrameInfo(info) => AppMsg::FrameInfo(info),
                 });
 
         let model = Self {
@@ -259,6 +259,7 @@ impl Component for App {
             video_is_playing: false,
             video_is_mute: false,
             show_crop_box: false,
+            discoverer: VideoInfoDiscoverer::new(),
             uri: None,
             frame_info: None,
         };
@@ -290,7 +291,7 @@ impl Component for App {
                     .emit(VideoPlayerMsg::NewVideo(file_name.clone()));
 
                 self.video_is_open = true;
-                self.uri.replace(file_name);
+                self.uri.replace(file_name.clone());
                 widgets.crop_box.reset_box();
 
                 self.video_player.widget().set_visible(true);
@@ -355,6 +356,15 @@ impl Component for App {
             AppMsg::TogglePlayPause => self.video_player.emit(VideoPlayerMsg::TogglePlayPause),
             AppMsg::ToggleMute => self.video_player.emit(VideoPlayerMsg::ToggleMute),
             AppMsg::VideoLoaded => {
+                self.discoverer
+                    .discover_uri(self.uri.as_ref().unwrap().as_str());
+                let info = self.discoverer.video_info.unwrap();
+
+                widgets.crop_box.set_asepct_ratio(info.aspect_ratio);
+
+                self.frame_info = Some(info);
+                self.video_player.emit(VideoPlayerMsg::FrameInfo(info));
+
                 self.timeline
                     .emit(TimelineMsg::GenerateThumbnails(self.uri.clone().unwrap()));
             }
@@ -362,12 +372,6 @@ impl Component for App {
             AppMsg::VideoPlaying => self.video_is_playing = true,
             AppMsg::AudioMute => self.video_is_mute = true,
             AppMsg::AudioPlaying => self.video_is_mute = false,
-            AppMsg::FrameInfo(info) => {
-                widgets.crop_box.set_asepct_ratio(info.aspect_ratio);
-
-                self.frame_info = Some(info);
-                self.video_player.emit(VideoPlayerMsg::FrameInfo(info))
-            }
         }
 
         self.update_view(widgets, sender);

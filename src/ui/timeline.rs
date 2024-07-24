@@ -4,7 +4,6 @@ use relm4::{gtk, Component, ComponentParts, ComponentSender};
 
 use crate::ui::handle::HANDLE_WIDTH;
 use crate::ui::thumbnail_manager::ThumbnailManager;
-use crate::ui::video_player::FrameInfo;
 
 #[derive(Debug)]
 pub struct TimelineModel {
@@ -27,13 +26,12 @@ pub enum TimelineMsg {
 // fixme: ugly handnling of frameinfo
 #[derive(Debug)]
 pub enum TimelineCmdMsg {
-    ThumbnailsGenerated(FrameInfo),
+    ThumbnailsGenerated,
 }
 
 #[derive(Debug)]
 pub enum TimelineOutput {
     SeekToPercent(f64),
-    FrameInfo(FrameInfo),
 }
 
 #[relm4::component(pub)]
@@ -114,8 +112,8 @@ impl Component for TimelineModel {
                 self.thumbnails_available = false;
 
                 sender.oneshot_command(async move {
-                    let frame_info = ThumbnailManager::generate_thumbnails(uri).await;
-                    TimelineCmdMsg::ThumbnailsGenerated(frame_info)
+                    ThumbnailManager::generate_thumbnails(uri).await;
+                    TimelineCmdMsg::ThumbnailsGenerated
                 });
             }
             TimelineMsg::PopulateTimeline => {
@@ -158,12 +156,9 @@ impl Component for TimelineModel {
         _root: &Self::Root,
     ) {
         match message {
-            TimelineCmdMsg::ThumbnailsGenerated(frame_info) => {
+            TimelineCmdMsg::ThumbnailsGenerated => {
                 self.thumbnails_available = true;
                 sender.input(TimelineMsg::PopulateTimeline);
-                sender
-                    .output(TimelineOutput::FrameInfo(frame_info))
-                    .unwrap()
             }
         }
     }

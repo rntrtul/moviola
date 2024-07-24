@@ -1,27 +1,22 @@
+use std::fmt::Debug;
 use std::thread;
 use std::time::{Duration, SystemTime};
 
 use ges::gst_pbutils::EncodingContainerProfile;
 use ges::prelude::{
-    EncodingProfileBuilder, ExtractableExt, GESContainerExt, GESPipelineExt, LayerExt,
-    TimelineElementExt, TimelineExt, UriClipAssetExt, UriClipExt,
+    EncodingProfileBuilder, GESContainerExt, GESPipelineExt, LayerExt, TimelineElementExt,
+    TimelineExt, UriClipExt,
 };
 use ges::{gst_pbutils, Effect, PipelineFlags};
 use gst::prelude::*;
 use gst::{ClockTime, Element, SeekFlags, State};
-use gst_video::{VideoFrameExt, VideoOrientationMethod};
+use gst_video::VideoOrientationMethod;
 use gtk4::prelude::{BoxExt, OrientableExt, WidgetExt};
 use relm4::adw::gdk;
 use relm4::*;
 
 use crate::ui::crop_box::MARGIN;
-
-#[derive(Debug, Clone, Copy)]
-pub struct FrameInfo {
-    pub(crate) width: u32,
-    pub(crate) height: u32,
-    pub(crate) aspect_ratio: f64,
-}
+use crate::ui::video_info_discoverer::VideoInfo;
 
 pub struct PlayingInfo {
     pipeline: ges::Pipeline,
@@ -36,16 +31,15 @@ pub struct VideoPlayerModel {
     is_playing: bool,
     is_mute: bool,
     gtk_sink: Element,
-    video_duration: Option<ClockTime>,
     video_uri: Option<String>,
     playing_info: Option<PlayingInfo>,
-    frame_info: FrameInfo,
+    frame_info: VideoInfo,
 }
 
 #[derive(Debug)]
 pub enum VideoPlayerMsg {
     ExportFrame,
-    FrameInfo(FrameInfo),
+    FrameInfo(VideoInfo),
     TogglePlayPause,
     ToggleMute,
     SeekToPercent(f64),
@@ -115,6 +109,7 @@ impl Component for VideoPlayerModel {
             .unwrap();
 
         let paintable = gtk_sink.property::<gdk::Paintable>("paintable");
+        // todo: need gst-plugins-gtk4 13.0 to be able to use orientation property with paintable
         let picture = gtk::Picture::new();
 
         picture.set_paintable(Some(&paintable));
@@ -129,10 +124,11 @@ impl Component for VideoPlayerModel {
             is_playing: false,
             is_mute: false,
             gtk_sink,
-            video_duration: None,
             video_uri: None,
             playing_info: None,
-            frame_info: FrameInfo {
+            frame_info: VideoInfo {
+                duration: ClockTime::ZERO,
+                framerate: gst::Fraction::from(0),
                 width: 0,
                 height: 0,
                 aspect_ratio: 0.,
@@ -158,7 +154,6 @@ impl Component for VideoPlayerModel {
                 self.video_uri = Some(uri);
                 self.video_is_loaded = false;
                 self.is_playing = false;
-                self.video_duration = None;
                 self.play_new_video();
 
                 let bus = self.playing_info.as_ref().unwrap().pipeline.bus().unwrap();
@@ -242,16 +237,6 @@ impl Component for VideoPlayerModel {
                 self.video_is_loaded = true;
                 root.last_child().unwrap().set_visible(true);
 
-                let info = self.playing_info.as_ref().unwrap();
-                let asset = info
-                    .clip
-                    .asset()
-                    .unwrap()
-                    .downcast::<ges::UriClipAsset>()
-                    .unwrap();
-
-                self.video_duration = Some(asset.duration().expect("could not get duration"));
-
                 sender.command(|out, shutdown| {
                     shutdown
                         .register(async move {
@@ -267,7 +252,7 @@ impl Component for VideoPlayerModel {
             VideoPlayerCommandMsg::UpdateSeekPos => {
                 let info = self.playing_info.as_ref().unwrap();
 
-                if self.video_duration == None
+                if !self.video_is_loaded
                     || info.pipeline.state(Some(ClockTime::ZERO)).1 != State::Playing
                 {
                     return;
@@ -276,7 +261,7 @@ impl Component for VideoPlayerModel {
                 match query_val {
                     Some(curr_position) => {
                         let percent = curr_position.mseconds() as f64
-                            / self.video_duration.unwrap().mseconds() as f64;
+                            / self.frame_info.duration.mseconds() as f64;
                         sender
                             .output(VideoPlayerOutput::UpdateSeekBarPos(percent))
                             .unwrap();
@@ -289,23 +274,6 @@ impl Component for VideoPlayerModel {
 }
 
 impl VideoPlayerModel {
-    pub fn get_sample_frame_info(sample: gst::Sample) -> FrameInfo {
-        let buffer = sample.buffer().unwrap();
-
-        let caps = sample.caps().expect("Sample without caps");
-        let info = gst_video::VideoInfo::from_caps(caps).expect("Failed to parse caps");
-
-        let frame = gst_video::VideoFrameRef::from_buffer_ref_readable(buffer, &info).unwrap();
-        let display_aspect_ratio = (frame.width() as f64 * info.par().numer() as f64)
-            / (frame.height() as f64 * info.par().denom() as f64);
-
-        FrameInfo {
-            width: frame.width(),
-            height: frame.height(),
-            aspect_ratio: display_aspect_ratio,
-        }
-    }
-
     // fixme: sometimes new video just hangs
     pub fn wait_for_playbin_done(playbin: &Element) {
         let bus = playbin.bus().unwrap();
@@ -334,7 +302,7 @@ impl VideoPlayerModel {
             return;
         }
 
-        let seconds = (self.video_duration.unwrap().seconds() as f64 * percent) as u64;
+        let seconds = (self.frame_info.duration.seconds() as f64 * percent) as u64;
 
         let time = gst::GenericFormattedValue::from(ClockTime::from_seconds(seconds));
         let seek = gst::event::Seek::new(
@@ -523,9 +491,9 @@ impl VideoPlayerModel {
             .expect("failed to set to render");
 
         let start_time = 1500;
-        // self.video_duration.unwrap().mseconds() as f64 * self.timeline.model().get_target_start_percent();
+        // self.frame_info.duration.mseconds() as f64 * self.timeline.model().get_target_start_percent();
         let end_time = 35000;
-        // self.video_duration.unwrap().mseconds() as f64 * self.timeline.model().get_target_end_percent();
+        // self.frame_info.duration.mseconds() as f64 * self.timeline.model().get_target_end_percent();
         let duration = (end_time - start_time) as u64;
 
         info.clip
