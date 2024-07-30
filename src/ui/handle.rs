@@ -97,6 +97,8 @@ impl HandleWidget {
         path_builder.add_rounded_rect(&bar_outline);
         path_builder.to_path()
     }
+
+    fn get_percent() {}
 }
 
 impl crate::ui::HandleWidget {
@@ -111,16 +113,20 @@ impl crate::ui::HandleWidget {
     }
 
     pub fn drag_update(&self, x: f32) {
-        // todo: accept x only if > handle_width and < widget_width - handle_width
-        let percent = (x - HANDLE_WIDTH as f32) / (self.width() - (HANDLE_WIDTH * 2)) as f32;
+        let x_adj = if self.is_start_dragging() || self.is_end_dragging() {
+            x - HANDLE_WIDTH as f32
+        } else {
+            x - SEEK_BAR_WIDTH as f32
+        };
+        let percent = x_adj / (self.width() - (HANDLE_WIDTH * 2)) as f32;
 
         if self.is_start_dragging() {
             self.set_start_x(percent.clamp(0f32, self.end_x()));
         } else if self.is_end_dragging() {
             self.set_end_x(percent.clamp(self.start_x(), 1f32));
-        } else if !self.is_start_dragging() && !self.is_end_dragging() {
-            self.set_seek_x(percent.clamp(0f32, 1f32));
         }
+
+        self.set_seek_x(percent.clamp(0f32, 1f32));
     }
 
     pub fn drag_end(&self) {

@@ -10,6 +10,7 @@ pub struct TimelineModel {
     thumbnails_available: bool,
     start: f32,
     end: f32,
+    prev_drag_target: f64,
 }
 
 #[derive(Debug)]
@@ -92,6 +93,7 @@ impl Component for TimelineModel {
             thumbnails_available: false,
             start: 0.,
             end: 1.,
+            prev_drag_target: -1.,
         };
 
         let widgets = view_output!();
@@ -135,16 +137,20 @@ impl Component for TimelineModel {
             TimelineMsg::DragBegin(x, y) => {
                 widgets.seek_bar.drag_start(x, y);
             }
-            TimelineMsg::DragUpdate(percent) => {
-                widgets.seek_bar.drag_update(percent as f32);
+            TimelineMsg::DragUpdate(target_x) => {
+                widgets.seek_bar.drag_update(target_x as f32);
                 widgets.seek_bar.queue_draw();
-                // fixme: get gstreamer critical warning start <= stop
-                // sender.input(TimelineMsg::SeekToPercent(percent));
+                //
+                if target_x != self.prev_drag_target {
+                    sender.input(TimelineMsg::SeekToPercent(widgets.seek_bar.seek_x() as f64));
+                    self.prev_drag_target = target_x;
+                }
             }
             TimelineMsg::DragEnd => {
                 widgets.seek_bar.drag_end();
                 self.start = widgets.seek_bar.start_x();
                 self.end = widgets.seek_bar.end_x();
+                self.prev_drag_target = -1.;
             }
         }
     }
