@@ -10,6 +10,7 @@ use relm4::gtk;
 
 pub static MARGIN: f32 = 5.;
 static HANDLE_FILL_RULE: gsk::FillRule = gsk::FillRule::Winding;
+static BOX_COLOUR: gdk::RGBA = gdk::RGBA::WHITE;
 
 #[derive(Debug, Default, Clone, Copy, Eq, PartialEq, glib::Enum)]
 #[enum_type(name = "HandleType")]
@@ -91,7 +92,7 @@ impl WidgetImpl for CropBoxWidget {
 
         let border = gsk::RoundedRect::from_rect(border_rect, 0.);
         let border_widths = [1.; 4];
-        let border_colours = [gdk::RGBA::GREEN; 4];
+        let border_colours = [BOX_COLOUR; 4];
 
         if self.drag_active.get() {
             let horizontal_step = (right_x - left_x) / 3.;
@@ -107,7 +108,7 @@ impl WidgetImpl for CropBoxWidget {
             let path_builder = gsk::PathBuilder::new();
             path_builder.add_circle(&center, MARGIN);
             let handle = path_builder.to_path();
-            snapshot.append_fill(&handle, HANDLE_FILL_RULE, &gdk::RGBA::GREEN);
+            snapshot.append_fill(&handle, HANDLE_FILL_RULE, &BOX_COLOUR);
         }
 
         snapshot.append_border(&border, &border_widths, &border_colours);
@@ -150,7 +151,7 @@ impl CropBoxWidget {
             }
 
             let line = path_builder.to_path();
-            snapshot.append_stroke(&line, &thirds_box_stroke, &gdk::RGBA::GREEN);
+            snapshot.append_stroke(&line, &thirds_box_stroke, &BOX_COLOUR);
         }
     }
 
