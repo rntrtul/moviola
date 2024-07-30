@@ -465,16 +465,58 @@ impl VideoPlayerModel {
             .expect("Unable to set name");
 
         self.remove_effect("orientation");
+
+        let mut preview_width = 640;
+        let mut preview_height = (preview_width as f64 / self.frame_info.aspect_ratio) as i32;
+
+        if orientation == VideoOrientationMethod::_90l
+            || orientation == VideoOrientationMethod::_90r
+        {
+            let tmp = preview_width;
+            preview_width = preview_height;
+            preview_height = tmp;
+            println!("switched resolution to {preview_width}x{preview_height}");
+        }
+
+        let preview_caps = gst::Caps::builder("video/x-raw")
+            .field("framerate", self.frame_info.framerate)
+            .field("width", preview_width)
+            .field("height", preview_height)
+            .build();
+        let tracks = self.playing_info.as_ref().unwrap().timeline.tracks();
+        let track = tracks.first().unwrap();
+        track.set_restriction_caps(&preview_caps);
+        // self.playing_info.as_ref().unwrap().timeline.commit_sync();
         self.add_effect(&flip);
     }
 
     fn set_video_crop(&mut self, left: i32, top: i32, right: i32, bottom: i32) {
+        println!("{top} {left} {right} {bottom}");
         let effect = format!("videocrop top={top} left={left} right={right} bottom={bottom}");
         let crop = Effect::new(effect.as_str()).expect("could not make crop");
         crop.set_name(Some("crop")).expect("unable to set name");
 
         self.remove_effect("crop");
         self.add_effect(&crop);
+
+        // convert left, right, to displaying
+
+        let scale_factor = 640 as f64 / self.frame_info.width as f64;
+
+        let preview_width = (self.frame_info.width as i32 - left - right) as f64 * scale_factor;
+        let preview_height = (self.frame_info.height as i32 - top - right) as f64 * scale_factor;
+
+        println!("preview: {preview_width}x{preview_height}");
+
+        let preview_caps = gst::Caps::builder("video/x-raw")
+            .field("framerate", self.frame_info.framerate)
+            .field("width", preview_width as i32)
+            .field("height", preview_height as i32)
+            .build();
+        let tracks = self.playing_info.as_ref().unwrap().timeline.tracks();
+        let track = tracks.first().unwrap();
+        track.set_restriction_caps(&preview_caps);
+        self.playing_info.as_ref().unwrap().timeline.commit_sync();
     }
 
     fn export_video(&self) {
