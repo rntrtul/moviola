@@ -7,8 +7,9 @@ use gst::{element_error, ClockTime, SeekFlags, State};
 use gst_app::AppSink;
 use gst_video::VideoFrameExt;
 
+use crate::ui::video_player;
 use crate::ui::video_player::VideoPlayerModel;
-use crate::ui::{video_info_discoverer, video_player};
+use crate::video::metadata_discoverer;
 
 static THUMBNAIL_PATH: &str = "/home/fareed/Videos";
 static THUMBNAIL_HEIGHT: u32 = 180;

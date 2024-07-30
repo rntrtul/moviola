@@ -4,6 +4,7 @@ use crate::app::App;
 
 mod app;
 mod ui;
+mod video;
 
 fn main() {
     gst::init().unwrap();

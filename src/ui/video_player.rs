@@ -16,7 +16,7 @@ use relm4::adw::gdk;
 use relm4::*;
 
 use crate::ui::crop_box::MARGIN;
-use crate::ui::video_info_discoverer::VideoInfo;
+use crate::video::metadata_discoverer::VideoInfo;
 
 pub struct PlayingInfo {
     pipeline: ges::Pipeline,

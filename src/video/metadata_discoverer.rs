@@ -22,12 +22,12 @@ impl Default for VideoInfo {
     }
 }
 
-pub struct VideoInfoDiscoverer {
+pub struct MetadataDiscoverer {
     discoverer: Discoverer,
     pub video_info: VideoInfo,
 }
 
-impl VideoInfoDiscoverer {
+impl MetadataDiscoverer {
     pub fn discover_uri(&mut self, uri: &str) {
         let info = self
             .discoverer

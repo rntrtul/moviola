@@ -12,8 +12,8 @@ use relm4::{
 
 use crate::ui::crop_box::CropMode;
 use crate::ui::timeline::{TimelineModel, TimelineMsg, TimelineOutput};
-use crate::ui::video_info_discoverer::{VideoInfo, VideoInfoDiscoverer};
 use crate::ui::CropBoxWidget;
+use crate::video::metadata_discoverer::{MetadataDiscoverer, VideoInfo};
 
 use super::ui::edit_controls::{EditControlsModel, EditControlsOutput};
 use super::ui::video_player::{VideoPlayerModel, VideoPlayerMsg, VideoPlayerOutput};
@@ -26,7 +26,7 @@ pub(super) struct App {
     video_is_playing: bool,
     video_is_mute: bool,
     show_crop_box: bool,
-    discoverer: VideoInfoDiscoverer,
+    discoverer: MetadataDiscoverer,
     uri: Option<String>,
     frame_info: Option<VideoInfo>,
 }
@@ -255,7 +255,7 @@ impl Component for App {
             video_is_playing: false,
             video_is_mute: false,
             show_crop_box: false,
-            discoverer: VideoInfoDiscoverer::new(),
+            discoverer: MetadataDiscoverer::new(),
             uri: None,
             frame_info: None,
         };
