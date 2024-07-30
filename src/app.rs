@@ -44,7 +44,7 @@ pub(super) enum AppMsg {
     HideCropBox,
     SetCropMode(CropMode),
     CropBoxDetectHandle((f32, f32)),
-    CropBoxDragUpdate((f32, f32)),
+    CropBoxDragUpdate((f64, f64)),
     CropBoxDragEnd,
     SeekToPercent(f64),
     UpdateSeekBarPos(f64),
@@ -140,10 +140,10 @@ impl Component for App {
                     },
 
                     gtk::Overlay{
-                        #[wrap(Some)]
-                        set_child = model.video_player.widget(),
                         #[watch]
                         set_visible: model.video_is_open,
+                        #[wrap(Some)]
+                        set_child = model.video_player.widget(),
 
                         add_overlay: crop_box = &CropBoxWidget::default(){
                             #[watch]
@@ -155,12 +155,8 @@ impl Component for App {
                                 connect_drag_update[sender] => move |drag, x_offset, y_offset| {
                                     let (start_x, start_y) = drag.start_point().unwrap();
 
-                                    let (x, y) = CropBoxWidget::get_cordinate_percent_from_drag(
-                                        drag.widget().width(),
-                                        drag.widget().height(),
-                                        start_x + x_offset,
-                                        start_y + y_offset,
-                                    );
+                                    let x = start_x + x_offset;
+                                    let y = start_y + y_offset;
 
                                     sender.input(AppMsg::CropBoxDragUpdate((x,y)));
                                 },

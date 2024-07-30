@@ -154,14 +154,41 @@ impl CropBoxWidget {
             snapshot.append_stroke(&line, &thirds_box_stroke, &BOX_COLOUR);
         }
     }
+    // returns (x, y, width, height)
+    fn get_preview_rect(&self, widget_width: f32, widget_height: f32) -> (f32, f32, f32, f32) {
+        let height_constrained_width = (widget_height as f64 * self.asepct_ratio.get()) as f32;
+        let width_constrained_height = (widget_width as f64 / self.asepct_ratio.get()) as f32;
+
+        let preview_width = if widget_width > height_constrained_width {
+            height_constrained_width
+        } else {
+            widget_width
+        };
+
+        let preview_height = if widget_height > width_constrained_height {
+            width_constrained_height
+        } else {
+            widget_height
+        };
+
+        let x = (widget_width - preview_width) / 2f32;
+        let y = (widget_height - preview_height) / 2f32;
+
+        // println!("preview is {preview_width}x{preview_height} inside of {widget_width}x{widget_height} container, preview starts at {x}x{y}");
+
+        (x, y, preview_width, preview_height)
+    }
 
     fn get_box_bounds(&self, widget_width: f32, widget_height: f32) -> (f32, f32, f32, f32) {
-        let left_x = (widget_width * self.left_x.get()) + MARGIN;
-        let top_y = (widget_height * self.top_y.get()) + MARGIN;
+        let (x_instep, _, preview_width, preview_height) =
+            self.get_preview_rect(widget_width, widget_height);
+
+        let left_x = (preview_width * self.left_x.get()) + MARGIN + x_instep;
+        let top_y = (preview_height * self.top_y.get()) + MARGIN;
 
         // subtract margin to convert percent to actual frame cords
-        let right_x = (widget_width - (MARGIN * 2.)) * self.right_x.get() + MARGIN;
-        let bottom_y = (widget_height - (MARGIN * 2.)) * self.bottom_y.get() + MARGIN;
+        let right_x = ((preview_width) * self.right_x.get()) + x_instep;
+        let bottom_y = ((preview_height) * self.bottom_y.get());
 
         (left_x, top_y, right_x, bottom_y)
     }
@@ -229,14 +256,15 @@ impl crate::ui::CropBoxWidget {
         }
     }
 
-    pub fn get_cordinate_percent_from_drag(width: i32, height: i32, x: f64, y: f64) -> (f32, f32) {
-        let frame_width = width as f32 - (MARGIN * 2.);
-        let frame_height = height as f32 - (MARGIN * 2.);
+    pub fn get_cordinate_percent_from_drag(&self, x: f64, y: f64) -> (f64, f64) {
+        let (left_x, top_y, preview_width, preview_height) = self
+            .imp()
+            .get_preview_rect(self.width() as f32, self.height() as f32);
 
-        let x_adj = (x as f32 - MARGIN).clamp(0., frame_width);
-        let y_adj = (y as f32 - MARGIN).clamp(0., frame_height);
+        let x_adj = (x - left_x as f64).clamp(0., preview_width as f64);
+        let y_adj = (y - top_y as f64).clamp(0., preview_height as f64);
 
-        (x_adj / frame_width, y_adj / frame_height)
+        (x_adj / preview_width as f64, y_adj / preview_height as f64)
     }
 
     pub fn is_point_in_handle(&self, x: f32, y: f32) {
@@ -270,10 +298,14 @@ impl crate::ui::CropBoxWidget {
         self.set_drag_active(point_in_circle);
     }
 
-    pub fn update_drag_pos(&self, x: f32, y: f32) {
+    pub fn update_drag_pos(&self, x: f64, y: f64) {
         if !self.drag_active() {
             return;
         }
+
+        let (x_percent, y_percent) = self.get_cordinate_percent_from_drag(x, y);
+        let x = x_percent as f32;
+        let y = y_percent as f32;
 
         match self.active_handle() {
             HandleType::TopLeft => {
