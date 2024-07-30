@@ -3,7 +3,7 @@ use gtk4::prelude::{BoxExt, EventControllerExt, GestureDragExt, WidgetExt};
 use relm4::{gtk, Component, ComponentParts, ComponentSender};
 
 use crate::ui::handle::HANDLE_WIDTH;
-use crate::ui::thumbnail_manager::ThumbnailManager;
+use crate::video::thumbnail::Thumbnail;
 
 #[derive(Debug)]
 pub struct TimelineModel {
@@ -114,7 +114,7 @@ impl Component for TimelineModel {
                 self.thumbnails_available = false;
 
                 sender.oneshot_command(async move {
-                    ThumbnailManager::generate_thumbnails(uri).await;
+                    Thumbnail::generate_thumbnails(uri).await;
                     TimelineCmdMsg::ThumbnailsGenerated
                 });
             }
@@ -182,7 +182,7 @@ impl TimelineModel {
 
     fn remove_timeline_thumbnails(timeline: &gtk::Box) {
         if timeline.first_child().is_some() {
-            for _ in 0..ThumbnailManager::get_number_of_thumbnails() {
+            for _ in 0..Thumbnail::get_number_of_thumbnails() {
                 let child = timeline.first_child().unwrap();
                 timeline.remove(&child);
             }
@@ -193,7 +193,7 @@ impl TimelineModel {
         // todo: see if can reuse picture widget instead of discarding. without storing ref to all of them
         // Self::remove_timeline_thumbnails(timeline);
 
-        for path in ThumbnailManager::get_thumbnail_paths() {
+        for path in Thumbnail::get_thumbnail_paths() {
             let file = gio::File::for_parse_name(path.as_str());
             let image = gtk::Picture::for_file(&file);
 

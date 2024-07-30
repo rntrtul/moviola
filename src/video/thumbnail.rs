@@ -15,9 +15,9 @@ static THUMBNAIL_PATH: &str = "/home/fareed/Videos";
 static THUMBNAIL_HEIGHT: u32 = 180;
 static NUM_THUMBNAILS: u64 = 12;
 
-pub struct ThumbnailManager;
+pub struct Thumbnail;
 
-impl ThumbnailManager {
+impl Thumbnail {
     fn new_sample_callback(
         appsink: &AppSink,
         barrier: Arc<Barrier>,
@@ -238,7 +238,7 @@ mod tests {
 
         let uri = "file:///home/fareed/Videos/mp3e1.mkv";
         let barrier = Arc::new(Barrier::new((NUM_THUMBNAILS + 1) as usize));
-        ThumbnailManager::launch_thumbnail_threads(uri.parse().unwrap(), Arc::clone(&barrier));
+        Thumbnail::launch_thumbnail_threads(uri.parse().unwrap(), Arc::clone(&barrier));
         barrier.wait();
 
         assert_eq!(true, true);
