@@ -359,19 +359,6 @@ impl VideoPlayerModel {
             let pipeline = ges::Pipeline::new();
             pipeline.set_timeline(&timeline).unwrap();
 
-            // todo: swap for portrait video
-            let preview_width = 640;
-            let preview_height = preview_width as f64 / self.frame_info.aspect_ratio;
-
-            let tracks = timeline.tracks();
-            let track = tracks.first().unwrap();
-            let preview_caps = gst::Caps::builder("video/x-raw")
-                .field("framerate", self.frame_info.framerate)
-                .field("width", preview_width)
-                .field("height", preview_height as i32)
-                .build();
-            track.set_restriction_caps(&preview_caps);
-
             let clip =
                 ges::UriClip::new(self.video_uri.as_ref().unwrap()).expect("failed to create clip");
             clip.set_mute(false);
@@ -391,6 +378,19 @@ impl VideoPlayerModel {
 
             self.playing_info = Some(info);
         }
+
+        // todo: swap for portrait video
+        let preview_width = 640;
+        let preview_height = preview_width as f64 / self.frame_info.aspect_ratio;
+
+        let preview_caps = gst::Caps::builder("video/x-raw")
+            .field("framerate", self.frame_info.framerate)
+            .field("width", preview_width)
+            .field("height", preview_height as i32)
+            .build();
+        let tracks = self.playing_info.as_ref().unwrap().timeline.tracks();
+        let track = tracks.first().unwrap();
+        track.set_restriction_caps(&preview_caps);
 
         self.playing_info
             .as_ref()
