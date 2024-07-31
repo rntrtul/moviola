@@ -58,8 +58,8 @@ impl Component for TimelineModel {
             #[wrap(Some)]
             set_child: timeline = &gtk::Box {
                 set_hexpand: true,
-                set_margin_start: HANDLE_WIDTH,
-                set_margin_end: HANDLE_WIDTH,
+                set_margin_start: HANDLE_WIDTH as i32,
+                set_margin_end: HANDLE_WIDTH as i32,
             },
 
             add_overlay: seek_bar = &super::HandleWidget::default() {

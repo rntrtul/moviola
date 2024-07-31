@@ -6,8 +6,9 @@ use gtk4::{gdk, glib, graphene, gsk, Snapshot};
 use relm4::gtk;
 
 static FILL_RULE: gsk::FillRule = gsk::FillRule::Winding;
-pub static HANDLE_WIDTH: i32 = 10;
-static SEEK_BAR_WIDTH: i32 = 5;
+pub static HANDLE_WIDTH: f32 = 10f32;
+static SEEK_BAR_WIDTH: f32 = 5f32;
+static NOT_PLAY_OVERLAY_COLOUR: gdk::RGBA = gdk::RGBA::new(0.612, 0.612, 0.612, 0.79);
 
 #[derive(glib::Properties, Default, Debug)]
 #[properties(wrapper_type = super::HandleWidget)]
@@ -36,31 +37,58 @@ impl ObjectImpl for HandleWidget {}
 
 impl WidgetImpl for HandleWidget {
     fn snapshot(&self, snapshot: &Snapshot) {
-        // todo: have inside edge of widget be considered 0 (right for start+seek, left for end)
         // todo: have shadow on handle?
+        let widget = self.obj();
+
+        if self.start_x.get() != 0f32 {
+            let start_not_playing_rect = graphene::Rect::new(
+                HANDLE_WIDTH,
+                0.,
+                self.start_left_x(),
+                widget.height() as f32,
+            );
+
+            snapshot.append_color(&NOT_PLAY_OVERLAY_COLOUR, &start_not_playing_rect);
+        }
+
+        if self.end_x.get() != 1f32 {
+            let end_left_x = self.end_left_x();
+            let end_not_playing_rect = graphene::Rect::new(
+                end_left_x + HANDLE_WIDTH,
+                0.,
+                (widget.width() as f32 - end_left_x) - (HANDLE_WIDTH * 2f32),
+                widget.height() as f32,
+            );
+
+            snapshot.append_color(&NOT_PLAY_OVERLAY_COLOUR, &end_not_playing_rect);
+        }
 
         snapshot.append_fill(&self.seek_bar_path(), FILL_RULE, &gdk::RGBA::WHITE);
         snapshot.append_fill(&self.start_handle_path(), FILL_RULE, &gdk::RGBA::WHITE);
         snapshot.append_fill(&self.end_handle_path(), FILL_RULE, &gdk::RGBA::WHITE);
-
-        // let not_playing_rect =
-        //     graphene::Rect::new(0f32, 0., widget.width() as f32, widget.height() as f32);
-        // let grey = gdk::RGBA::new(0.612, 0.612, 0.612, 0.89);
-        //
-        // snapshot.append_color(&grey, &not_playing_rect);
     }
 }
 
 impl HandleWidget {
+    fn marginless_width(&self) -> f32 {
+        self.obj().width() as f32 - (HANDLE_WIDTH * 2f32)
+    }
+
+    fn start_left_x(&self) -> f32 {
+        let width = self.marginless_width();
+        self.start_x.get() * width
+    }
+
+    fn end_left_x(&self) -> f32 {
+        // fixme: left edge not where it should be
+        let width = self.marginless_width();
+        (self.end_x.get() * width) + HANDLE_WIDTH
+    }
+
     fn start_handle_path(&self) -> gsk::Path {
-        let width = (self.obj().width() - (HANDLE_WIDTH * 2)) as f32;
-        let left_x = self.start_x.get() * width;
-        let handle_rect = graphene::Rect::new(
-            left_x,
-            0f32,
-            HANDLE_WIDTH as f32,
-            self.obj().height() as f32,
-        );
+        let left_x = self.start_left_x();
+        let handle_rect =
+            graphene::Rect::new(left_x, 0f32, HANDLE_WIDTH, self.obj().height() as f32);
         let handle_outline = gsk::RoundedRect::from_rect(handle_rect, 6f32);
 
         let path_builder = gsk::PathBuilder::new();
@@ -69,11 +97,10 @@ impl HandleWidget {
     }
 
     fn end_handle_path(&self) -> gsk::Path {
-        let width = (self.obj().width() - (HANDLE_WIDTH * 2)) as f32;
         let handle_rect = graphene::Rect::new(
-            (self.end_x.get() * width) + HANDLE_WIDTH as f32,
+            self.end_left_x(),
             0f32,
-            HANDLE_WIDTH as f32,
+            HANDLE_WIDTH,
             self.obj().height() as f32,
         );
         let handle_outline = gsk::RoundedRect::from_rect(handle_rect, 6f32);
@@ -84,11 +111,12 @@ impl HandleWidget {
     }
 
     fn seek_bar_path(&self) -> gsk::Path {
-        let width = (self.obj().width() - (HANDLE_WIDTH * 2)) as f32;
+        let width = self.marginless_width();
+
         let bar_rect = graphene::Rect::new(
             self.seek_x.get() * width,
             0f32,
-            SEEK_BAR_WIDTH as f32,
+            SEEK_BAR_WIDTH,
             self.obj().height() as f32,
         );
         let bar_outline = gsk::RoundedRect::from_rect(bar_rect, 6f32);
@@ -97,8 +125,6 @@ impl HandleWidget {
         path_builder.add_rounded_rect(&bar_outline);
         path_builder.to_path()
     }
-
-    fn get_percent() {}
 }
 
 impl crate::ui::HandleWidget {
@@ -114,11 +140,11 @@ impl crate::ui::HandleWidget {
 
     pub fn drag_update(&self, x: f32) {
         let x_adj = if self.is_start_dragging() || self.is_end_dragging() {
-            x - HANDLE_WIDTH as f32
+            x - HANDLE_WIDTH
         } else {
-            x - SEEK_BAR_WIDTH as f32
+            x - SEEK_BAR_WIDTH
         };
-        let percent = x_adj / (self.width() - (HANDLE_WIDTH * 2)) as f32;
+        let percent = x_adj / (self.width() as f32 - (HANDLE_WIDTH * 2f32));
 
         if self.is_start_dragging() {
             self.set_start_x(percent.clamp(0f32, self.end_x()));
