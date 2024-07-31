@@ -166,9 +166,10 @@ impl CropBoxWidget {
         let preview_height = marginless_height.min(width_constrained_height);
 
         let x = (widget_width - preview_width) / 2f32;
-        let y = (widget_height - preview_height) / 2f32;
+        // picture does not center vertically so do not need to have y_instep, besides marin
+        // let y = (widget_height - preview_height) / 2f32;
 
-        (x, y, preview_width, preview_height)
+        (x, MARGIN, preview_width, preview_height)
     }
 
     fn get_box_bounds(&self, widget_width: f32, widget_height: f32) -> (f32, f32, f32, f32) {
