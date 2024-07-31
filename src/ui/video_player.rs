@@ -3,7 +3,6 @@ use std::fmt::Debug;
 use gst::prelude::*;
 use gst::Element;
 use gtk4::prelude::{BoxExt, OrientableExt, WidgetExt};
-use gtk4::Align;
 use relm4::adw::gdk;
 use relm4::*;
 
@@ -44,15 +43,6 @@ impl Component for VideoPlayerModel {
             set_width_request: 640,
             set_height_request: 360,
 
-            gtk::Spinner {
-                #[watch]
-                set_spinning: !model.video_is_loaded,
-                #[watch]
-                set_visible: !model.video_is_loaded,
-                set_halign: gtk::Align::Center,
-                set_valign: gtk::Align::Center,
-            },
-
             add_controller = gtk::GestureClick {
                 connect_pressed[sender] => move |_,_,_,_| {
                     sender.input(VideoPlayerMsg::TogglePlayPause)
@@ -77,7 +67,6 @@ impl Component for VideoPlayerModel {
         let picture = gtk::Picture::new();
 
         picture.set_paintable(Some(&paintable));
-        picture.set_valign(Align::Center);
         picture.set_margin_all(MARGIN as i32);
 
         let offload = gtk4::GraphicsOffload::new(Some(&picture));

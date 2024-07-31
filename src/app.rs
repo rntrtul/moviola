@@ -26,7 +26,8 @@ pub(super) struct App {
     video_player: Controller<VideoPlayerModel>,
     edit_controls: Controller<EditControlsModel>,
     timeline: Controller<TimelineModel>,
-    video_is_open: bool,
+    video_selected: bool,
+    video_is_loaded: bool,
     video_is_playing: bool,
     video_is_mute: bool,
     show_crop_box: bool,
@@ -63,6 +64,7 @@ pub(super) enum AppMsg {
 #[derive(Debug)]
 pub enum AppCommandMsg {
     VideoLoaded,
+    MetadataDiscovered(MetadataDiscoverer),
     AnimateSeekBar,
 }
 
@@ -123,7 +125,7 @@ impl Component for App {
                      pack_end = &gtk::Button {
                         set_icon_name: "document-open-symbolic",
                         #[watch]
-                        set_visible: model.video_is_open,
+                        set_visible: model.video_selected,
                         connect_clicked => AppMsg::OpenFile,
                     }
                 },
@@ -136,6 +138,8 @@ impl Component for App {
                     adw::StatusPage {
                         set_title: "Select Video",
                         set_description: Some("select a video file to edit"),
+                        #[watch]
+                        set_visible: !model.video_selected,
 
                         #[name = "open_file_btn"]
                         gtk::Button {
@@ -144,14 +148,22 @@ impl Component for App {
                             add_css_class: "suggested-action",
                             add_css_class: "pill",
                         },
+                    },
 
+                    gtk::Spinner {
+                        set_height_request: 360,
+                        set_halign: gtk::Align::Fill,
+                        set_valign: gtk::Align::Fill,
+                        set_hexpand: true,
                         #[watch]
-                        set_visible: !model.video_is_open,
+                        set_spinning: model.video_selected && !model.video_is_loaded,
+                        #[watch]
+                        set_visible: model.video_selected && !model.video_is_loaded,
                     },
 
                     gtk::Overlay{
                         #[watch]
-                        set_visible: model.video_is_open,
+                        set_visible: model.video_is_loaded,
                         #[wrap(Some)]
                         set_child = model.video_player.widget(),
 
@@ -182,7 +194,7 @@ impl Component for App {
                         set_spacing: 10,
                         add_css_class: "toolbar",
                         #[watch]
-                        set_visible: model.video_is_open,
+                        set_visible: model.video_selected,
 
                         gtk::Button {
                             #[watch]
@@ -256,7 +268,8 @@ impl Component for App {
             video_player,
             edit_controls,
             timeline,
-            video_is_open: false,
+            video_selected: false,
+            video_is_loaded: false,
             video_is_playing: false,
             video_is_mute: false,
             show_crop_box: false,
@@ -287,38 +300,32 @@ impl Component for App {
                 println!("QUIT");
                 main_application().quit()
             }
-            AppMsg::OpenFile => App::launch_file_opener(&sender),
+            AppMsg::OpenFile => {
+                self.video_selected = false;
+                App::launch_file_opener(&sender)
+            }
             AppMsg::SetVideo(uri) => {
+                self.video_selected = true;
+                self.edit_controls.widget().set_visible(true);
+                self.video_player.widget().set_visible(false);
+
                 self.video_is_playing = false;
                 if self.player.borrow_mut().is_playing() {
                     self.player.borrow_mut().set_is_playing(false);
                 }
-                self.video_is_open = true;
                 self.uri.replace(uri.clone());
                 widgets.crop_box.reset_box();
-
-                self.discoverer.discover_uri(uri.as_str());
-                let info = self.discoverer.video_info;
-
-                self.frame_info = Some(info);
-                widgets.crop_box.set_asepct_ratio(info.aspect_ratio);
-
-                self.player.borrow_mut().set_info(info.clone());
-                self.player.borrow_mut().play_uri(uri.clone());
-
-                let bus = self.player.borrow_mut().pipeline_bus();
-                sender.oneshot_command(async move {
-                    Player::wait_for_pipeline_init(bus);
-                    AppCommandMsg::VideoLoaded
-                });
 
                 self.timeline
                     .emit(TimelineMsg::GenerateThumbnails(uri.clone()));
 
-                self.video_player.widget().set_visible(true);
-                self.edit_controls.widget().set_visible(true);
+                let uri_clone = uri.clone();
+                sender.oneshot_command(async move {
+                    let mut discoverer = MetadataDiscoverer::new();
+                    discoverer.discover_uri(uri_clone.as_str());
+                    AppCommandMsg::MetadataDiscovered(discoverer)
+                });
             }
-            // todo: do directly in controller init
             AppMsg::ExportFrame => {
                 self.player.borrow_mut().export_frame();
             }
@@ -405,8 +412,9 @@ impl Component for App {
         self.update_view(widgets, sender);
     }
 
-    fn update_cmd(
+    fn update_cmd_with_view(
         &mut self,
+        widgets: &mut Self::Widgets,
         message: Self::CommandOutput,
         sender: ComponentSender<Self>,
         _root: &Self::Root,
@@ -427,10 +435,31 @@ impl Component for App {
                     curr_position.mseconds() as f64 / player.info().duration.mseconds() as f64;
                 self.timeline.emit(TimelineMsg::UpdateSeekBarPos(percent));
             }
+            AppCommandMsg::MetadataDiscovered(discoverer) => {
+                self.discoverer = discoverer;
+                let info = self.discoverer.video_info;
+
+                self.frame_info = Some(info);
+                widgets.crop_box.set_asepct_ratio(info.aspect_ratio);
+
+                self.player.borrow_mut().set_info(info.clone());
+                self.player
+                    .borrow_mut()
+                    .play_uri(self.uri.as_ref().unwrap().clone());
+
+                let bus = self.player.borrow_mut().pipeline_bus();
+                sender.oneshot_command(async move {
+                    Player::wait_for_pipeline_init(bus);
+                    AppCommandMsg::VideoLoaded
+                });
+            }
             AppCommandMsg::VideoLoaded => {
-                println!("video loaded");
+                self.video_is_loaded = true;
                 self.video_is_playing = true;
+
+                self.video_player.widget().set_visible(true);
                 self.player.borrow_mut().set_is_playing(true);
+
                 self.video_player.emit(VideoPlayerMsg::VideoLoaded);
 
                 sender.command(|out, shutdown| {
@@ -445,5 +474,7 @@ impl Component for App {
                 });
             }
         }
+
+        self.update_view(widgets, sender);
     }
 }

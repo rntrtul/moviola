@@ -22,6 +22,7 @@ impl Default for VideoInfo {
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct MetadataDiscoverer {
     discoverer: Discoverer,
     pub video_info: VideoInfo,

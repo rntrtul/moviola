@@ -26,7 +26,6 @@ impl Player {
             .set_mode(PipelineFlags::FULL_PREVIEW)
             .expect("unable to preview");
         pipeline.preview_set_video_sink(Some(sink));
-
         pipeline.set_state(State::Ready).unwrap();
 
         Self {
@@ -104,7 +103,7 @@ impl Player {
     }
 
     pub fn play_uri(&mut self, uri: String) {
-        // fixme: why does this take 2 seconds
+        // fixme: why does this take 2 seconds (uri clip?)
         self.pipeline.set_state(State::Null).unwrap();
 
         let timeline = self.pipeline.timeline().unwrap();
