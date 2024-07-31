@@ -1,18 +1,18 @@
 use std::fmt::Debug;
 
-use ges::prelude::{GESPipelineExt, GESTrackExt, LayerExt, TimelineExt};
-use ges::PipelineFlags;
+use ges::prelude::{GESPipelineExt, LayerExt, TimelineExt};
+use ges::{Clip, PipelineFlags};
 use gst::prelude::{ElementExt, ElementExtManual};
-use gst::{ClockTime, SeekFlags, State};
+use gst::{Bus, ClockTime, SeekFlags, State};
 
 use crate::video::metadata_discoverer::VideoInfo;
 
 #[derive(Debug)]
 pub struct Player {
-    is_mute: bool,
-    is_playing: bool,
-    pipeline: ges::Pipeline,
-    info: VideoInfo,
+    pub(crate) is_mute: bool,
+    pub(crate) is_playing: bool,
+    pub(crate) pipeline: ges::Pipeline,
+    pub(crate) info: VideoInfo,
 }
 
 impl Player {
@@ -35,6 +35,16 @@ impl Player {
             pipeline,
             info: Default::default(),
         }
+    }
+
+    // todo: handle scenario with no clips
+    pub(crate) fn clip(&self) -> Clip {
+        let layers = self.pipeline.timeline().unwrap().layers();
+        let layer = layers.first().unwrap();
+        let clips = layer.clips();
+        let clip = clips.first().unwrap();
+
+        clip.to_owned()
     }
 
     pub fn is_playing(&self) -> bool {
@@ -60,7 +70,8 @@ impl Player {
     }
     pub fn set_is_mute(&mut self, is_mute: bool) {
         self.is_mute = is_mute;
-        // self.clip.set_mute(is_mute);
+        // todo: get it as UriClip not Clip
+        // self.clip().set_mute(is_mute);
     }
     pub fn set_is_playing(&mut self, play: bool) {
         self.is_playing = play;
@@ -74,19 +85,6 @@ impl Player {
     }
     pub fn toggle_play_plause(&mut self) {
         self.set_is_playing(!self.is_playing);
-    }
-
-    pub fn export_frame(&self) {
-        // todo: ask for file location and name
-        // is it taking the 720p playback and screenshotting that?
-        self.pipeline
-            .save_thumbnail(
-                self.info.width as i32,
-                self.info.height as i32,
-                "image/jpeg",
-                "/home/fareed/Videos/export.jpg",
-            )
-            .expect("unable to save exported frame");
     }
 
     pub fn seek_to_percent(&self, percent: f64) {
@@ -124,29 +122,17 @@ impl Player {
         }
         layer.add_clip(&clip).expect("unable to add clip");
 
-        // todo: swap for portrait video
-        let preview_width = 640;
-        let preview_height = preview_width as f64 / self.info.aspect_ratio;
-
-        let preview_caps = gst::Caps::builder("video/x-raw")
-            .field("framerate", self.info.framerate)
-            .field("width", preview_width)
-            .field("height", preview_height as i32)
-            .build();
-        let tracks = timeline.tracks();
-        let track = tracks.first().unwrap();
-        track.set_restriction_caps(&preview_caps);
-
+        self.set_preview_aspect_ratio_original();
         self.pipeline.set_state(State::Playing).unwrap();
 
         self.is_mute = false;
     }
 
-    pub fn pipeline_bus(&self) -> gst::Bus {
+    pub fn pipeline_bus(&self) -> Bus {
         self.pipeline.bus().unwrap()
     }
 
-    pub fn wait_for_pipeline_init(bus: gst::Bus) {
+    pub fn wait_for_pipeline_init(bus: Bus) {
         for msg in bus.iter_timed(ClockTime::NONE) {
             use gst::MessageView;
 
@@ -158,4 +144,6 @@ impl Player {
             }
         }
     }
+
+    //     todo: move export stuff here and make metadata async
 }

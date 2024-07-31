@@ -302,6 +302,7 @@ impl Component for App {
                 self.discoverer.discover_uri(uri.as_str());
                 let info = self.discoverer.video_info;
 
+                self.frame_info = Some(info);
                 widgets.crop_box.set_asepct_ratio(info.aspect_ratio);
 
                 self.player.borrow_mut().set_info(info.clone());
@@ -323,10 +324,15 @@ impl Component for App {
             AppMsg::ExportFrame => {
                 self.player.borrow_mut().export_frame();
             }
-            AppMsg::ExportVideo => {}
-            AppMsg::Orient(orientation) => {}
+            AppMsg::ExportVideo => {
+                self.player.borrow_mut().export_video();
+            }
+            AppMsg::Orient(orientation) => {
+                self.player.borrow_mut().set_video_orientation(orientation)
+            }
             AppMsg::ShowCropBox => {
                 self.show_crop_box = true;
+                self.player.borrow_mut().remove_crop();
             }
             AppMsg::HideCropBox => {
                 let crop_box = &widgets.crop_box;
@@ -346,8 +352,9 @@ impl Component for App {
                     let right = (width - (width * crop_box.right_x())) as i32;
                     let bottom = (height - (height * crop_box.bottom_y())) as i32;
 
-                    // self.video_player
-                    //     .emit(VideoPlayerMsg::CropVideo(left, top, right, bottom));
+                    self.player
+                        .borrow_mut()
+                        .set_video_crop(left, top, right, bottom);
                 }
 
                 self.show_crop_box = false
@@ -409,7 +416,6 @@ impl Component for App {
                     || !player.is_playing()
                     || curr_position == ClockTime::ZERO
                 {
-                    println!("skipping");
                     return;
                 }
 
@@ -418,6 +424,7 @@ impl Component for App {
                 self.timeline.emit(TimelineMsg::UpdateSeekBarPos(percent));
             }
             AppCommandMsg::VideoLoaded => {
+                println!("video loaded");
                 self.video_is_playing = true;
                 self.player.borrow_mut().set_is_playing(true);
                 self.video_player.emit(VideoPlayerMsg::VideoLoaded);

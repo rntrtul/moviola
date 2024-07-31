@@ -1,11 +1,7 @@
 use std::fmt::Debug;
 
-use ges::gst_pbutils;
-use ges::gst_pbutils::EncodingContainerProfile;
-use ges::prelude::EncodingProfileBuilder;
 use gst::prelude::*;
 use gst::Element;
-use gst_video::VideoOrientationMethod;
 use gtk4::prelude::{BoxExt, OrientableExt, WidgetExt};
 use relm4::adw::gdk;
 use relm4::*;
@@ -16,7 +12,6 @@ use crate::ui::crop_box::MARGIN;
 pub struct VideoPlayerModel {
     video_is_loaded: bool,
     is_playing: bool,
-    is_mute: bool,
     gtk_sink: Element,
 }
 
@@ -91,7 +86,6 @@ impl Component for VideoPlayerModel {
         let model = VideoPlayerModel {
             video_is_loaded: false,
             is_playing: false,
-            is_mute: false,
             gtk_sink,
         };
 
@@ -126,180 +120,8 @@ impl Component for VideoPlayerModel {
 
 impl VideoPlayerModel {
     // todo: hookup with ui/keyboard. add support for stepping backwards
-    fn step_next_frame(&mut self) {
+    fn _step_next_frame(&mut self) {
         let step = gst::event::Step::new(gst::format::Buffers::ONE, 1.0, true, false);
         self.gtk_sink.send_event(step);
     }
-
-    fn build_container_profile() -> EncodingContainerProfile {
-        // todo: pass in audio and video targets and target resolution/aspect ratio
-        let audio_profile =
-            gst_pbutils::EncodingAudioProfile::builder(&gst::Caps::builder("audio/mpeg").build())
-                .build();
-        let video_profile =
-            gst_pbutils::EncodingVideoProfile::builder(&gst::Caps::builder("video/x-h264").build())
-                .build();
-
-        EncodingContainerProfile::builder(&gst::Caps::builder("video/x-matroska").build())
-            .name("Container")
-            .add_profile(video_profile)
-            .add_profile(audio_profile)
-            .build()
-    }
-    fn video_orientation_method_to_val(method: VideoOrientationMethod) -> u8 {
-        match method {
-            VideoOrientationMethod::Identity => 0,
-            VideoOrientationMethod::_90r => 1,
-            VideoOrientationMethod::_180 => 2,
-            VideoOrientationMethod::_90l => 3,
-            VideoOrientationMethod::Horiz => 4,
-            VideoOrientationMethod::Vert => 5,
-            VideoOrientationMethod::UlLr => 6,
-            VideoOrientationMethod::UrLl => 7,
-            VideoOrientationMethod::Auto => 8,
-            VideoOrientationMethod::Custom => 9,
-            _ => panic!("unknown value given"),
-        }
-    }
-    //
-    // fn remove_effect(&self, effect_name: &str) {
-    //     let info = self.playing_info.as_ref().unwrap();
-    //
-    //     let found_element = info
-    //         .clip
-    //         .children(false)
-    //         .into_iter()
-    //         .find(|child| child.name().unwrap() == effect_name);
-    //
-    //     if let Some(prev_effect) = found_element {
-    //         info.clip
-    //             .remove(&prev_effect)
-    //             .expect("could not delete previous effect");
-    //     }
-    // }
-    //
-    // fn add_effect(&mut self, effect: &Effect) {
-    //     let info = self.playing_info.as_mut().unwrap();
-    //     info.clip.add(effect).unwrap();
-    //     info.timeline.commit_sync();
-    // }
-    //
-    // fn set_video_orientation(&mut self, orientation: VideoOrientationMethod) {
-    //     // todo: split flip and rotates
-    //     let val = Self::video_orientation_method_to_val(orientation);
-    //
-    //     let effect = format!("autovideoflip video-direction={val}");
-    //     let flip = Effect::new(effect.as_str()).expect("could not make flip");
-    //     flip.set_name(Some("orientation"))
-    //         .expect("Unable to set name");
-    //
-    //     self.remove_effect("orientation");
-    //
-    //     let mut preview_width = 640;
-    //     let mut preview_height = (preview_width as f64 / self.frame_info.aspect_ratio) as i32;
-    //
-    //     if orientation == VideoOrientationMethod::_90l
-    //         || orientation == VideoOrientationMethod::_90r
-    //     {
-    //         let tmp = preview_width;
-    //         preview_width = preview_height;
-    //         preview_height = tmp;
-    //         println!("switched resolution to {preview_width}x{preview_height}");
-    //     }
-    //
-    //     let preview_caps = gst::Caps::builder("video/x-raw")
-    //         .field("framerate", self.frame_info.framerate)
-    //         .field("width", preview_width)
-    //         .field("height", preview_height)
-    //         .build();
-    //     let tracks = self.playing_info.as_ref().unwrap().timeline.tracks();
-    //     let track = tracks.first().unwrap();
-    //     track.set_restriction_caps(&preview_caps);
-    //     // self.playing_info.as_ref().unwrap().timeline.commit_sync();
-    //     self.add_effect(&flip);
-    // }
-    //
-    // fn set_video_crop(&mut self, left: i32, top: i32, right: i32, bottom: i32) {
-    //     println!("{top} {left} {right} {bottom}");
-    //     let effect = format!("videocrop top={top} left={left} right={right} bottom={bottom}");
-    //     let crop = Effect::new(effect.as_str()).expect("could not make crop");
-    //     crop.set_name(Some("crop")).expect("unable to set name");
-    //
-    //     self.remove_effect("crop");
-    //     self.add_effect(&crop);
-    //
-    //     // convert left, right, to displaying
-    //
-    //     let scale_factor = 640 as f64 / self.frame_info.width as f64;
-    //
-    //     let preview_width = (self.frame_info.width as i32 - left - right) as f64 * scale_factor;
-    //     let preview_height = (self.frame_info.height as i32 - top - right) as f64 * scale_factor;
-    //
-    //     println!("preview: {preview_width}x{preview_height}");
-    //
-    //     let preview_caps = gst::Caps::builder("video/x-raw")
-    //         .field("framerate", self.frame_info.framerate)
-    //         .field("width", preview_width as i32)
-    //         .field("height", preview_height as i32)
-    //         .build();
-    //     let tracks = self.playing_info.as_ref().unwrap().timeline.tracks();
-    //     let track = tracks.first().unwrap();
-    //     track.set_restriction_caps(&preview_caps);
-    //     self.playing_info.as_ref().unwrap().timeline.commit_sync();
-    // }
-    //
-    // fn export_video(&self) {
-    //     let now = SystemTime::now();
-    //     let info = self.playing_info.as_ref().unwrap();
-    //     // todo: use toggle_play_pause for setting state to keep ui insync
-    //     info.pipeline.set_state(State::Paused).unwrap();
-    //
-    //     let out_uri = "file:///home/fareed/Videos/out.mkv";
-    //     let container_profile = Self::build_container_profile();
-    //
-    //     info.pipeline
-    //         .set_render_settings(&out_uri, &container_profile)
-    //         .expect("unable to set render settings");
-    //     // todo: use smart_render?
-    //     info.pipeline
-    //         .set_mode(PipelineFlags::RENDER)
-    //         .expect("failed to set to render");
-    //
-    //     let start_time = 1500;
-    //     // self.frame_info.duration.mseconds() as f64 * self.timeline.model().get_target_start_percent();
-    //     let end_time = 35000;
-    //     // self.frame_info.duration.mseconds() as f64 * self.timeline.model().get_target_end_percent();
-    //     let duration = (end_time - start_time) as u64;
-    //
-    //     info.clip
-    //         .set_inpoint(ClockTime::from_mseconds(start_time as u64));
-    //     info.clip.set_duration(ClockTime::from_mseconds(duration));
-    //
-    //     info.pipeline.set_state(State::Playing).unwrap();
-    //
-    //     let bus = info.pipeline.bus().unwrap();
-    //
-    //     thread::spawn(move || {
-    //         for msg in bus.iter_timed(ClockTime::NONE) {
-    //             use gst::MessageView;
-    //
-    //             match msg.view() {
-    //                 MessageView::Eos(..) => {
-    //                     println!("Done? in {:?}", now.elapsed());
-    //                     break;
-    //                 }
-    //                 MessageView::Error(err) => {
-    //                     println!(
-    //                         "Error from {:?}: {} ({:?})",
-    //                         err.src().map(|s| s.path_string()),
-    //                         err.error(),
-    //                         err.debug()
-    //                     );
-    //                     break;
-    //                 }
-    //                 _ => (),
-    //             }
-    //         }
-    //     });
-    // }
 }

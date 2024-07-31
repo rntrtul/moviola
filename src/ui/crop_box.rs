@@ -180,6 +180,7 @@ impl CropBoxWidget {
     }
 
     fn get_box_bounds(&self, widget_width: f32, widget_height: f32) -> (f32, f32, f32, f32) {
+        // fixme: bottom of rectangle a couple of pixels off. use bigger margin size for testing.
         let (x_instep, _, preview_width, preview_height) =
             self.get_preview_rect(widget_width, widget_height);
 
