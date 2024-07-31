@@ -1,3 +1,8 @@
+use std::cell::RefCell;
+use std::rc::Rc;
+use std::time::Duration;
+
+use gst::ClockTime;
 use gst_video::VideoOrientationMethod;
 use gtk::glib;
 use gtk::prelude::{ApplicationExt, GtkWindowExt, OrientableExt, WidgetExt};
@@ -14,6 +19,7 @@ use crate::ui::crop_box::CropMode;
 use crate::ui::timeline::{TimelineModel, TimelineMsg, TimelineOutput};
 use crate::ui::CropBoxWidget;
 use crate::video::metadata_discoverer::{MetadataDiscoverer, VideoInfo};
+use crate::video::player::Player;
 
 use super::ui::edit_controls::{EditControlsModel, EditControlsOutput};
 use super::ui::video_player::{VideoPlayerModel, VideoPlayerMsg, VideoPlayerOutput};
@@ -27,6 +33,7 @@ pub(super) struct App {
     video_is_mute: bool,
     show_crop_box: bool,
     discoverer: MetadataDiscoverer,
+    player: Rc<RefCell<Player>>,
     uri: Option<String>,
     frame_info: Option<VideoInfo>,
 }
@@ -47,13 +54,18 @@ pub(super) enum AppMsg {
     CropBoxDragUpdate((f64, f64)),
     CropBoxDragEnd,
     SeekToPercent(f64),
-    UpdateSeekBarPos(f64),
     TogglePlayPause,
     ToggleMute,
     VideoLoaded,
     VideoPaused,
     VideoPlaying,
     Quit,
+}
+
+#[derive(Debug)]
+pub enum AppCommandMsg {
+    VideoLoaded,
+    AnimateSeekBar,
 }
 
 impl App {
@@ -95,7 +107,7 @@ impl App {
 impl Component for App {
     type Input = AppMsg;
     type Output = ();
-    type CommandOutput = ();
+    type CommandOutput = AppCommandMsg;
     type Init = u8;
     view! {
         main_window = adw::ApplicationWindow::new(&main_application()) {
@@ -167,8 +179,6 @@ impl Component for App {
                         },
                     },
 
-
-
                     gtk::Box{
                         #[watch]
                         set_spacing: 10,
@@ -221,12 +231,7 @@ impl Component for App {
         let video_player: Controller<VideoPlayerModel> = VideoPlayerModel::builder()
             .launch(())
             .forward(sender.input_sender(), |msg| match msg {
-                VideoPlayerOutput::AudioMute => AppMsg::AudioMute,
-                VideoPlayerOutput::AudioPlaying => AppMsg::AudioPlaying,
-                VideoPlayerOutput::UpdateSeekBarPos(percent) => AppMsg::UpdateSeekBarPos(percent),
-                VideoPlayerOutput::VideoLoaded => AppMsg::VideoLoaded,
-                VideoPlayerOutput::VideoPlaying => AppMsg::VideoPlaying,
-                VideoPlayerOutput::VideoPaused => AppMsg::VideoPaused,
+                VideoPlayerOutput::ToggleVideoPlay => AppMsg::TogglePlayPause,
             });
 
         let edit_controls: Controller<EditControlsModel> = EditControlsModel::builder()
@@ -247,6 +252,8 @@ impl Component for App {
                     TimelineOutput::SeekToPercent(percent) => AppMsg::SeekToPercent(percent),
                 });
 
+        let player = Rc::new(RefCell::new(Player::new(video_player.model().sink())));
+
         let model = Self {
             video_player,
             edit_controls,
@@ -256,6 +263,7 @@ impl Component for App {
             video_is_mute: false,
             show_crop_box: false,
             discoverer: MetadataDiscoverer::new(),
+            player,
             uri: None,
             frame_info: None,
         };
@@ -282,34 +290,43 @@ impl Component for App {
                 main_application().quit()
             }
             AppMsg::OpenFile => App::launch_file_opener(&sender),
-            AppMsg::SetVideo(file_name) => {
+            AppMsg::SetVideo(uri) => {
+                self.video_is_playing = false;
+                if self.player.borrow_mut().is_playing() {
+                    self.player.borrow_mut().set_is_playing(false);
+                }
                 self.video_is_open = true;
-                self.uri.replace(file_name.clone());
+                self.uri.replace(uri.clone());
                 widgets.crop_box.reset_box();
 
-                self.discoverer.discover_uri(file_name.as_str());
+                self.discoverer.discover_uri(uri.as_str());
                 let info = self.discoverer.video_info;
 
                 widgets.crop_box.set_asepct_ratio(info.aspect_ratio);
 
-                self.frame_info = Some(info);
-                self.video_player.emit(VideoPlayerMsg::FrameInfo(info));
+                self.player.borrow_mut().set_info(info.clone());
+                self.player.borrow_mut().play_uri(uri.clone());
 
-                self.video_player
-                    .emit(VideoPlayerMsg::NewVideo(file_name.clone()));
+                let bus = self.player.borrow_mut().pipeline_bus();
+                sender.oneshot_command(async move {
+                    Player::wait_for_pipeline_init(bus);
+                    AppCommandMsg::VideoLoaded
+                });
+
+                self.timeline
+                    .emit(TimelineMsg::GenerateThumbnails(uri.clone()));
 
                 self.video_player.widget().set_visible(true);
                 self.edit_controls.widget().set_visible(true);
             }
             // todo: do directly in controller init
-            AppMsg::ExportFrame => self.video_player.emit(VideoPlayerMsg::ExportFrame),
-            AppMsg::ExportVideo => self.video_player.emit(VideoPlayerMsg::ExportVideo),
-            AppMsg::Orient(orientation) => self
-                .video_player
-                .emit(VideoPlayerMsg::OrientVideo(orientation)),
+            AppMsg::ExportFrame => {
+                self.player.borrow_mut().export_frame();
+            }
+            AppMsg::ExportVideo => {}
+            AppMsg::Orient(orientation) => {}
             AppMsg::ShowCropBox => {
                 self.show_crop_box = true;
-                self.video_player.emit(VideoPlayerMsg::HideCrop);
             }
             AppMsg::HideCropBox => {
                 let crop_box = &widgets.crop_box;
@@ -329,8 +346,8 @@ impl Component for App {
                     let right = (width - (width * crop_box.right_x())) as i32;
                     let bottom = (height - (height * crop_box.bottom_y())) as i32;
 
-                    self.video_player
-                        .emit(VideoPlayerMsg::CropVideo(left, top, right, bottom));
+                    // self.video_player
+                    //     .emit(VideoPlayerMsg::CropVideo(left, top, right, bottom));
                 }
 
                 self.show_crop_box = false
@@ -351,14 +368,19 @@ impl Component for App {
                 widgets.crop_box.set_drag_active(false);
                 widgets.crop_box.queue_draw();
             }
-            AppMsg::SeekToPercent(percent) => self
-                .video_player
-                .emit(VideoPlayerMsg::SeekToPercent(percent)),
-            AppMsg::UpdateSeekBarPos(percent) => {
-                self.timeline.emit(TimelineMsg::UpdateSeekBarPos(percent))
+            AppMsg::SeekToPercent(percent) => {
+                self.player.borrow_mut().seek_to_percent(percent);
             }
-            AppMsg::TogglePlayPause => self.video_player.emit(VideoPlayerMsg::TogglePlayPause),
-            AppMsg::ToggleMute => self.video_player.emit(VideoPlayerMsg::ToggleMute),
+            AppMsg::TogglePlayPause => {
+                let mut player = self.player.borrow_mut();
+                player.toggle_play_plause();
+                self.video_is_playing = player.is_playing();
+            }
+            AppMsg::ToggleMute => {
+                let mut player = self.player.borrow_mut();
+                player.toggle_mute();
+                self.video_is_mute = player.is_mute();
+            }
             AppMsg::VideoLoaded => {
                 self.timeline
                     .emit(TimelineMsg::GenerateThumbnails(self.uri.clone().unwrap()));
@@ -370,5 +392,47 @@ impl Component for App {
         }
 
         self.update_view(widgets, sender);
+    }
+
+    fn update_cmd(
+        &mut self,
+        message: Self::CommandOutput,
+        sender: ComponentSender<Self>,
+        _root: &Self::Root,
+    ) {
+        match message {
+            AppCommandMsg::AnimateSeekBar => {
+                let player = self.player.borrow();
+                let curr_position = player.position();
+
+                if !self.video_is_playing
+                    || !player.is_playing()
+                    || curr_position == ClockTime::ZERO
+                {
+                    println!("skipping");
+                    return;
+                }
+
+                let percent =
+                    curr_position.mseconds() as f64 / player.info().duration.mseconds() as f64;
+                self.timeline.emit(TimelineMsg::UpdateSeekBarPos(percent));
+            }
+            AppCommandMsg::VideoLoaded => {
+                self.video_is_playing = true;
+                self.player.borrow_mut().set_is_playing(true);
+                self.video_player.emit(VideoPlayerMsg::VideoLoaded);
+
+                sender.command(|out, shutdown| {
+                    shutdown
+                        .register(async move {
+                            loop {
+                                tokio::time::sleep(Duration::from_millis(125)).await;
+                                out.send(AppCommandMsg::AnimateSeekBar).unwrap();
+                            }
+                        })
+                        .drop_on_shutdown()
+                });
+            }
+        }
     }
 }

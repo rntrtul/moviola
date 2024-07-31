@@ -1,5 +1,6 @@
 use std::sync::{Arc, Barrier, Condvar, Mutex};
 use std::thread;
+use std::time::SystemTime;
 
 use anyhow::Error;
 use gst::prelude::{Cast, ElementExt, ElementExtManual, GstBinExt, ObjectExt};
@@ -9,6 +10,7 @@ use gst_video::VideoFrameExt;
 
 use crate::ui::video_player;
 use crate::ui::video_player::VideoPlayerModel;
+use crate::video;
 use crate::video::metadata_discoverer;
 
 static THUMBNAIL_PATH: &str = "/home/fareed/Videos";
@@ -178,9 +180,7 @@ impl Thumbnail {
         .expect("could not create thumbnail pipeline");
 
         pipeline.set_state(State::Paused).unwrap();
-
-        let pipe_clone = pipeline.clone();
-        VideoPlayerModel::wait_for_playbin_done(&gst::Element::from(pipe_clone));
+        video::player::Player::wait_for_pipeline_init(pipeline.bus().unwrap());
 
         let duration = pipeline.query_duration::<ClockTime>().unwrap();
         let step = duration.mseconds() / (NUM_THUMBNAILS + 2); // + 2 so first and last frame not chosen
@@ -220,11 +220,13 @@ impl Thumbnail {
     }
 
     pub async fn generate_thumbnails(video_uri: String) {
+        let now = SystemTime::now();
         let all_thumbnails_generated = Arc::new(Barrier::new((NUM_THUMBNAILS + 1) as usize));
         let pipeline =
             Self::launch_thumbnail_threads(video_uri, Arc::clone(&all_thumbnails_generated));
         all_thumbnails_generated.wait();
         pipeline.set_state(State::Null).unwrap();
+        println!("done thumbnails in {:?}", now.elapsed());
     }
 }
 
