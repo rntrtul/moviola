@@ -1,8 +1,14 @@
+use std::cell::RefCell;
+use std::rc::Rc;
+
+use gst::ClockTime;
 use gtk4::gio;
 use gtk4::prelude::{BoxExt, EventControllerExt, GestureDragExt, WidgetExt};
 use relm4::{gtk, Component, ComponentParts, ComponentSender};
 
 use crate::ui::handle::HANDLE_WIDTH;
+use crate::video::export::TimelineExportSettings;
+use crate::video::player::Player;
 use crate::video::thumbnail::Thumbnail;
 
 #[derive(Debug)]
@@ -171,6 +177,16 @@ impl Component for TimelineModel {
 }
 
 impl TimelineModel {
+    pub fn get_export_settings(&self, player: Rc<RefCell<Player>>) -> TimelineExportSettings {
+        let duration_mseconds = player.borrow().info.duration.mseconds() as f32;
+
+        let start = ClockTime::from_mseconds((duration_mseconds * self.start) as u64);
+        let end = ClockTime::from_mseconds((duration_mseconds * self.end) as u64);
+        let duration = end - start;
+
+        TimelineExportSettings { start, duration }
+    }
+
     pub fn get_target_start_percent(&self) -> f32 {
         // todo: get values from widget
         self.start

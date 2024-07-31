@@ -325,7 +325,13 @@ impl Component for App {
                 self.player.borrow_mut().export_frame();
             }
             AppMsg::ExportVideo => {
-                self.player.borrow_mut().export_video();
+                let timeline_export_settings = self
+                    .timeline
+                    .model()
+                    .get_export_settings(self.player.clone());
+                self.player
+                    .borrow_mut()
+                    .export_video(timeline_export_settings);
             }
             AppMsg::Orient(orientation) => {
                 self.player.borrow_mut().set_video_orientation(orientation)

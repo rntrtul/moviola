@@ -11,6 +11,12 @@ use gst_video::VideoOrientationMethod;
 
 use crate::video::player::Player;
 
+#[derive(Debug)]
+pub struct TimelineExportSettings {
+    pub start: ClockTime,
+    pub duration: ClockTime,
+}
+
 fn video_orientation_method_to_val(method: VideoOrientationMethod) -> u8 {
     match method {
         VideoOrientationMethod::Identity => 0,
@@ -159,7 +165,7 @@ impl Player {
             .expect("unable to save exported frame");
     }
 
-    pub fn export_video(&self) {
+    pub fn export_video(&self, timeline_export_settings: TimelineExportSettings) {
         let now = SystemTime::now();
         // todo: use toggle_play_pause for setting state to keep ui insync
         // todo: go back to original resolution.
@@ -176,16 +182,10 @@ impl Player {
             .set_mode(PipelineFlags::RENDER)
             .expect("failed to set to render");
 
-        let start_time = 1500;
-        // self.frame_info.duration.mseconds() as f64 * self.timeline.model().get_target_start_percent();
-        let end_time = 35000;
-        // self.frame_info.duration.mseconds() as f64 * self.timeline.model().get_target_end_percent();
-        let duration = (end_time - start_time) as u64;
-
         let clip = self.clip();
 
-        clip.set_inpoint(ClockTime::from_mseconds(start_time as u64));
-        clip.set_duration(ClockTime::from_mseconds(duration));
+        clip.set_inpoint(timeline_export_settings.start);
+        clip.set_duration(timeline_export_settings.duration);
 
         self.pipeline.set_state(State::Playing).unwrap();
 
