@@ -15,7 +15,7 @@ use crate::video::metadata_discoverer;
 
 static THUMBNAIL_PATH: &str = "/home/fareed/Videos";
 static THUMBNAIL_HEIGHT: u32 = 180;
-static NUM_THUMBNAILS: u64 = 12;
+static NUM_THUMBNAILS: u64 = 8;
 
 pub struct Thumbnail;
 
