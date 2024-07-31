@@ -7,9 +7,7 @@ use gst_video::VideoOrientationMethod;
 use gtk::glib;
 use gtk::prelude::{ApplicationExt, GtkWindowExt, OrientableExt, WidgetExt};
 use gtk4::gio;
-use gtk4::prelude::{
-    BoxExt, ButtonExt, EventControllerExt, FileExt, GestureDragExt, GtkApplicationExt,
-};
+use gtk4::prelude::{BoxExt, ButtonExt, FileExt, GestureDragExt, GtkApplicationExt};
 use relm4::{
     adw, gtk, main_application, Component, ComponentController, ComponentParts, ComponentSender,
     Controller, RelmWidgetExt,

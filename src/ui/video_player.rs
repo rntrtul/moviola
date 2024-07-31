@@ -3,12 +3,12 @@ use std::fmt::Debug;
 use gst::prelude::*;
 use gst::Element;
 use gtk4::prelude::{BoxExt, OrientableExt, WidgetExt};
+use gtk4::Align;
 use relm4::adw::gdk;
 use relm4::*;
 
 use crate::ui::crop_box::MARGIN;
 
-// todo: dispose of stuff on quit
 pub struct VideoPlayerModel {
     video_is_loaded: bool,
     is_playing: bool,
@@ -77,6 +77,7 @@ impl Component for VideoPlayerModel {
         let picture = gtk::Picture::new();
 
         picture.set_paintable(Some(&paintable));
+        picture.set_valign(Align::Center);
         picture.set_margin_all(MARGIN as i32);
 
         let offload = gtk4::GraphicsOffload::new(Some(&picture));

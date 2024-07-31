@@ -187,15 +187,6 @@ impl TimelineModel {
         TimelineExportSettings { start, duration }
     }
 
-    pub fn get_target_start_percent(&self) -> f32 {
-        // todo: get values from widget
-        self.start
-    }
-
-    pub fn get_target_end_percent(&self) -> f32 {
-        self.end
-    }
-
     fn remove_timeline_thumbnails(timeline: &gtk::Box) {
         if timeline.first_child().is_some() {
             for _ in 0..Thumbnail::get_number_of_thumbnails() {
