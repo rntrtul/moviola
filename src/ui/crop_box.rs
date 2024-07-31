@@ -156,40 +156,30 @@ impl CropBoxWidget {
     }
     // returns (x, y, width, height)
     fn get_preview_rect(&self, widget_width: f32, widget_height: f32) -> (f32, f32, f32, f32) {
-        let height_constrained_width = (widget_height as f64 * self.asepct_ratio.get()) as f32;
-        let width_constrained_height = (widget_width as f64 / self.asepct_ratio.get()) as f32;
+        let marginless_width = widget_width - (MARGIN * 2f32);
+        let marginless_height = widget_height - (MARGIN * 2f32);
 
-        let preview_width = if widget_width > height_constrained_width {
-            height_constrained_width
-        } else {
-            widget_width
-        };
+        let height_constrained_width = (marginless_height as f64 * self.asepct_ratio.get()) as f32;
+        let width_constrained_height = (marginless_width as f64 / self.asepct_ratio.get()) as f32;
 
-        let preview_height = if widget_height > width_constrained_height {
-            width_constrained_height
-        } else {
-            widget_height
-        };
+        let preview_width = marginless_width.min(height_constrained_width);
+        let preview_height = marginless_height.min(width_constrained_height);
 
         let x = (widget_width - preview_width) / 2f32;
         let y = (widget_height - preview_height) / 2f32;
-
-        // println!("preview is {preview_width}x{preview_height} inside of {widget_width}x{widget_height} container, preview starts at {x}x{y}");
 
         (x, y, preview_width, preview_height)
     }
 
     fn get_box_bounds(&self, widget_width: f32, widget_height: f32) -> (f32, f32, f32, f32) {
-        // fixme: bottom of rectangle a couple of pixels off. use bigger margin size for testing.
-        let (x_instep, _, preview_width, preview_height) =
+        let (x_instep, y_instep, preview_width, preview_height) =
             self.get_preview_rect(widget_width, widget_height);
 
-        let left_x = (preview_width * self.left_x.get()) + MARGIN + x_instep;
-        let top_y = (preview_height * self.top_y.get()) + MARGIN;
+        let left_x = (preview_width * self.left_x.get()) + x_instep;
+        let top_y = (preview_height * self.top_y.get()) + y_instep;
 
-        // subtract margin to convert percent to actual frame cords
         let right_x = ((preview_width) * self.right_x.get()) + x_instep;
-        let bottom_y = ((preview_height) * self.bottom_y.get());
+        let bottom_y = ((preview_height) * self.bottom_y.get()) + y_instep;
 
         (left_x, top_y, right_x, bottom_y)
     }
