@@ -64,6 +64,15 @@ impl Player {
         result.unwrap_or_else(|| ClockTime::ZERO)
     }
 
+    pub fn reset_pipeline(&mut self) {
+        self.pipeline.set_state(State::Null).unwrap();
+        self.pipeline
+            .set_mode(PipelineFlags::FULL_PREVIEW)
+            .expect("unable to preview");
+        self.is_playing = false;
+        self.is_mute = false;
+    }
+
     pub fn set_info(&mut self, info: VideoInfo) {
         self.info = info;
     }

@@ -159,6 +159,14 @@ impl crate::ui::HandleWidget {
         self.set_is_end_dragging(false);
         self.set_is_start_dragging(false);
     }
+
+    pub fn reset(&self) {
+        self.set_start_x(0f32);
+        self.set_end_x(1f32);
+        self.set_seek_x(0f32);
+        self.set_is_end_dragging(false);
+        self.set_is_start_dragging(false);
+    }
 }
 
 impl Default for crate::ui::HandleWidget {

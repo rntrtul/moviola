@@ -44,6 +44,7 @@ pub(super) enum AppMsg {
     AudioPlaying,
     ExportFrame,
     ExportVideo(String),
+    ExportDone,
     OpenFile,
     SaveFile,
     SetVideo(String),
@@ -357,15 +358,25 @@ impl Component for App {
                 self.edit_controls.widget().set_visible(false);
                 self.video_player.widget().set_visible(false);
 
-                // todo: get callback for when video is done exporting
                 self.video_is_exporting = true;
                 let timeline_export_settings = self
                     .timeline
                     .model()
                     .get_export_settings(self.player.clone());
-                self.player
-                    .borrow_mut()
-                    .export_video(uri, timeline_export_settings);
+                self.player.borrow_mut().export_video(
+                    uri,
+                    timeline_export_settings,
+                    sender.clone(),
+                );
+            }
+            AppMsg::ExportDone => {
+                self.video_is_exporting = false;
+                self.video_selected = false;
+                self.video_is_loaded = false;
+
+                self.player.borrow_mut().reset_pipeline();
+                self.timeline.emit(TimelineMsg::Reset);
+                widgets.crop_box.reset_box();
             }
             AppMsg::Orient(orientation) => {
                 self.player.borrow_mut().set_video_orientation(orientation)

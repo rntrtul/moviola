@@ -28,6 +28,7 @@ pub enum TimelineMsg {
     DragEnd,
     UpdateSeekBarPos(f64),
     SeekToPercent(f64),
+    Reset,
 }
 
 // fixme: ugly handnling of frameinfo
@@ -157,6 +158,12 @@ impl Component for TimelineModel {
                 self.start = widgets.seek_bar.start_x();
                 self.end = widgets.seek_bar.end_x();
                 self.prev_drag_target = -1.;
+            }
+            TimelineMsg::Reset => {
+                self.start = 0f32;
+                self.end = 1f32;
+                self.prev_drag_target = -1.;
+                widgets.seek_bar.reset();
             }
         }
     }

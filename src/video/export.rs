@@ -8,7 +8,9 @@ use ges::{gst_pbutils, Effect, PipelineFlags};
 use gst::prelude::{ElementExt, GstObjectExt};
 use gst::{ClockTime, Fraction, State};
 use gst_video::VideoOrientationMethod;
+use relm4::ComponentSender;
 
+use crate::app::{App, AppMsg};
 use crate::video::player::Player;
 
 #[derive(Debug)]
@@ -165,7 +167,12 @@ impl Player {
             .expect("unable to save exported frame");
     }
 
-    pub fn export_video(&self, uri: String, timeline_export_settings: TimelineExportSettings) {
+    pub fn export_video(
+        &self,
+        uri: String,
+        timeline_export_settings: TimelineExportSettings,
+        app_sender: ComponentSender<App>,
+    ) {
         let now = SystemTime::now();
         // todo: use toggle_play_pause for setting state to keep ui insync
         // todo: go back to original resolution.
@@ -211,8 +218,7 @@ impl Player {
                     _ => (),
                 }
             }
+            app_sender.input(AppMsg::ExportDone);
         });
-
-        //     todo: when done, retrun to select video screen, and maybe open file explorer to location.
     }
 }
