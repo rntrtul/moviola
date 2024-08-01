@@ -29,6 +29,7 @@ pub(super) struct App {
     video_selected: bool,
     video_is_loaded: bool,
     video_is_playing: bool,
+    video_is_exporting: bool,
     video_is_mute: bool,
     show_crop_box: bool,
     discoverer: MetadataDiscoverer,
@@ -42,8 +43,9 @@ pub(super) enum AppMsg {
     AudioMute,
     AudioPlaying,
     ExportFrame,
-    ExportVideo,
+    ExportVideo(String),
     OpenFile,
+    SaveFile,
     SetVideo(String),
     Orient(VideoOrientationMethod),
     ShowCropBox,
@@ -69,7 +71,7 @@ pub enum AppCommandMsg {
 }
 
 impl App {
-    fn launch_file_opener(sender: &ComponentSender<Self>) {
+    fn build_file_dialog() -> gtk::FileDialog {
         let filters = gio::ListStore::new::<gtk::FileFilter>();
 
         let video_filter = gtk::FileFilter::new();
@@ -77,17 +79,16 @@ impl App {
         video_filter.set_name(Some("Video"));
         filters.append(&video_filter);
 
-        let audio_filter = gtk::FileFilter::new();
-        audio_filter.add_mime_type("audio/*");
-        audio_filter.set_name(Some("Audio"));
-        filters.append(&audio_filter);
-
-        let file_dialog = gtk::FileDialog::builder()
+        gtk::FileDialog::builder()
             .title("Open Video")
             .accept_label("Open")
             .modal(true)
             .filters(&filters)
-            .build();
+            .build()
+    }
+
+    fn launch_file_opener(sender: &ComponentSender<Self>) {
+        let file_dialog = Self::build_file_dialog();
 
         let cancelable = gio::Cancellable::new();
         let window = relm4::main_adw_application().active_window().unwrap();
@@ -99,6 +100,24 @@ impl App {
                 Err(_) => return,
             };
             sender.input(AppMsg::SetVideo(file.uri().to_string()));
+        });
+    }
+
+    fn launch_file_save(sender: &ComponentSender<Self>) {
+        // todo: set inital file_name with appropiate file extension
+        let file_dialog = Self::build_file_dialog();
+        file_dialog.set_accept_label(Some("Save"));
+
+        let cancelable = gio::Cancellable::new();
+        let window = relm4::main_adw_application().active_window().unwrap();
+
+        let sender = sender.clone();
+        file_dialog.save(Some(&window), Some(&cancelable), move |result| {
+            let file = match result {
+                Ok(f) => f,
+                Err(_) => return,
+            };
+            sender.input(AppMsg::ExportVideo(file.uri().to_string()));
         });
     }
 }
@@ -125,7 +144,7 @@ impl Component for App {
                      pack_end = &gtk::Button {
                         set_icon_name: "document-open-symbolic",
                         #[watch]
-                        set_visible: model.video_selected,
+                        set_visible: model.video_selected && !model.video_is_exporting,
                         connect_clicked => AppMsg::OpenFile,
                     }
                 },
@@ -156,9 +175,9 @@ impl Component for App {
                         set_valign: gtk::Align::Fill,
                         set_hexpand: true,
                         #[watch]
-                        set_spinning: model.video_selected && !model.video_is_loaded,
+                        set_spinning: (model.video_selected && !model.video_is_loaded) || model.video_is_exporting,
                         #[watch]
-                        set_visible: model.video_selected && !model.video_is_loaded,
+                        set_visible: (model.video_selected && !model.video_is_loaded) || model.video_is_exporting,
                     },
 
                     gtk::Overlay{
@@ -194,7 +213,7 @@ impl Component for App {
                         set_spacing: 10,
                         add_css_class: "toolbar",
                         #[watch]
-                        set_visible: model.video_selected,
+                        set_visible: model.video_is_loaded && !model.video_is_exporting,
 
                         gtk::Button {
                             #[watch]
@@ -248,7 +267,7 @@ impl Component for App {
             .launch(())
             .forward(sender.input_sender(), |msg| match msg {
                 EditControlsOutput::ExportFrame => AppMsg::ExportFrame,
-                EditControlsOutput::ExportVideo => AppMsg::ExportVideo,
+                EditControlsOutput::ExportVideo => AppMsg::SaveFile,
                 EditControlsOutput::OrientVideo(orientation) => AppMsg::Orient(orientation),
                 EditControlsOutput::ShowCropBox => AppMsg::ShowCropBox,
                 EditControlsOutput::HideCropBox => AppMsg::HideCropBox,
@@ -271,6 +290,7 @@ impl Component for App {
             video_selected: false,
             video_is_loaded: false,
             video_is_playing: false,
+            video_is_exporting: false,
             video_is_mute: false,
             show_crop_box: false,
             discoverer: MetadataDiscoverer::new(),
@@ -306,7 +326,8 @@ impl Component for App {
             }
             AppMsg::SetVideo(uri) => {
                 self.video_selected = true;
-                self.edit_controls.widget().set_visible(true);
+
+                self.edit_controls.widget().set_visible(false);
                 self.video_player.widget().set_visible(false);
 
                 self.video_is_playing = false;
@@ -329,14 +350,22 @@ impl Component for App {
             AppMsg::ExportFrame => {
                 self.player.borrow_mut().export_frame();
             }
-            AppMsg::ExportVideo => {
+            AppMsg::SaveFile => {
+                Self::launch_file_save(&sender);
+            }
+            AppMsg::ExportVideo(uri) => {
+                self.edit_controls.widget().set_visible(false);
+                self.video_player.widget().set_visible(false);
+
+                // todo: get callback for when video is done exporting
+                self.video_is_exporting = true;
                 let timeline_export_settings = self
                     .timeline
                     .model()
                     .get_export_settings(self.player.clone());
                 self.player
                     .borrow_mut()
-                    .export_video(timeline_export_settings);
+                    .export_video(uri, timeline_export_settings);
             }
             AppMsg::Orient(orientation) => {
                 self.player.borrow_mut().set_video_orientation(orientation)
@@ -458,6 +487,7 @@ impl Component for App {
                 self.video_is_playing = true;
 
                 self.video_player.widget().set_visible(true);
+                self.edit_controls.widget().set_visible(true);
                 self.player.borrow_mut().set_is_playing(true);
 
                 self.video_player.emit(VideoPlayerMsg::VideoLoaded);

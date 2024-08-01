@@ -165,19 +165,18 @@ impl Player {
             .expect("unable to save exported frame");
     }
 
-    pub fn export_video(&self, timeline_export_settings: TimelineExportSettings) {
+    pub fn export_video(&self, uri: String, timeline_export_settings: TimelineExportSettings) {
         let now = SystemTime::now();
         // todo: use toggle_play_pause for setting state to keep ui insync
         // todo: go back to original resolution.
         self.pipeline.set_state(State::Paused).unwrap();
 
-        let out_uri = "file:///home/fareed/Videos/out2.mkv";
         let container_profile = Self::build_container_profile();
 
         self.pipeline
-            .set_render_settings(&out_uri, &container_profile)
+            .set_render_settings(&uri.as_str(), &container_profile)
             .expect("unable to set render settings");
-        // todo: use smart_render?
+        // todo: use smart_render? (only when using original container info?)
         self.pipeline
             .set_mode(PipelineFlags::RENDER)
             .expect("failed to set to render");
