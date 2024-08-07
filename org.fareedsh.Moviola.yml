@@ -1,0 +1,56 @@
+id: org.fareedsh.Moviola
+runtime: org.gnome.Platform
+runtime-version: '46'
+sdk: org.gnome.Sdk
+sdk-extensions:
+  - org.freedesktop.Sdk.Extension.rust-stable
+command: moviola
+finish-args:
+  - "--device=dri"
+  - "--socket=fallback-x11"
+  - "--socket=wayland"
+build-options:
+  append-path: "/usr/lib/sdk/rust-stable/bin"
+  build-args:
+    - "--share=network"
+  env:
+    RUST_BACKTRACE: '1'
+    RUST_LOG: moviola=debug
+cleanup:
+  - "/include"
+  - "/lib/pkgconfig"
+  - "/share/doc"
+  - "/share/gtk-doc"
+  - "*.la"
+  - "*.a"
+modules:
+  - name: gstreamer
+    builddir: true
+    buildsystem: meson
+    config-opts:
+      - "-Ddoc=disabled"
+    sources:
+      - type: git
+        tag: "1.24.6"
+        url: "https://gitlab.freedesktop.org/gstreamer/gstreamer.git"
+        commit: 8d175ea255ea260ae4ad05175282bdfb1b975f35
+        disable-submodules: false
+  - name: gst-plugins-rs
+    buildsystem: simple
+    build-options:
+      env:
+        CARGO_HOME: "$FLATPAK_BUILDER_BUILDDIR/cargo"
+    build-commands:
+      - "cargo cinstall --release --features=wayland,x11glx,x11egl,dmabuf --library-type=cdylib --prefix=/app"
+    sources:
+      - type: archive
+        url: "https://crates.io/api/v1/crates/gst-plugin-gtk4/0.13.0/download"
+        dest-filename: "gst-plugin-gtk4-0.13.0.tar.gz"
+        sha256: "69b98aeb531b6cf9c3a6eb36742cedc0168054e2f040b76ddc61260c10dec589"
+      - "gst-plugin-gtk4-sources.yml"
+  - name: moviola
+    builddir: true
+    buildsystem: meson
+    sources:
+      - type: dir
+        path: "./"
