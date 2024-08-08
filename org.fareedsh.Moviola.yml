@@ -41,7 +41,7 @@ modules:
       env:
         CARGO_HOME: "$FLATPAK_BUILDER_BUILDDIR/cargo"
     build-commands:
-      - "cargo cinstall --release --features=wayland,x11glx,x11egl,dmabuf --library-type=cdylib --prefix=/app"
+      - "cargo cinstall --release --features=wayland,x11glx,x11egl,dmabuf,gtk_v4_14 --library-type=cdylib --prefix=/app --libdir=/app/lib"
     sources:
       - type: archive
         url: "https://crates.io/api/v1/crates/gst-plugin-gtk4/0.13.0/download"
