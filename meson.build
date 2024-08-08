@@ -7,5 +7,16 @@ project('moviola', 'rust',
 i18n = import('i18n')
 gnome = import('gnome')
 
+datadir = get_option('prefix') / get_option('datadir')
+pkgdatadir = datadir / meson.project_name()
+iconsdir = datadir / 'icons'
 
+subdir('data')
 subdir('src')
+subdir('po')
+
+gnome.post_install(
+    glib_compile_schemas: true,
+    gtk_update_icon_cache: true,
+    update_desktop_database: true,
+)

@@ -57,7 +57,7 @@ impl SimpleComponent for EditControlsModel {
                     add_css_class: "linked",
 
                     gtk::Button {
-                        set_icon_name: "crop",
+                        set_icon_name: "crop-symbolic",
                         connect_clicked => EditControlsMsg::ToggleCropBox,
                     },
 

@@ -2,3 +2,4 @@
 .idea/
 .flatpak-builder/
 builddir
+/src/config.rs

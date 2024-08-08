@@ -1,1 +1,1 @@
-icons = ["crop", "cut", "play", "pause", "rotate-left", "rotate-right", "panorama-horizontal", "panorama-vertical"]
+icons = ["panorama-horizontal", "panorama-vertical"]

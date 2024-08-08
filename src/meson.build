@@ -1,5 +1,3 @@
-pkgdatadir = get_option('prefix') / get_option('datadir') / meson.project_name()
-
 conf = configuration_data()
 conf.set_quoted('VERSION', meson.project_version())
 conf.set_quoted('GETTEXT_PACKAGE', 'test')
@@ -40,6 +38,7 @@ cargo_build = custom_target(
   console: true,
   install: true,
   install_dir: get_option('bindir'),
+  depends: resources,
   command: [
     'env', cargo_env,
     cargo_bin, 'build',

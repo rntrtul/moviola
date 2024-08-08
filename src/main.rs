@@ -1,6 +1,9 @@
+use gtk4::gio;
 use relm4::{adw, gtk, RelmApp, RELM_THREADS};
 
 use crate::app::App;
+
+use self::config::RESOURCES_FILE;
 
 mod app;
 mod config;
@@ -10,8 +13,14 @@ mod video;
 fn main() {
     gst::init().unwrap();
     gtk::init().unwrap();
+
+    let res = gio::Resource::load(RESOURCES_FILE).unwrap();
+    gio::resources_register(&res);
+
+    let theme = gtk::IconTheme::for_display(&gtk::gdk::Display::default().unwrap());
+    theme.add_resource_path("/org/fareedsh/Moviola/icons");
+
     RELM_THREADS.set(2).unwrap();
-    // relm4_icons::initialize_icons();
     let style_manger = adw::StyleManager::default();
     style_manger.set_color_scheme(adw::ColorScheme::ForceDark);
 
