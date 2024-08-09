@@ -1,6 +1,7 @@
 # Moviola
 
 A simple video editor for daily needs
+![image showing video editor ui](data/screenshots/basic_ui.png)
 
 ## Basic Features for 1.0
 
