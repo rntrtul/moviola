@@ -121,6 +121,13 @@ impl App {
             sender.input(AppMsg::ExportVideo(file.uri().to_string()));
         });
     }
+
+    fn display_text(time: ClockTime) -> String {
+        let seconds = time.seconds() % 60;
+        let minutes = (time.seconds() / 60) % 60;
+
+        format!("{:0>2}:{:0>2}", minutes, seconds)
+    }
 }
 
 #[relm4::component(pub)]
@@ -208,6 +215,7 @@ impl Component for App {
                              },
                         },
                     },
+                    // put all controls in box with visible set there.
 
                     gtk::Box{
                         #[watch]
@@ -242,7 +250,19 @@ impl Component for App {
                                     sender.input(AppMsg::ToggleMute)
                             }
                         },
+                    },
 
+                    gtk::Box{
+                        set_halign: gtk::Align::Center,
+                        // todo: sync labels with start and end handles
+                        #[name = "position_label"]
+                        gtk::Label {
+                            add_css_class: "monospace"
+                        },
+                        #[name = "duration_label"]
+                        gtk::Label {
+                            set_css_classes: &["monospace", "dim-label"]
+                        },
                     },
 
                     model.edit_controls.widget() {
@@ -427,6 +447,7 @@ impl Component for App {
                 widgets.crop_box.queue_draw();
             }
             AppMsg::SeekToPercent(percent) => {
+                // todo: on seek update label of position. Probably switch to sending timestamp around
                 self.player.borrow_mut().seek_to_percent(percent);
             }
             AppMsg::TogglePlayPause => {
@@ -471,6 +492,9 @@ impl Component for App {
                     return;
                 }
 
+                let label_text = format!("{}", Self::display_text(curr_position));
+                widgets.position_label.set_label(&*label_text);
+
                 let percent =
                     curr_position.mseconds() as f64 / player.info().duration.mseconds() as f64;
                 self.timeline.emit(TimelineMsg::UpdateSeekBarPos(percent));
@@ -496,6 +520,12 @@ impl Component for App {
             AppCommandMsg::VideoLoaded => {
                 self.video_is_loaded = true;
                 self.video_is_playing = true;
+
+                let label_text = format!(
+                    " / {}",
+                    Self::display_text(self.player.borrow().info.duration)
+                );
+                widgets.duration_label.set_label(&*label_text);
 
                 self.video_player.widget().set_visible(true);
                 self.edit_controls.widget().set_visible(true);
