@@ -12,6 +12,7 @@ use relm4::gtk;
 
 use crate::video;
 
+// todo: maybe make thumbnails fixed aspect ratio?
 static THUMBNAIL_HEIGHT: u32 = 180;
 static NUM_THUMBNAILS: u64 = 8;
 
@@ -178,8 +179,8 @@ impl Thumbnail {
         video::player::Player::wait_for_pipeline_init(pipeline.bus().unwrap());
 
         let duration = pipeline.query_duration::<ClockTime>().unwrap();
-        // + 2 so first and last frame not chosen
-        let step = duration.mseconds() / (NUM_THUMBNAILS + 2);
+        // + 1 so first and last frame not chosen
+        let step = duration.mseconds() / (NUM_THUMBNAILS + 1);
 
         for i in 0..NUM_THUMBNAILS {
             let timestamp =
