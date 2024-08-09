@@ -196,7 +196,7 @@ impl TimelineModel {
 
     fn remove_timeline_thumbnails(timeline: &gtk::Box) {
         if timeline.first_child().is_some() {
-            for _ in 0..Thumbnail::get_number_of_thumbnails() {
+            for _ in 0..Thumbnail::number_of_thumbnails() {
                 let child = timeline.first_child().unwrap();
                 timeline.remove(&child);
             }
@@ -207,7 +207,7 @@ impl TimelineModel {
         // todo: see if can reuse picture widget instead of discarding. without storing ref to all of them
         // Self::remove_timeline_thumbnails(timeline);
 
-        for path in Thumbnail::get_thumbnail_paths() {
+        for path in Thumbnail::thumbnail_paths() {
             let file = gio::File::for_path(path.as_path());
             let image = gtk::Picture::for_file(&file);
 

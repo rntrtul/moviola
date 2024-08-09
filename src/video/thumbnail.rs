@@ -8,6 +8,7 @@ use gst::prelude::{Cast, ElementExt, ElementExtManual, GstBinExt, ObjectExt};
 use gst::{element_error, ClockTime, SeekFlags, State};
 use gst_app::AppSink;
 use gst_video::VideoFrameExt;
+use gtk4::gsk::Path;
 use relm4::gtk;
 
 use crate::video;
@@ -89,9 +90,7 @@ impl Thumbnail {
                 target_height,
             );
 
-            // fixme: does not work outside of flatpak
-            let mut thumbnail_save_path = gtk::glib::user_runtime_dir();
-            thumbnail_save_path.set_file_name(format!("thumbnail_{}.jpg", curr_thumbnail));
+            let thumbnail_save_path = Self::thumbnail_save_path(curr_thumbnail);
 
             scaled_img
                 .save(&thumbnail_save_path)
@@ -180,7 +179,8 @@ impl Thumbnail {
         video::player::Player::wait_for_pipeline_init(pipeline.bus().unwrap());
 
         let duration = pipeline.query_duration::<ClockTime>().unwrap();
-        let step = duration.mseconds() / (NUM_THUMBNAILS + 2); // + 2 so first and last frame not chosen
+        // + 2 so first and last frame not chosen
+        let step = duration.mseconds() / (NUM_THUMBNAILS + 2);
 
         for i in 0..NUM_THUMBNAILS {
             let timestamp =
@@ -204,17 +204,21 @@ impl Thumbnail {
         return pipeline;
     }
 
-    pub fn get_thumbnail_paths() -> Vec<PathBuf> {
+    fn thumbnail_save_path(thumnail_num: u64) -> PathBuf {
+        let mut path = gtk::glib::user_cache_dir();
+        path.push(format!("thumbnail_{}.jpg", thumnail_num));
+        path
+    }
+
+    pub fn thumbnail_paths() -> Vec<PathBuf> {
         let mut file_names = Vec::new();
         for i in 0..NUM_THUMBNAILS {
-            let mut path = gtk::glib::user_runtime_dir();
-            path.set_file_name(format!("thumbnail_{}.jpg", i));
-            file_names.push(path);
+            file_names.push(Self::thumbnail_save_path(i));
         }
         file_names
     }
 
-    pub fn get_number_of_thumbnails() -> u64 {
+    pub fn number_of_thumbnails() -> u64 {
         NUM_THUMBNAILS
     }
 
