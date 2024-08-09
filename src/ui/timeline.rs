@@ -82,7 +82,7 @@ impl Component for TimelineModel {
 
                  add_controller = gtk::GestureClick {
                     connect_pressed[sender] => move |click,_,x,_| {
-                        let width = click.widget().width() as f64;
+                        let width = click.widget().unwrap().width() as f64;
                         let percent = x / width;
                         sender.input(TimelineMsg::SeekToPercent(percent));
                     }
