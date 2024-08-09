@@ -2,8 +2,8 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use gst::ClockTime;
-use gtk4::gio;
 use gtk4::prelude::{BoxExt, EventControllerExt, GestureDragExt, WidgetExt};
+use gtk4::{gio, ContentFit};
 use relm4::{gtk, Component, ComponentParts, ComponentSender};
 
 use crate::ui::handle::HANDLE_WIDTH;
@@ -211,6 +211,8 @@ impl TimelineModel {
             let file = gio::File::for_path(path.as_path());
             let image = gtk::Picture::for_file(&file);
 
+            // fixme: better handling of resizing.
+            image.set_content_fit(ContentFit::Cover);
             image.set_hexpand(true);
             image.set_valign(gtk::Align::Fill);
             image.set_halign(gtk::Align::Fill);
