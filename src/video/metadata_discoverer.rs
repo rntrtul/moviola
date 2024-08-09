@@ -1,8 +1,9 @@
 use ges::gst_pbutils::Discoverer;
 use gst::ClockTime;
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub struct VideoInfo {
+    pub(crate) title: String,
     pub(crate) duration: ClockTime,
     pub(crate) framerate: gst::Fraction,
     pub(crate) width: u32,
@@ -13,6 +14,7 @@ pub struct VideoInfo {
 impl Default for VideoInfo {
     fn default() -> Self {
         Self {
+            title: "".to_string(),
             duration: ClockTime::ZERO,
             framerate: gst::Fraction::from(0),
             width: 0,
@@ -35,6 +37,8 @@ impl MetadataDiscoverer {
             .discover_uri(uri)
             .expect("could not discover uri");
 
+        let title = uri.split("/").last().unwrap();
+
         let video_streams = info.video_streams();
         let audio_streams = info.audio_streams();
         let vid_stream = video_streams.first().unwrap();
@@ -43,6 +47,7 @@ impl MetadataDiscoverer {
         let height = vid_stream.height();
 
         let video_info = VideoInfo {
+            title: title.to_string(),
             duration: info.duration().unwrap(),
             framerate: vid_stream.framerate(),
             width,

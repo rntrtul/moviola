@@ -55,7 +55,7 @@ impl Player {
     }
 
     pub fn info(&self) -> VideoInfo {
-        self.info
+        self.info.clone()
     }
 
     pub fn position(&self) -> ClockTime {

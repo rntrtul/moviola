@@ -501,9 +501,9 @@ impl Component for App {
             }
             AppCommandMsg::MetadataDiscovered(discoverer) => {
                 self.discoverer = discoverer;
-                let info = self.discoverer.video_info;
+                let info = &self.discoverer.video_info;
 
-                self.frame_info = Some(info);
+                self.frame_info = Some(info.clone());
                 widgets.crop_box.set_asepct_ratio(info.aspect_ratio);
 
                 self.player.borrow_mut().set_info(info.clone());
@@ -521,15 +521,19 @@ impl Component for App {
                 self.video_is_loaded = true;
                 self.video_is_playing = true;
 
-                let label_text = format!(
-                    " / {}",
-                    Self::display_text(self.player.borrow().info.duration)
-                );
+                let mut player = self.player.borrow_mut();
+
+                relm4::main_adw_application()
+                    .active_window()
+                    .unwrap()
+                    .set_title(Some(&*player.info.title));
+
+                let label_text = format!(" / {}", Self::display_text(player.info.duration));
                 widgets.duration_label.set_label(&*label_text);
 
                 self.video_player.widget().set_visible(true);
                 self.edit_controls.widget().set_visible(true);
-                self.player.borrow_mut().set_is_playing(true);
+                player.set_is_playing(true);
 
                 self.video_player.emit(VideoPlayerMsg::VideoLoaded);
 
