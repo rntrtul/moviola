@@ -8,7 +8,6 @@ use gst::prelude::{Cast, ElementExt, ElementExtManual, GstBinExt, ObjectExt};
 use gst::{element_error, ClockTime, SeekFlags, State};
 use gst_app::AppSink;
 use gst_video::VideoFrameExt;
-use gtk4::gsk::Path;
 use relm4::gtk;
 
 use crate::video;
