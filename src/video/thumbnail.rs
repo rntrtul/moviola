@@ -1,3 +1,4 @@
+use std::path::PathBuf;
 use std::sync::{Arc, Barrier, Condvar, Mutex};
 use std::thread;
 use std::time::SystemTime;
@@ -7,10 +8,10 @@ use gst::prelude::{Cast, ElementExt, ElementExtManual, GstBinExt, ObjectExt};
 use gst::{element_error, ClockTime, SeekFlags, State};
 use gst_app::AppSink;
 use gst_video::VideoFrameExt;
+use relm4::gtk;
 
 use crate::video;
 
-static THUMBNAIL_PATH: &str = "/home/fareed/Videos";
 static THUMBNAIL_HEIGHT: u32 = 180;
 static NUM_THUMBNAILS: u64 = 8;
 
@@ -88,10 +89,9 @@ impl Thumbnail {
                 target_height,
             );
 
-            let thumbnail_save_path = std::path::PathBuf::from(format!(
-                "/{}/thumbnail_{}.jpg",
-                THUMBNAIL_PATH, curr_thumbnail
-            ));
+            // fixme: does not work outside of flatpak
+            let mut thumbnail_save_path = gtk::glib::user_runtime_dir();
+            thumbnail_save_path.set_file_name(format!("thumbnail_{}.jpg", curr_thumbnail));
 
             scaled_img
                 .save(&thumbnail_save_path)
@@ -204,10 +204,12 @@ impl Thumbnail {
         return pipeline;
     }
 
-    pub fn get_thumbnail_paths() -> Vec<String> {
+    pub fn get_thumbnail_paths() -> Vec<PathBuf> {
         let mut file_names = Vec::new();
         for i in 0..NUM_THUMBNAILS {
-            file_names.push(format!("{}/thumbnail_{}.jpg", THUMBNAIL_PATH, i));
+            let mut path = gtk::glib::user_runtime_dir();
+            path.set_file_name(format!("thumbnail_{}.jpg", i));
+            file_names.push(path);
         }
         file_names
     }

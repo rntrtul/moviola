@@ -208,7 +208,7 @@ impl TimelineModel {
         // Self::remove_timeline_thumbnails(timeline);
 
         for path in Thumbnail::get_thumbnail_paths() {
-            let file = gio::File::for_parse_name(path.as_str());
+            let file = gio::File::for_path(path.as_path());
             let image = gtk::Picture::for_file(&file);
 
             image.set_hexpand(true);
