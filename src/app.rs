@@ -219,63 +219,64 @@ impl Component for App {
                              },
                         },
                     },
-                    // put all controls in box with visible set there.
 
                     gtk::Box{
-                        #[watch]
-                        set_spacing: 10,
-                        add_css_class: "toolbar",
+                        set_orientation: gtk::Orientation::Vertical,
                         #[watch]
                         set_visible: model.video_is_loaded && !model.video_is_exporting,
 
-                        gtk::Button {
+                        gtk::Box{
                             #[watch]
-                            set_icon_name: if model.video_is_playing {
-                                "pause"
-                            } else {
-                                "play"
+                            set_spacing: 10,
+                            add_css_class: "toolbar",
+
+                            gtk::Button {
+                                #[watch]
+                                set_icon_name: if model.video_is_playing {
+                                    "pause"
+                                } else {
+                                    "play"
+                                },
+
+                                connect_clicked[sender] => move |_| {
+                                    sender.input(AppMsg::TogglePlayPause)
+                                }
                             },
 
-                            connect_clicked[sender] => move |_| {
-                                sender.input(AppMsg::TogglePlayPause)
-                            }
-                        },
+                            model.timeline.widget() {},
 
-                        model.timeline.widget() {},
-
-                        gtk::Button {
-                            #[watch]
-                             set_icon_name: if model.video_is_mute {
-                                "audio-volume-muted"
-                            } else {
-                                "audio-volume-high"
+                            gtk::Button {
+                                #[watch]
+                                 set_icon_name: if model.video_is_mute {
+                                    "audio-volume-muted"
+                                } else {
+                                    "audio-volume-high"
+                                },
+                                connect_clicked[sender] => move |_| {
+                                        sender.input(AppMsg::ToggleMute)
+                                }
                             },
-                            connect_clicked[sender] => move |_| {
-                                    sender.input(AppMsg::ToggleMute)
-                            }
                         },
-                    },
 
-                    gtk::Box{
-                        set_halign: gtk::Align::Center,
-                        // todo: sync labels with start and end handles
-                        #[name = "position_label"]
-                        gtk::Label {
-                            add_css_class: "monospace"
+                        gtk::Box{
+                            set_halign: gtk::Align::Center,
+                            // todo: sync labels with start and end handles
+                            #[name = "position_label"]
+                            gtk::Label {
+                                add_css_class: "monospace"
+                            },
+                            gtk::Label {
+                                add_css_class: "dim-label",
+                                set_label: " / "
+                            },
+                            #[name = "duration_label"]
+                            gtk::Label {
+                                set_css_classes: &["monospace", "dim-label"]
+                            },
                         },
-                        gtk::Label {
-                            add_css_class: "dim-label",
-                            set_label: " / "
-                        },
-                        #[name = "duration_label"]
-                        gtk::Label {
-                            set_css_classes: &["monospace", "dim-label"]
-                        },
-                    },
 
-                    model.edit_controls.widget() {
-                        set_visible: false,
-                    }
+                        model.edit_controls.widget(),
+                    },
                 },
             }
         }
@@ -357,7 +358,6 @@ impl Component for App {
             AppMsg::SetVideo(uri) => {
                 self.video_selected = true;
 
-                self.edit_controls.widget().set_visible(false);
                 self.video_player.widget().set_visible(false);
 
                 self.video_is_playing = false;
@@ -384,7 +384,6 @@ impl Component for App {
                 Self::launch_file_save(&sender);
             }
             AppMsg::ExportVideo(uri) => {
-                self.edit_controls.widget().set_visible(false);
                 self.video_player.widget().set_visible(false);
 
                 self.video_is_exporting = true;
@@ -542,7 +541,6 @@ impl Component for App {
                 Self::update_label_timestamp(player.info.duration, &widgets.duration_label);
 
                 self.video_player.widget().set_visible(true);
-                self.edit_controls.widget().set_visible(true);
                 player.set_is_playing(true);
 
                 self.video_player.emit(VideoPlayerMsg::VideoLoaded);
