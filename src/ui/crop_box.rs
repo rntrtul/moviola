@@ -67,7 +67,7 @@ pub struct CropBoxWidget {
     pub asepct_ratio: Cell<f64>,
     #[property(get, set, builder(HandleType::TopLeft))]
     active_handle: Cell<HandleType>,
-    #[property(get, set = Self::set_crop_mode, builder(CropMode::Free))]
+    #[property(get, set, builder(CropMode::Free))]
     crop_mode: Cell<CropMode>,
 }
 
@@ -199,42 +199,72 @@ impl CropBoxWidget {
     pub fn set_aspect_ratio(&self, aspect_ratio: f64) {
         self.asepct_ratio.set(aspect_ratio);
     }
-
-    pub fn set_crop_mode(&self, mode: CropMode) {
-        self.crop_mode.set(mode);
-        // todo: deal with landscape vs portrait
-        // fixme: when dealing with non 16:9, since ges pipeline puts it in 16:9 container,
-        //          the percents will be with respect to the container and not video. But conversion
-        //          is based on the videos aspect ratio.
-
-        let height_relative_to_width =
-            (self.bottom_y.get() - self.top_y.get()) / self.asepct_ratio.get() as f32;
-        let new_width = match self.crop_mode.get() {
-            CropMode::Free => self.right_x.get() - self.left_x.get(),
-            CropMode::Original => height_relative_to_width * self.asepct_ratio.get() as f32,
-            _ => height_relative_to_width * mode.value(),
-        };
-
-        // todo: deal with new width being too big
-        let new_targ_width = new_width + self.left_x.get();
-        self.right_x.set(new_targ_width);
-    }
 }
 
 impl crate::ui::CropBoxWidget {
-    fn box_respects_aspect_ratio(&self) -> bool {
-        let w = self.right_x() - self.left_x();
-        let h = self.bottom_y() - self.top_y();
-        let ar = (w * self.asepct_ratio() as f32) / h;
+    // fixme: should not have to manually call after setting crop mode
+    pub fn maintain_aspect_ratio(&self) {
+        if self.crop_mode() == CropMode::Free {
+            return;
+        }
 
-        match self.crop_mode() {
-            CropMode::Free => true,
-            CropMode::Original => w - h < f32::EPSILON,
-            _ => self.crop_mode().value() - ar < f32::EPSILON,
+        let target_aspect_ratio = if self.crop_mode() == CropMode::Original {
+            self.asepct_ratio() as f32
+        } else {
+            self.crop_mode().value()
+        };
+        let widget_width = self.width() as f32;
+        let widget_height = self.height() as f32;
+
+        let (left_x, top_y, right_x, bottom_y) =
+            self.imp().get_box_bounds(widget_width, widget_height);
+        let crop_width = right_x - left_x;
+        let crop_height = bottom_y - top_y;
+
+        let is_width_constrained = crop_width < (crop_height * target_aspect_ratio);
+
+        let (new_width, new_height) = if is_width_constrained {
+            let new_height = crop_width / target_aspect_ratio;
+            (crop_width, new_height)
+        } else {
+            let new_width = crop_height * target_aspect_ratio;
+            (new_width, crop_height)
+        };
+
+        let (preview_left_x, preview_top_y, preview_width, preview_height) =
+            self.imp().get_preview_rect(widget_width, widget_height);
+
+        // todo: combine this and get_cordinate_percent_from_drag logic into point_in_percent_preview_relative
+        let adjusted_left_x =
+            (right_x - new_width - preview_left_x).clamp(0., preview_width) / preview_width;
+        let adjusted_right_x =
+            (left_x + new_width - preview_left_x).clamp(0., preview_width) / preview_width;
+        let adjusted_top_y =
+            (bottom_y - new_height - preview_top_y).clamp(0., preview_height) / preview_height;
+        let adjusted_bottom_y =
+            (top_y + new_height - preview_top_y).clamp(0., preview_height) / preview_height;
+
+        match self.active_handle() {
+            HandleType::TopLeft => {
+                self.set_left_x(adjusted_left_x);
+                self.set_top_y(adjusted_top_y);
+            }
+            HandleType::TopRight => {
+                self.set_right_x(adjusted_right_x);
+                self.set_top_y(adjusted_top_y);
+            }
+            HandleType::BottomLeft => {
+                self.set_left_x(adjusted_left_x);
+                self.set_bottom_y(adjusted_bottom_y);
+            }
+            HandleType::BottomRight => {
+                self.set_right_x(adjusted_right_x);
+                self.set_bottom_y(adjusted_bottom_y);
+            }
         }
     }
+
     fn update_box(&self, x: f32, y: f32, changing_left_x: bool, changing_top_y: bool) {
-        // todo: respect aspect ratio now
         if changing_left_x && x < self.right_x() {
             self.set_left_x(x);
         } else if !changing_left_x && x > self.left_x() {
@@ -246,15 +276,17 @@ impl crate::ui::CropBoxWidget {
         } else if !changing_top_y && y > self.top_y() {
             self.set_bottom_y(y);
         }
+
+        self.maintain_aspect_ratio();
     }
 
     pub fn get_cordinate_percent_from_drag(&self, x: f64, y: f64) -> (f64, f64) {
-        let (left_x, top_y, preview_width, preview_height) = self
+        let (preview_left_x, preview_top_y, preview_width, preview_height) = self
             .imp()
             .get_preview_rect(self.width() as f32, self.height() as f32);
 
-        let x_adj = (x - left_x as f64).clamp(0., preview_width as f64);
-        let y_adj = (y - top_y as f64).clamp(0., preview_height as f64);
+        let x_adj = (x - preview_left_x as f64).clamp(0., preview_width as f64);
+        let y_adj = (y - preview_top_y as f64).clamp(0., preview_height as f64);
 
         (x_adj / preview_width as f64, y_adj / preview_height as f64)
     }

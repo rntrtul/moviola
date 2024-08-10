@@ -445,6 +445,7 @@ impl Component for App {
             }
             AppMsg::SetCropMode(mode) => {
                 widgets.crop_box.set_crop_mode(mode);
+                widgets.crop_box.maintain_aspect_ratio();
                 widgets.crop_box.queue_draw();
             }
             AppMsg::CropBoxDetectHandle(pos) => {
