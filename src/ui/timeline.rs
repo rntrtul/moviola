@@ -31,7 +31,6 @@ pub enum TimelineMsg {
     Reset,
 }
 
-// fixme: ugly handnling of frameinfo
 #[derive(Debug)]
 pub enum TimelineCmdMsg {
     ThumbnailsGenerated,

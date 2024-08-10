@@ -128,6 +128,11 @@ impl App {
 
         format!("{:0>2}:{:0>2}", minutes, seconds)
     }
+
+    fn update_label_timestamp(timestamp: ClockTime, label: &gtk::Label) {
+        let display_time = Self::display_text(timestamp);
+        label.set_label(&*display_time);
+    }
 }
 
 #[relm4::component(pub)]
@@ -135,7 +140,6 @@ impl Component for App {
     type Input = AppMsg;
     type Output = ();
     type CommandOutput = AppCommandMsg;
-    type Init = u8;
     view! {
         main_window = adw::ApplicationWindow::new(&main_application()) {
             set_default_width: 640,
@@ -259,6 +263,10 @@ impl Component for App {
                         gtk::Label {
                             add_css_class: "monospace"
                         },
+                        gtk::Label {
+                            add_css_class: "dim-label",
+                            set_label: " / "
+                        },
                         #[name = "duration_label"]
                         gtk::Label {
                             set_css_classes: &["monospace", "dim-label"]
@@ -272,6 +280,7 @@ impl Component for App {
             }
         }
     }
+    type Init = u8;
 
     fn init(
         _: Self::Init,
@@ -447,8 +456,11 @@ impl Component for App {
                 widgets.crop_box.queue_draw();
             }
             AppMsg::SeekToPercent(percent) => {
-                // todo: on seek update label of position. Probably switch to sending timestamp around
-                self.player.borrow_mut().seek_to_percent(percent);
+                let timestamp = ClockTime::from_nseconds(
+                    (self.player.borrow().info.duration.nseconds() as f64 * percent) as u64,
+                );
+                Self::update_label_timestamp(timestamp, &widgets.position_label);
+                self.player.borrow_mut().seek(timestamp);
             }
             AppMsg::TogglePlayPause => {
                 let mut player = self.player.borrow_mut();
@@ -492,8 +504,7 @@ impl Component for App {
                     return;
                 }
 
-                let label_text = format!("{}", Self::display_text(curr_position));
-                widgets.position_label.set_label(&*label_text);
+                Self::update_label_timestamp(curr_position, &widgets.position_label);
 
                 let percent =
                     curr_position.mseconds() as f64 / player.info().duration.mseconds() as f64;
@@ -528,8 +539,7 @@ impl Component for App {
                     .unwrap()
                     .set_title(Some(&*player.info.title));
 
-                let label_text = format!(" / {}", Self::display_text(player.info.duration));
-                widgets.duration_label.set_label(&*label_text);
+                Self::update_label_timestamp(player.info.duration, &widgets.duration_label);
 
                 self.video_player.widget().set_visible(true);
                 self.edit_controls.widget().set_visible(true);

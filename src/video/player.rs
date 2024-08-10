@@ -95,10 +95,8 @@ impl Player {
         self.set_is_playing(!self.is_playing);
     }
 
-    pub fn seek_to_percent(&self, percent: f64) {
-        let seconds = (self.info.duration.seconds() as f64 * percent) as u64;
-
-        let time = gst::GenericFormattedValue::from(ClockTime::from_seconds(seconds));
+    pub fn seek(&self, timestamp: ClockTime) {
+        let time = gst::GenericFormattedValue::from(timestamp);
         let seek = gst::event::Seek::new(
             1.0,
             SeekFlags::FLUSH | SeekFlags::KEY_UNIT,
