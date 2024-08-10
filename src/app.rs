@@ -124,9 +124,14 @@ impl App {
 
     fn display_text(time: ClockTime) -> String {
         let seconds = time.seconds() % 60;
-        let minutes = (time.seconds() / 60) % 60;
+        let minutes = time.minutes() % 60;
+        let hours = time.hours();
 
-        format!("{:0>2}:{:0>2}", minutes, seconds)
+        if hours > 0 {
+            format!("{:0>2}:{:0>2}:{:0>2}", hours, minutes, seconds)
+        } else {
+            format!("{:0>2}:{:0>2}", minutes, seconds)
+        }
     }
 
     fn update_label_timestamp(timestamp: ClockTime, label: &gtk::Label) {
