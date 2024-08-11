@@ -1,5 +1,8 @@
 use ges::gst_pbutils::Discoverer;
+use ges::prelude::DiscovererStreamInfoExt;
 use gst::ClockTime;
+
+use crate::video::codecs::{AudioCodec, VideoCodec, VideoCodecInfo, VideoContainer};
 
 #[derive(Debug, Clone)]
 pub struct VideoInfo {
@@ -9,6 +12,7 @@ pub struct VideoInfo {
     pub(crate) width: u32,
     pub(crate) height: u32,
     pub(crate) aspect_ratio: f64,
+    pub(crate) codec_info: VideoCodecInfo,
 }
 
 impl Default for VideoInfo {
@@ -20,6 +24,7 @@ impl Default for VideoInfo {
             width: 0,
             height: 0,
             aspect_ratio: 0.,
+            codec_info: VideoCodecInfo::default(),
         }
     }
 }
@@ -46,6 +51,39 @@ impl MetadataDiscoverer {
         let width = vid_stream.width();
         let height = vid_stream.height();
 
+        let tags = info.tags().unwrap();
+        let mut container = VideoContainer::Unknown;
+        for tag in tags.iter() {
+            if tag.0 == "container-format" {
+                container =
+                    VideoContainer::from_description(tag.1.get::<String>().unwrap().as_str());
+                break;
+            }
+        }
+
+        let video_caps = vid_stream.caps().unwrap();
+        let video_description = ges::gst_pbutils::pb_utils_get_codec_description(&video_caps);
+        let video_codec = VideoCodec::from_description(video_description.as_str());
+
+        let audio_codec = if !audio_streams.is_empty() {
+            let descripttion = ges::gst_pbutils::pb_utils_get_codec_description(
+                &audio_streams.first().unwrap().caps().unwrap(),
+            );
+            AudioCodec::from_description(descripttion.as_str())
+        } else {
+            AudioCodec::NoAudio
+        };
+
+        for audio in audio_streams {
+            println!("audio lang: {:?},", audio.language());
+        }
+
+        let codec_info = VideoCodecInfo {
+            container,
+            video_codec,
+            audio_codec,
+        };
+
         let video_info = VideoInfo {
             title: title.to_string(),
             duration: info.duration().unwrap(),
@@ -53,13 +91,10 @@ impl MetadataDiscoverer {
             width,
             height,
             aspect_ratio: width as f64 / height as f64,
+            codec_info,
         };
 
         self.video_info = video_info;
-
-        for audio in audio_streams {
-            println!("audio lang: {:?}", audio.language());
-        }
     }
 
     pub fn new() -> Self {
