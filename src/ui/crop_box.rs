@@ -90,24 +90,34 @@ impl WidgetImpl for CropBoxWidget {
     fn snapshot(&self, snapshot: &Snapshot) {
         let widget = self.obj();
 
-        let (left_x, top_y, right_x, bottom_y) =
-            self.get_box_bounds(widget.width() as f32, widget.height() as f32);
+        let border_rect = self.crop_rect(widget.width() as f32, widget.height() as f32);
 
-        let border_rect = graphene::Rect::new(left_x, top_y, right_x - left_x, bottom_y - top_y);
-
-        let border = gsk::RoundedRect::from_rect(border_rect, 0.);
-        let border_widths = [1.; 4];
-        let border_colours = [BOX_COLOUR; 4];
+        let right_x = border_rect.x() + border_rect.width();
+        let bottom_y = border_rect.y() + border_rect.height();
 
         if self.drag_active.get() {
-            let horizontal_step = (right_x - left_x) / 3.;
-            Self::draw_evenly_spaced_line(snapshot, true, horizontal_step, left_x, top_y, bottom_y);
+            let horizontal_step = border_rect.width() / 3.;
+            Self::draw_evenly_spaced_line(
+                snapshot,
+                true,
+                horizontal_step,
+                border_rect.x(),
+                border_rect.y(),
+                bottom_y,
+            );
 
-            let vertical_step = (bottom_y - top_y) / 3.;
-            Self::draw_evenly_spaced_line(snapshot, false, vertical_step, top_y, left_x, right_x);
+            let vertical_step = border_rect.height() / 3.;
+            Self::draw_evenly_spaced_line(
+                snapshot,
+                false,
+                vertical_step,
+                border_rect.y(),
+                border_rect.x(),
+                right_x,
+            );
         }
 
-        let handle_center = self.get_handle_centers(widget.width() as f32, widget.height() as f32);
+        let handle_center = self.handle_centers(widget.width() as f32, widget.height() as f32);
 
         for center in handle_center {
             let path_builder = gsk::PathBuilder::new();
@@ -115,6 +125,10 @@ impl WidgetImpl for CropBoxWidget {
             let handle = path_builder.to_path();
             snapshot.append_fill(&handle, HANDLE_FILL_RULE, &BOX_COLOUR);
         }
+
+        let border = gsk::RoundedRect::from_rect(border_rect, 0.);
+        let border_widths = [1.; 4];
+        let border_colours = [BOX_COLOUR; 4];
 
         snapshot.append_border(&border, &border_widths, &border_colours);
     }
@@ -160,7 +174,7 @@ impl CropBoxWidget {
         }
     }
     // returns (x, y, width, height)
-    fn get_preview_rect(&self, widget_width: f32, widget_height: f32) -> (f32, f32, f32, f32) {
+    fn preview_rect(&self, widget_width: f32, widget_height: f32) -> graphene::Rect {
         let marginless_width = widget_width - (MARGIN * 2f32);
         let marginless_height = widget_height - (MARGIN * 2f32);
 
@@ -174,30 +188,29 @@ impl CropBoxWidget {
         // picture does not center vertically so do not need to have y_instep, besides marin
         // let y = (widget_height - preview_height) / 2f32;
 
-        (x, MARGIN, preview_width, preview_height)
+        graphene::Rect::new(x, MARGIN, preview_width, preview_height)
     }
 
-    fn get_box_bounds(&self, widget_width: f32, widget_height: f32) -> (f32, f32, f32, f32) {
-        let (x_instep, y_instep, preview_width, preview_height) =
-            self.get_preview_rect(widget_width, widget_height);
+    fn crop_rect(&self, widget_width: f32, widget_height: f32) -> graphene::Rect {
+        let preview = self.preview_rect(widget_width, widget_height);
 
-        let left_x = (preview_width * self.left_x.get()) + x_instep;
-        let top_y = (preview_height * self.top_y.get()) + y_instep;
+        let left_x = (preview.width() * self.left_x.get()) + preview.x();
+        let top_y = (preview.height() * self.top_y.get()) + preview.y();
 
-        let right_x = ((preview_width) * self.right_x.get()) + x_instep;
-        let bottom_y = ((preview_height) * self.bottom_y.get()) + y_instep;
+        let right_x = ((preview.width()) * self.right_x.get()) + preview.x();
+        let bottom_y = ((preview.height()) * self.bottom_y.get()) + preview.y();
 
-        (left_x, top_y, right_x, bottom_y)
+        graphene::Rect::new(left_x, top_y, right_x - left_x, bottom_y - top_y)
     }
 
-    fn get_handle_centers(&self, widget_width: f32, widget_height: f32) -> [graphene::Point; 4] {
-        let (left_x, top_y, right_x, bottom_y) = self.get_box_bounds(widget_width, widget_height);
+    fn handle_centers(&self, widget_width: f32, widget_height: f32) -> [graphene::Point; 4] {
+        let rect = self.crop_rect(widget_width, widget_height);
 
         [
-            graphene::Point::new(left_x, top_y),
-            graphene::Point::new(left_x, bottom_y),
-            graphene::Point::new(right_x, top_y),
-            graphene::Point::new(right_x, bottom_y),
+            graphene::Point::new(rect.x(), rect.y()),
+            graphene::Point::new(rect.x(), rect.y() + rect.height()),
+            graphene::Point::new(rect.x() + rect.width(), rect.y()),
+            graphene::Point::new(rect.x() + rect.width(), rect.y() + rect.height()),
         ]
     }
 
@@ -231,33 +244,32 @@ impl crate::ui::CropBoxWidget {
         let widget_width = self.width() as f32;
         let widget_height = self.height() as f32;
 
-        let (left_x, top_y, right_x, bottom_y) =
-            self.imp().get_box_bounds(widget_width, widget_height);
-        let crop_width = right_x - left_x;
-        let crop_height = bottom_y - top_y;
+        let crop_rect = self.imp().crop_rect(widget_width, widget_height);
+        let right_x = crop_rect.x() + crop_rect.width();
+        let bottom_y = crop_rect.y() + crop_rect.height();
 
-        let is_width_constrained = crop_width < (crop_height * target_aspect_ratio);
+        let is_width_constrained = crop_rect.width() < (crop_rect.height() * target_aspect_ratio);
 
         let (new_width, new_height) = if is_width_constrained {
-            let new_height = crop_width / target_aspect_ratio;
-            (crop_width, new_height)
+            let new_height = crop_rect.width() / target_aspect_ratio;
+            (crop_rect.width(), new_height)
         } else {
-            let new_width = crop_height * target_aspect_ratio;
-            (new_width, crop_height)
+            let new_width = crop_rect.height() * target_aspect_ratio;
+            (new_width, crop_rect.height())
         };
 
-        let (preview_left_x, preview_top_y, preview_width, preview_height) =
-            self.imp().get_preview_rect(widget_width, widget_height);
+        let preview = self.imp().preview_rect(widget_width, widget_height);
 
         // todo: combine this and get_cordinate_percent_from_drag logic into point_in_percent_preview_relative
         let adjusted_left_x =
-            (right_x - new_width - preview_left_x).clamp(0., preview_width) / preview_width;
+            (right_x - new_width - preview.x()).clamp(0., preview.width()) / preview.width();
         let adjusted_right_x =
-            (left_x + new_width - preview_left_x).clamp(0., preview_width) / preview_width;
+            (crop_rect.x() + new_width - preview.x()).clamp(0., preview.width()) / preview.width();
         let adjusted_top_y =
-            (bottom_y - new_height - preview_top_y).clamp(0., preview_height) / preview_height;
-        let adjusted_bottom_y =
-            (top_y + new_height - preview_top_y).clamp(0., preview_height) / preview_height;
+            (bottom_y - new_height - preview.y()).clamp(0., preview.height()) / preview.height();
+        let adjusted_bottom_y = (crop_rect.y() + new_height - preview.y())
+            .clamp(0., preview.height())
+            / preview.height();
 
         match self.active_handle() {
             ActiveHandleType::TopLeft => {
@@ -297,14 +309,17 @@ impl crate::ui::CropBoxWidget {
     }
 
     pub fn get_cordinate_percent_from_drag(&self, x: f64, y: f64) -> (f64, f64) {
-        let (preview_left_x, preview_top_y, preview_width, preview_height) = self
+        let preview = self
             .imp()
-            .get_preview_rect(self.width() as f32, self.height() as f32);
+            .preview_rect(self.width() as f32, self.height() as f32);
 
-        let x_adj = (x - preview_left_x as f64).clamp(0., preview_width as f64);
-        let y_adj = (y - preview_top_y as f64).clamp(0., preview_height as f64);
+        let x_adj = (x - preview.x() as f64).clamp(0., preview.width() as f64);
+        let y_adj = (y - preview.y() as f64).clamp(0., preview.height() as f64);
 
-        (x_adj / preview_width as f64, y_adj / preview_height as f64)
+        (
+            x_adj / preview.width() as f64,
+            y_adj / preview.height() as f64,
+        )
     }
 
     pub fn is_point_in_handle(&self, x: f32, y: f32) {
@@ -312,7 +327,7 @@ impl crate::ui::CropBoxWidget {
 
         let handle_centers = self
             .imp()
-            .get_handle_centers(self.width() as f32, self.height() as f32);
+            .handle_centers(self.width() as f32, self.height() as f32);
 
         let mut point_in_circle = false;
 
