@@ -191,14 +191,12 @@ impl CropBoxWidget {
         let height_constrained_width = (marginless_height as f64 * self.asepct_ratio.get()) as f32;
         let width_constrained_height = (marginless_width as f64 / self.asepct_ratio.get()) as f32;
 
-        let preview_width = marginless_width.min(height_constrained_width);
-        let preview_height = marginless_height.min(width_constrained_height);
+        let preview_width = marginless_width.min(height_constrained_width).ceil();
+        let preview_height = marginless_height.min(width_constrained_height).ceil();
 
         let x = (widget_width - preview_width) / 2f32;
         // picture does not center vertically so do not need to have y_instep, besides marin
         // let y = (widget_height - preview_height) / 2f32;
-
-        // fixme: bottom if off by a few pixels, unrelated to margin.
 
         graphene::Rect::new(x, MARGIN, preview_width, preview_height)
     }
