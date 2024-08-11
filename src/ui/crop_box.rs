@@ -13,9 +13,10 @@ static HANDLE_FILL_RULE: gsk::FillRule = gsk::FillRule::Winding;
 static BOX_COLOUR: gdk::RGBA = gdk::RGBA::WHITE;
 
 #[derive(Debug, Default, Clone, Copy, Eq, PartialEq, glib::Enum)]
-#[enum_type(name = "HandleType")]
-pub enum HandleType {
+#[enum_type(name = "ActiveHandleType")]
+pub enum ActiveHandleType {
     #[default]
+    None,
     TopLeft,
     TopRight,
     BottomLeft,
@@ -62,11 +63,15 @@ pub struct CropBoxWidget {
     #[property(get, set)]
     pub bottom_y: Cell<f32>,
     #[property(get, set)]
+    pub prev_drag_x: Cell<f32>,
+    #[property(get, set)]
+    pub prev_drag_y: Cell<f32>,
+    #[property(get, set = Self::set_drag_active)]
     pub drag_active: Cell<bool>,
     #[property(get, set = Self::set_aspect_ratio)]
     pub asepct_ratio: Cell<f64>,
-    #[property(get, set, builder(HandleType::TopLeft))]
-    active_handle: Cell<HandleType>,
+    #[property(get, set, builder(ActiveHandleType::None))]
+    active_handle: Cell<ActiveHandleType>,
     #[property(get, set, builder(CropMode::Free))]
     crop_mode: Cell<CropMode>,
 }
@@ -199,6 +204,16 @@ impl CropBoxWidget {
     pub fn set_aspect_ratio(&self, aspect_ratio: f64) {
         self.asepct_ratio.set(aspect_ratio);
     }
+
+    pub fn set_drag_active(&self, active: bool) {
+        // todo: have drag end function
+        self.drag_active.set(active);
+        if !active {
+            self.active_handle.set(ActiveHandleType::None);
+            self.prev_drag_x.set(0f32);
+            self.prev_drag_y.set(0f32);
+        }
+    }
 }
 
 impl crate::ui::CropBoxWidget {
@@ -245,22 +260,23 @@ impl crate::ui::CropBoxWidget {
             (top_y + new_height - preview_top_y).clamp(0., preview_height) / preview_height;
 
         match self.active_handle() {
-            HandleType::TopLeft => {
+            ActiveHandleType::TopLeft => {
                 self.set_left_x(adjusted_left_x);
                 self.set_top_y(adjusted_top_y);
             }
-            HandleType::TopRight => {
+            ActiveHandleType::TopRight => {
                 self.set_right_x(adjusted_right_x);
                 self.set_top_y(adjusted_top_y);
             }
-            HandleType::BottomLeft => {
+            ActiveHandleType::BottomLeft => {
                 self.set_left_x(adjusted_left_x);
                 self.set_bottom_y(adjusted_bottom_y);
             }
-            HandleType::BottomRight => {
+            ActiveHandleType::BottomRight => {
                 self.set_right_x(adjusted_right_x);
                 self.set_bottom_y(adjusted_bottom_y);
             }
+            ActiveHandleType::None => {}
         }
     }
 
@@ -307,10 +323,10 @@ impl crate::ui::CropBoxWidget {
 
             if circle.in_fill(&target_point, HANDLE_FILL_RULE) {
                 let handle = match idx {
-                    0 => HandleType::TopLeft,
-                    1 => HandleType::BottomLeft,
-                    2 => HandleType::TopRight,
-                    3 => HandleType::BottomRight,
+                    0 => ActiveHandleType::TopLeft,
+                    1 => ActiveHandleType::BottomLeft,
+                    2 => ActiveHandleType::TopRight,
+                    3 => ActiveHandleType::BottomRight,
                     _ => panic!("too many handle indicies"),
                 };
                 self.set_active_handle(handle);
@@ -322,27 +338,66 @@ impl crate::ui::CropBoxWidget {
         self.set_drag_active(point_in_circle);
     }
 
-    pub fn update_drag_pos(&self, x: f64, y: f64) {
-        if !self.drag_active() {
-            return;
-        }
-
-        let (x_percent, y_percent) = self.get_cordinate_percent_from_drag(x, y);
+    pub fn update_drag_pos(&self, target: (f64, f64)) {
+        let (x_percent, y_percent) = self.get_cordinate_percent_from_drag(target.0, target.1);
         let x = x_percent as f32;
         let y = y_percent as f32;
 
         match self.active_handle() {
-            HandleType::TopLeft => {
+            ActiveHandleType::TopLeft => {
                 self.update_box(x, y, true, true);
             }
-            HandleType::BottomLeft => {
+            ActiveHandleType::BottomLeft => {
                 self.update_box(x, y, true, false);
             }
-            HandleType::TopRight => {
+            ActiveHandleType::TopRight => {
                 self.update_box(x, y, false, true);
             }
-            HandleType::BottomRight => {
+            ActiveHandleType::BottomRight => {
                 self.update_box(x, y, false, false);
+            }
+            ActiveHandleType::None => {
+                let offset_x = self.prev_drag_x() - x;
+                let offset_y = self.prev_drag_y() - y;
+
+                if offset_x == 0. && offset_y == 0. {
+                    return;
+                }
+
+                // make sure step is only as big as space available to prevent box warping.
+                let step_x = if offset_x < 0. && (offset_x * -1.) > self.left_x() {
+                    self.left_x() * -1.
+                } else if offset_x > 0. && (1. - self.right_x()) < offset_x {
+                    1. - self.right_x()
+                } else {
+                    offset_x
+                };
+                let step_y = if offset_y < 0. && (offset_y * -1.) > self.top_y() {
+                    self.top_y() * -1.
+                } else if offset_y > 0. && (1. - self.bottom_y()) < offset_y {
+                    1. - self.bottom_y()
+                } else {
+                    offset_y
+                };
+
+                if (step_x < 0. && self.left_x() > 0.) || (step_x > 0. && self.right_x() < 1.) {
+                    let left_x = (self.left_x() + step_x).clamp(0., self.right_x());
+                    let right_x = (self.right_x() + step_x).clamp(self.left_x(), 1.);
+
+                    self.set_left_x(left_x);
+                    self.set_right_x(right_x);
+                }
+
+                if (step_y < 0. && self.top_y() > 0.) || (step_y > 0. && self.bottom_y() < 1.) {
+                    let top_y = (self.top_y() + step_y).clamp(0., self.bottom_y());
+                    let bottom_y = (self.bottom_y() + step_y).clamp(self.top_y(), 1.);
+
+                    self.set_top_y(top_y);
+                    self.set_bottom_y(bottom_y);
+                }
+
+                self.set_prev_drag_x(x);
+                self.set_prev_drag_y(y);
             }
         }
     }

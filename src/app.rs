@@ -145,6 +145,7 @@ impl Component for App {
     type Input = AppMsg;
     type Output = ();
     type CommandOutput = AppCommandMsg;
+    type Init = u8;
     view! {
         main_window = adw::ApplicationWindow::new(&main_application()) {
             set_default_width: 640,
@@ -286,7 +287,6 @@ impl Component for App {
             }
         }
     }
-    type Init = u8;
 
     fn init(
         _: Self::Init,
@@ -452,8 +452,8 @@ impl Component for App {
                 widgets.crop_box.is_point_in_handle(pos.0, pos.1);
                 widgets.crop_box.queue_draw();
             }
-            AppMsg::CropBoxDragUpdate(pos) => {
-                widgets.crop_box.update_drag_pos(pos.0, pos.1);
+            AppMsg::CropBoxDragUpdate(target) => {
+                widgets.crop_box.update_drag_pos(target);
                 widgets.crop_box.queue_draw();
             }
             AppMsg::CropBoxDragEnd => {
