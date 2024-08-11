@@ -5,10 +5,11 @@ use gtk4::subclass::prelude::*;
 use gtk4::{gdk, glib, graphene, gsk, Snapshot};
 use relm4::gtk;
 
+use crate::ui::IGNORE_OVERLAY_COLOUR;
+
 static FILL_RULE: gsk::FillRule = gsk::FillRule::Winding;
 pub static HANDLE_WIDTH: f32 = 10f32;
 static SEEK_BAR_WIDTH: f32 = 5f32;
-static NOT_PLAY_OVERLAY_COLOUR: gdk::RGBA = gdk::RGBA::new(0.612, 0.612, 0.612, 0.79);
 
 #[derive(glib::Properties, Default, Debug)]
 #[properties(wrapper_type = super::HandleWidget)]
@@ -48,7 +49,7 @@ impl WidgetImpl for HandleWidget {
                 widget.height() as f32,
             );
 
-            snapshot.append_color(&NOT_PLAY_OVERLAY_COLOUR, &start_not_playing_rect);
+            snapshot.append_color(&IGNORE_OVERLAY_COLOUR, &start_not_playing_rect);
         }
 
         if self.end_x.get() != 1f32 {
@@ -60,7 +61,7 @@ impl WidgetImpl for HandleWidget {
                 widget.height() as f32,
             );
 
-            snapshot.append_color(&NOT_PLAY_OVERLAY_COLOUR, &end_not_playing_rect);
+            snapshot.append_color(&IGNORE_OVERLAY_COLOUR, &end_not_playing_rect);
         }
 
         snapshot.append_fill(&self.seek_bar_path(), FILL_RULE, &gdk::RGBA::WHITE);

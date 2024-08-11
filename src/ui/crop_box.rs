@@ -8,6 +8,8 @@ use gtk4::subclass::widget::WidgetImpl;
 use gtk4::{gdk, glib, graphene, gsk, Snapshot};
 use relm4::gtk;
 
+use crate::ui::IGNORE_OVERLAY_COLOUR;
+
 pub static MARGIN: f32 = 5.;
 static HANDLE_FILL_RULE: gsk::FillRule = gsk::FillRule::Winding;
 static BOX_COLOUR: gdk::RGBA = gdk::RGBA::WHITE;
@@ -91,6 +93,14 @@ impl WidgetImpl for CropBoxWidget {
         let widget = self.obj();
 
         let border_rect = self.crop_rect(widget.width() as f32, widget.height() as f32);
+        let preview = self.preview_rect(widget.width() as f32, widget.height() as f32);
+
+        let non_cropped_area = gsk::ColorNode::new(&IGNORE_OVERLAY_COLOUR, &preview);
+        let cropped_area = gsk::ColorNode::new(&BOX_COLOUR, &border_rect);
+        let mask_node =
+            gsk::MaskNode::new(non_cropped_area, cropped_area, gsk::MaskMode::InvertedAlpha);
+
+        snapshot.append_node(&mask_node);
 
         let right_x = border_rect.x() + border_rect.width();
         let bottom_y = border_rect.y() + border_rect.height();
@@ -187,6 +197,8 @@ impl CropBoxWidget {
         let x = (widget_width - preview_width) / 2f32;
         // picture does not center vertically so do not need to have y_instep, besides marin
         // let y = (widget_height - preview_height) / 2f32;
+
+        // fixme: bottom if off by a few pixels, unrelated to margin.
 
         graphene::Rect::new(x, MARGIN, preview_width, preview_height)
     }
