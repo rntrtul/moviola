@@ -382,8 +382,8 @@ impl crate::ui::CropBoxWidget {
                 self.update_box(x, y, false, false);
             }
             ActiveHandleType::None => {
-                let offset_x = self.prev_drag_x() - x;
-                let offset_y = self.prev_drag_y() - y;
+                let offset_x = x - self.prev_drag_x();
+                let offset_y = y - self.prev_drag_y();
 
                 if offset_x == 0. && offset_y == 0. {
                     return;
