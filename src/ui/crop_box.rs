@@ -368,6 +368,11 @@ impl crate::ui::CropBoxWidget {
         let x = x_percent as f32;
         let y = y_percent as f32;
 
+        if self.prev_drag_x() == 0. && self.prev_drag_y() == 0. {
+            self.set_prev_drag_x(x);
+            self.set_prev_drag_y(y);
+        }
+
         match self.active_handle() {
             ActiveHandleType::TopLeft => {
                 self.update_box(x, y, true, true);
@@ -434,5 +439,9 @@ impl crate::ui::CropBoxWidget {
         self.set_right_x(1f32);
 
         self.set_asepct_ratio(0f64);
+
+        self.set_active_handle(ActiveHandleType::None);
+        self.set_prev_drag_x(0f32);
+        self.set_prev_drag_y(0f32);
     }
 }
