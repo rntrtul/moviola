@@ -1,8 +1,9 @@
 use gtk4;
 use gtk4::{gdk, glib};
 
+pub mod controls_sidebar;
 pub mod crop_box;
-pub mod edit_controls;
+pub mod crop_controls;
 mod handle;
 pub mod timeline;
 pub mod video_player;

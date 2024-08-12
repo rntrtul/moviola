@@ -13,18 +13,18 @@ use relm4::{
     Controller, RelmWidgetExt,
 };
 
+use crate::ui::controls_sidebar::{ControlsModel, ControlsOutput};
 use crate::ui::crop_box::CropMode;
 use crate::ui::timeline::{TimelineModel, TimelineMsg, TimelineOutput};
 use crate::ui::CropBoxWidget;
 use crate::video::metadata_discoverer::{MetadataDiscoverer, VideoInfo};
 use crate::video::player::Player;
 
-use super::ui::edit_controls::{EditControlsModel, EditControlsOutput};
 use super::ui::video_player::{VideoPlayerModel, VideoPlayerMsg, VideoPlayerOutput};
 
 pub(super) struct App {
     video_player: Controller<VideoPlayerModel>,
-    edit_controls: Controller<EditControlsModel>,
+    controls_panel: Controller<ControlsModel>,
     timeline: Controller<TimelineModel>,
     video_selected: bool,
     video_is_loaded: bool,
@@ -159,7 +159,22 @@ impl Component for App {
             #[name="tool_bar_view"]
             adw::ToolbarView {
                 add_top_bar = &adw::HeaderBar {
-                     pack_end = &gtk::Button {
+                    pack_start = &gtk::Button {
+                        set_label: "Save",
+                        add_css_class: "suggested-action",
+                        connect_clicked => AppMsg::SaveFile,
+                        #[watch]
+                        set_visible: model.video_selected && !model.video_is_exporting,
+                    },
+
+                    //todo: connect to rotations
+                    pack_start = & gtk::Button {
+                        set_icon_name: "rotate-right",
+                        #[watch]
+                        set_visible: model.video_selected && !model.video_is_exporting,
+                    },
+
+                    pack_end = &gtk::Button {
                         set_icon_name: "document-open-symbolic",
                         #[watch]
                         set_visible: model.video_selected && !model.video_is_exporting,
@@ -167,122 +182,128 @@ impl Component for App {
                     }
                 },
 
-                #[name = "content"]
-                gtk::Box{
-                    set_orientation: gtk::Orientation::Vertical,
-                    set_margin_all: 10,
+                #[wrap(Some)]
+                set_content : split_view = &adw::OverlaySplitView{
+                    set_pin_sidebar: true,
+                    #[watch]
+                    set_show_sidebar: model.video_is_loaded,
+                    set_sidebar_position: gtk::PackType::End,
 
-                    adw::StatusPage {
-                        set_title: "Select Video",
-                        set_description: Some("select a video file to edit"),
-                        #[watch]
-                        set_visible: !model.video_selected,
-
-                        #[name = "open_file_btn"]
-                        gtk::Button {
-                            set_label: "Open File",
-                            set_hexpand: false,
-                            add_css_class: "suggested-action",
-                            add_css_class: "pill",
-                        },
-                    },
-
-                    gtk::Spinner {
-                        set_height_request: 360,
-                        set_halign: gtk::Align::Fill,
-                        set_valign: gtk::Align::Fill,
-                        set_hexpand: true,
-                        #[watch]
-                        set_spinning: (model.video_selected && !model.video_is_loaded) || model.video_is_exporting,
-                        #[watch]
-                        set_visible: (model.video_selected && !model.video_is_loaded) || model.video_is_exporting,
-                    },
-
-                    gtk::Overlay{
-                        #[watch]
-                        set_visible: model.video_is_loaded,
-                        #[wrap(Some)]
-                        set_child = model.video_player.widget(),
-
-                        add_overlay: crop_box = &CropBoxWidget::default(){
-                            #[watch]
-                            set_visible: model.show_crop_box,
-                            add_controller = gtk::GestureDrag {
-                                connect_drag_begin[sender] => move |_,x,y| {
-                                    sender.input(AppMsg::CropBoxDetectHandle((x as f32,y as f32)));
-                                },
-                                connect_drag_update[sender] => move |drag, x_offset, y_offset| {
-                                    let (start_x, start_y) = drag.start_point().unwrap();
-
-                                    let x = start_x + x_offset;
-                                    let y = start_y + y_offset;
-
-                                    sender.input(AppMsg::CropBoxDragUpdate((x,y)));
-                                },
-                                connect_drag_end[sender] => move |_,_,_| {
-                                    sender.input(AppMsg::CropBoxDragEnd);
-                                },
-                             },
-                        },
-                    },
-
-                    gtk::Box{
+                    #[wrap(Some)]
+                    set_content = &gtk::Box{
                         set_orientation: gtk::Orientation::Vertical,
-                        #[watch]
-                        set_visible: model.video_is_loaded && !model.video_is_exporting,
+                        set_margin_all: 10,
 
-                        gtk::Box{
+                        adw::StatusPage {
+                            set_title: "Select Video",
+                            set_description: Some("select a video file to edit"),
                             #[watch]
-                            set_spacing: 10,
-                            add_css_class: "toolbar",
+                            set_visible: !model.video_selected,
 
+                            #[name = "open_file_btn"]
                             gtk::Button {
-                                #[watch]
-                                set_icon_name: if model.video_is_playing {
-                                    "pause"
-                                } else {
-                                    "play"
-                                },
-
-                                connect_clicked[sender] => move |_| {
-                                    sender.input(AppMsg::TogglePlayPause)
-                                }
+                                set_label: "Open File",
+                                set_hexpand: false,
+                                add_css_class: "suggested-action",
+                                add_css_class: "pill",
                             },
+                        },
 
-                            model.timeline.widget() {},
+                        gtk::Spinner {
+                            set_height_request: 360,
+                            set_halign: gtk::Align::Fill,
+                            set_valign: gtk::Align::Fill,
+                            set_hexpand: true,
+                            #[watch]
+                            set_spinning: (model.video_selected && !model.video_is_loaded) || model.video_is_exporting,
+                            #[watch]
+                            set_visible: (model.video_selected && !model.video_is_loaded) || model.video_is_exporting,
+                        },
 
-                            gtk::Button {
+                        gtk::Overlay{
+                            #[watch]
+                            set_visible: model.video_is_loaded,
+                            #[wrap(Some)]
+                            set_child = model.video_player.widget(),
+
+                            add_overlay: crop_box = &CropBoxWidget::default(){
                                 #[watch]
-                                 set_icon_name: if model.video_is_mute {
-                                    "audio-volume-muted"
-                                } else {
-                                    "audio-volume-high"
-                                },
-                                connect_clicked[sender] => move |_| {
-                                        sender.input(AppMsg::ToggleMute)
-                                }
+                                set_visible: model.show_crop_box,
+                                add_controller = gtk::GestureDrag {
+                                    connect_drag_begin[sender] => move |_,x,y| {
+                                        sender.input(AppMsg::CropBoxDetectHandle((x as f32,y as f32)));
+                                    },
+                                    connect_drag_update[sender] => move |drag, x_offset, y_offset| {
+                                        let (start_x, start_y) = drag.start_point().unwrap();
+
+                                        let x = start_x + x_offset;
+                                        let y = start_y + y_offset;
+
+                                        sender.input(AppMsg::CropBoxDragUpdate((x,y)));
+                                    },
+                                    connect_drag_end[sender] => move |_,_,_| {
+                                        sender.input(AppMsg::CropBoxDragEnd);
+                                    },
+                                 },
                             },
                         },
 
                         gtk::Box{
-                            set_halign: gtk::Align::Center,
-                            // todo: sync labels with start and end handles
-                            #[name = "position_label"]
-                            gtk::Label {
-                                add_css_class: "monospace"
+                            set_orientation: gtk::Orientation::Vertical,
+                            #[watch]
+                            set_visible: model.video_is_loaded && !model.video_is_exporting,
+
+                            gtk::Box{
+                                #[watch]
+                                set_spacing: 10,
+                                add_css_class: "toolbar",
+
+                                gtk::Button {
+                                    #[watch]
+                                    set_icon_name: if model.video_is_playing {
+                                        "pause"
+                                    } else {
+                                        "play"
+                                    },
+
+                                    connect_clicked[sender] => move |_| {
+                                        sender.input(AppMsg::TogglePlayPause)
+                                    }
+                                },
+
+                                model.timeline.widget() {},
+
+                                gtk::Button {
+                                    #[watch]
+                                     set_icon_name: if model.video_is_mute {
+                                        "audio-volume-muted"
+                                    } else {
+                                        "audio-volume-high"
+                                    },
+                                    connect_clicked[sender] => move |_| {
+                                            sender.input(AppMsg::ToggleMute)
+                                    }
+                                },
                             },
-                            gtk::Label {
-                                add_css_class: "dim-label",
-                                set_label: " / "
-                            },
-                            #[name = "duration_label"]
-                            gtk::Label {
-                                set_css_classes: &["monospace", "dim-label"]
+
+                            gtk::Box{
+                                set_halign: gtk::Align::Center,
+                                // todo: sync labels with start and end handles
+                                #[name = "position_label"]
+                                gtk::Label {
+                                    add_css_class: "monospace"
+                                },
+                                gtk::Label {
+                                    add_css_class: "dim-label",
+                                    set_label: " / "
+                                },
+                                #[name = "duration_label"]
+                                gtk::Label {
+                                    set_css_classes: &["monospace", "dim-label"]
+                                },
                             },
                         },
-
-                        model.edit_controls.widget(),
-                    },
+                   },
                 },
             }
         }
@@ -299,15 +320,14 @@ impl Component for App {
                 VideoPlayerOutput::ToggleVideoPlay => AppMsg::TogglePlayPause,
             });
 
-        let edit_controls: Controller<EditControlsModel> = EditControlsModel::builder()
+        let controls_panel: Controller<ControlsModel> = ControlsModel::builder()
             .launch(())
             .forward(sender.input_sender(), |msg| match msg {
-                EditControlsOutput::ExportFrame => AppMsg::ExportFrame,
-                EditControlsOutput::ExportVideo => AppMsg::SaveFile,
-                EditControlsOutput::OrientVideo(orientation) => AppMsg::Orient(orientation),
-                EditControlsOutput::ShowCropBox => AppMsg::ShowCropBox,
-                EditControlsOutput::HideCropBox => AppMsg::HideCropBox,
-                EditControlsOutput::SetCropMode(mode) => AppMsg::SetCropMode(mode),
+                ControlsOutput::OrientVideo(orientation) => AppMsg::Orient(orientation),
+                ControlsOutput::SetCropMode(mode) => AppMsg::SetCropMode(mode),
+                ControlsOutput::ExportFrame => AppMsg::ExportFrame,
+                ControlsOutput::ShowCropBox => AppMsg::ShowCropBox,
+                ControlsOutput::HideCropBox => AppMsg::HideCropBox,
             });
 
         let timeline: Controller<TimelineModel> =
@@ -321,7 +341,7 @@ impl Component for App {
 
         let model = Self {
             video_player,
-            edit_controls,
+            controls_panel,
             timeline,
             video_selected: false,
             video_is_loaded: false,
@@ -336,6 +356,9 @@ impl Component for App {
         };
 
         let widgets = view_output!();
+        widgets
+            .split_view
+            .set_sidebar(Some(model.controls_panel.widget()));
 
         widgets.open_file_btn.connect_clicked(move |_| {
             sender.input(AppMsg::OpenFile);
@@ -445,6 +468,7 @@ impl Component for App {
             }
             AppMsg::SetCropMode(mode) => {
                 widgets.crop_box.set_crop_mode(mode);
+                // fixme: crop box does not change aspect ratio until click.
                 widgets.crop_box.maintain_aspect_ratio();
                 widgets.crop_box.queue_draw();
             }
