@@ -1,4 +1,4 @@
-use gtk4::prelude::{ButtonExt, OrientableExt};
+use gtk4::prelude::{ButtonExt, WidgetExt};
 use relm4::adw::prelude::{ComboRowExt, ExpanderRowExt, PreferencesRowExt};
 use relm4::{adw, gtk, ComponentParts, ComponentSender, SimpleComponent};
 
@@ -19,8 +19,8 @@ impl SimpleComponent for OutputControlsModel {
     type Init = ();
 
     view! {
-        gtk::Box {
-            set_orientation: gtk::Orientation::Vertical,
+        adw::PreferencesPage{
+            set_hexpand: true,
 
             adw::PreferencesGroup{
                 adw::ExpanderRow {
@@ -46,10 +46,12 @@ impl SimpleComponent for OutputControlsModel {
                 },
             },
 
-            gtk::Button {
-                set_label: "Export Frame",
-                connect_clicked[sender] => move |_| {
-                    sender.output(OutputControlsOutput::ExportFrame).unwrap()
+            adw::PreferencesGroup{
+                 gtk::Button {
+                    set_label: "Export Frame",
+                    connect_clicked[sender] => move |_| {
+                        sender.output(OutputControlsOutput::ExportFrame).unwrap()
+                    },
                 },
             },
         }

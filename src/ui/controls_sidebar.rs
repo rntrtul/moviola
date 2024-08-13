@@ -1,6 +1,7 @@
 use gst_video::VideoOrientationMethod;
+use gtk4::prelude::{ButtonExt, WidgetExt};
 use relm4::{
-    adw, Component, ComponentController, ComponentParts, ComponentSender, Controller,
+    adw, gtk, Component, ComponentController, ComponentParts, ComponentSender, Controller,
     SimpleComponent,
 };
 
@@ -28,6 +29,7 @@ pub enum ControlsOutput {
     OrientVideo(VideoOrientationMethod),
     SetCropMode(CropMode),
     ShowCropBox,
+    SaveFile,
 }
 
 #[relm4::component(pub)]
@@ -38,6 +40,23 @@ impl SimpleComponent for ControlsModel {
 
     view! {
         adw::ToolbarView{
+            add_top_bar = &adw::HeaderBar {
+                set_show_title: false,
+
+              pack_start = &gtk::Button {
+                    set_label: "Save",
+                    add_css_class: "suggested-action",
+                    connect_clicked[sender] => move |_| {
+                        sender.output(ControlsOutput::SaveFile).unwrap();
+                    },
+                },
+
+                pack_end = & gtk::Button {
+                    set_icon_name: "rotate-right",
+                    connect_clicked => ControlsMsg::Rotate,
+                },
+            },
+
             #[name="stack"]
             adw::ViewStack{
                 connect_visible_child_name_notify[sender] => move |stack|{

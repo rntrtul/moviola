@@ -1,5 +1,5 @@
 use gst_video::VideoOrientationMethod;
-use gtk4::prelude::OrientableExt;
+use gtk4::prelude::WidgetExt;
 use relm4::adw::prelude::{ComboRowExt, ExpanderRowExt, PreferencesRowExt};
 use relm4::{adw, gtk, ComponentParts, ComponentSender, SimpleComponent};
 
@@ -36,8 +36,8 @@ impl SimpleComponent for CropControlsModel {
     type Init = ();
 
     view! {
-        gtk::Box {
-            set_orientation: gtk::Orientation::Vertical,
+        adw::PreferencesPage {
+            set_hexpand: true,
 
             adw::PreferencesGroup{
                 adw::ExpanderRow {

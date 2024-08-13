@@ -8,6 +8,7 @@ use gtk::glib;
 use gtk::prelude::{ApplicationExt, GtkWindowExt, OrientableExt, WidgetExt};
 use gtk4::gio;
 use gtk4::prelude::{BoxExt, ButtonExt, FileExt, GestureDragExt, GtkApplicationExt};
+use relm4::adw::prelude::AdwApplicationWindowExt;
 use relm4::{
     adw, gtk, main_application, Component, ComponentController, ComponentParts, ComponentSender,
     Controller, RelmWidgetExt,
@@ -149,52 +150,38 @@ impl Component for App {
     type Init = u8;
     view! {
         main_window = adw::ApplicationWindow::new(&main_application()) {
-            set_default_width: 640,
-            set_default_height: 600,
+            set_default_width: 900,
+            set_default_height: 500,
 
             connect_close_request[sender] => move |_| {
                 sender.input(AppMsg::Quit);
                 glib::Propagation::Stop
             },
 
-            #[name="tool_bar_view"]
-            adw::ToolbarView {
-                add_top_bar = &adw::HeaderBar {
-                    pack_start = &gtk::Button {
-                        set_label: "Save",
-                        add_css_class: "suggested-action",
-                        connect_clicked => AppMsg::SaveFile,
-                        #[watch]
-                        set_visible: model.video_selected && !model.video_is_exporting,
-                    },
-
-                    //todo: connect to rotations
-                    pack_start = & gtk::Button {
-                        set_icon_name: "rotate-right",
-                        #[watch]
-                        set_visible: model.video_selected && !model.video_is_exporting,
-                        connect_clicked => AppMsg::Rotate,
-                    },
-
-                    pack_end = &gtk::Button {
-                        set_icon_name: "document-open-symbolic",
-                        #[watch]
-                        set_visible: model.video_selected && !model.video_is_exporting,
-                        connect_clicked => AppMsg::OpenFile,
-                    }
-                },
+             adw::OverlaySplitView{
+                set_pin_sidebar: true,
+                #[watch]
+                set_show_sidebar: model.video_selected,
+                set_sidebar_position: gtk::PackType::Start,
 
                 #[wrap(Some)]
-                set_content : split_view = &adw::OverlaySplitView{
-                    set_pin_sidebar: true,
-                    #[watch]
-                    set_show_sidebar: model.video_is_loaded,
-                    set_sidebar_position: gtk::PackType::End,
+                set_sidebar = model.controls_panel.widget(),
+
+                #[wrap(Some)]
+                set_content = &adw::ToolbarView{
+                    add_top_bar = &adw::HeaderBar {
+                      pack_end = &gtk::Button {
+                            set_icon_name: "document-open-symbolic",
+                            #[watch]
+                            set_visible: model.video_selected && !model.video_is_exporting,
+                            connect_clicked => AppMsg::OpenFile,
+                        }
+                    },
 
                     #[wrap(Some)]
                     set_content = &gtk::Box{
-                        set_orientation: gtk::Orientation::Vertical,
                         set_margin_all: 10,
+                        set_orientation: gtk::Orientation::Vertical,
 
                         adw::StatusPage {
                             set_title: "Select Video",
@@ -246,7 +233,7 @@ impl Component for App {
                                     connect_drag_end[sender] => move |_,_,_| {
                                         sender.input(AppMsg::CropBoxDragEnd);
                                     },
-                                 },
+                                },
                             },
                         },
 
@@ -305,7 +292,7 @@ impl Component for App {
                                 },
                             },
                         },
-                   },
+                    },
                 },
             }
         }
@@ -330,6 +317,7 @@ impl Component for App {
                 ControlsOutput::ExportFrame => AppMsg::ExportFrame,
                 ControlsOutput::ShowCropBox => AppMsg::ShowCropBox,
                 ControlsOutput::HideCropBox => AppMsg::HideCropBox,
+                ControlsOutput::SaveFile => AppMsg::SaveFile,
             });
 
         let timeline: Controller<TimelineModel> =
@@ -358,9 +346,6 @@ impl Component for App {
         };
 
         let widgets = view_output!();
-        widgets
-            .split_view
-            .set_sidebar(Some(model.controls_panel.widget()));
 
         widgets.open_file_btn.connect_clicked(move |_| {
             sender.input(AppMsg::OpenFile);
@@ -446,6 +431,7 @@ impl Component for App {
             AppMsg::HideCropBox => {
                 let crop_box = &widgets.crop_box;
 
+                // todo: make function crop_box.has_changed()
                 if crop_box.left_x() == 0f32
                     && crop_box.top_y() == 0f32
                     && crop_box.bottom_y() == 1f32
