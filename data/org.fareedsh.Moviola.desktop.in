@@ -4,5 +4,5 @@ Exec=moviola
 Icon=org.fareedsh.Moviola
 Terminal=false
 Type=Application
-Categories=GTK;Video;Edit;
+Categories=GTK;Video;AudioVideo;
 StartupNotify=true

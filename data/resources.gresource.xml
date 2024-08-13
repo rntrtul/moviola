@@ -1,27 +1,13 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <gresources>
     <gresource prefix="/org/fareedsh/Moviola/icons/16x16/actions">
-        <file preprocess="xml-stripblanks" alias="crop-symbolic.svg">icons/hicolor/scalable/actions/crop-symbolic.svg
-        </file>
-        <file preprocess="xml-stripblanks" alias="play-symbolic.svg">icons/hicolor/scalable/actions/play-symbolic.svg
-        </file>
-        <file preprocess="xml-stripblanks" alias="pause-symbolic.svg">
-            icons/hicolor/scalable/actions/pause-symbolic.svg
-        </file>
-        <file preprocess="xml-stripblanks" alias="rotate-left-symbolic.svg">
-            icons/hicolor/scalable/actions/rotate-left-symbolic.svg
-        </file>
-        <file preprocess="xml-stripblanks" alias="rotate-right-symbolic.svg">
-            icons/hicolor/scalable/actions/rotate-right-symbolic.svg
-        </file>
-        <file preprocess="xml-stripblanks" alias="panorama-horizontal-symbolic.svg">
-            icons/hicolor/scalable/actions/panorama-horizontal-symbolic.svg
-        </file>
-        <file preprocess="xml-stripblanks" alias="panorama-vertical-symbolic.svg">
-            icons/hicolor/scalable/actions/panorama-vertical-symbolic.svg
-        </file>
-        <file preprocess="xml-stripblanks" alias="video-encoder-symbolic.svg">
-            icons/hicolor/scalable/actions/video-encoder-symbolic.svg
-        </file>
+        <file preprocess="xml-stripblanks" alias="crop-symbolic.svg">icons/hicolor/scalable/actions/crop-symbolic.svg</file>
+        <file preprocess="xml-stripblanks" alias="play-symbolic.svg">icons/hicolor/scalable/actions/play-symbolic.svg</file>
+        <file preprocess="xml-stripblanks" alias="pause-symbolic.svg">icons/hicolor/scalable/actions/pause-symbolic.svg</file>
+        <file preprocess="xml-stripblanks" alias="rotate-left-symbolic.svg">icons/hicolor/scalable/actions/rotate-left-symbolic.svg</file>
+        <file preprocess="xml-stripblanks" alias="rotate-right-symbolic.svg">icons/hicolor/scalable/actions/rotate-right-symbolic.svg</file>
+        <file preprocess="xml-stripblanks" alias="panorama-horizontal-symbolic.svg">icons/hicolor/scalable/actions/panorama-horizontal-symbolic.svg</file>
+        <file preprocess="xml-stripblanks" alias="panorama-vertical-symbolic.svg">icons/hicolor/scalable/actions/panorama-vertical-symbolic.svg</file>
+        <file preprocess="xml-stripblanks" alias="video-encoder-symbolic.svg">icons/hicolor/scalable/actions/video-encoder-symbolic.svg</file>
     </gresource>
 </gresources>
