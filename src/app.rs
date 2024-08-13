@@ -398,7 +398,7 @@ impl Component for App {
             AppMsg::SaveFile => {
                 Self::launch_file_save(&sender);
             }
-            AppMsg::ExportVideo(uri) => {
+            AppMsg::ExportVideo(save_uri) => {
                 self.video_player.widget().set_visible(false);
 
                 self.video_is_exporting = true;
@@ -407,7 +407,8 @@ impl Component for App {
                     .model()
                     .get_export_settings(self.player.clone());
                 self.player.borrow_mut().export_video(
-                    uri,
+                    self.uri.as_ref().unwrap().clone(),
+                    save_uri,
                     timeline_export_settings,
                     sender.clone(),
                 );

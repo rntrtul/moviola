@@ -5,7 +5,7 @@ use std::time::SystemTime;
 
 use anyhow::Error;
 use gst::prelude::{Cast, ElementExt, ElementExtManual, GstBinExt, ObjectExt};
-use gst::{element_error, ClockTime, SeekFlags, State};
+use gst::{ClockTime, SeekFlags, State};
 use gst_app::AppSink;
 use gst_video::VideoFrameExt;
 use relm4::gtk;
@@ -19,6 +19,51 @@ static NUM_THUMBNAILS: u64 = 8;
 pub struct Thumbnail;
 
 impl Thumbnail {
+    pub fn save_sample_as_image(sample: &gst::Sample, target_height: u32, save_path: PathBuf) {
+        let buffer = sample
+            .buffer()
+            .ok_or_else(|| gst::FlowError::Error)
+            .unwrap();
+
+        let caps = sample.caps().expect("sample without caps");
+        let info = gst_video::VideoInfo::from_caps(caps).expect("Failed to parse caps");
+
+        let frame = gst_video::VideoFrameRef::from_buffer_ref_readable(buffer, &info)
+            .map_err(|_| gst::FlowError::Error)
+            .unwrap();
+
+        let aspect_ratio = (frame.width() as f64 * info.par().numer() as f64)
+            / (frame.height() as f64 * info.par().denom() as f64);
+        let target_width = target_height as f64 * aspect_ratio;
+
+        let width_stride = *info.format_info().pixel_stride().first().unwrap() as usize;
+
+        let img = image::FlatSamples::<&[u8]> {
+            samples: frame.plane_data(0).unwrap(),
+            layout: image::flat::SampleLayout {
+                channels: 3,
+                channel_stride: 1,
+                width: frame.width(),
+                width_stride,
+                height: frame.height(),
+                height_stride: frame.plane_stride()[0] as usize,
+            },
+            color_hint: Some(image::ColorType::Rgb8),
+        };
+
+        let scaled_img = image::imageops::thumbnail(
+            &img.as_view::<image::Rgb<u8>>()
+                .expect("could not create image view"),
+            target_width as u32,
+            target_height,
+        );
+
+        scaled_img
+            .save(&save_path)
+            .map_err(|err| gst::FlowError::Error)
+            .unwrap();
+    }
+
     fn new_sample_callback(
         appsink: &AppSink,
         barrier: Arc<Barrier>,
@@ -43,71 +88,8 @@ impl Thumbnail {
                 .pull_sample()
                 .map_err(|_| gst::FlowError::Error)
                 .unwrap();
-            let buffer = sample
-                .buffer()
-                .ok_or_else(|| {
-                    element_error!(appsink, gst::ResourceError::Failed, ("Failed"));
-                    gst::FlowError::Error
-                })
-                .unwrap();
-
-            let caps = sample.caps().expect("sample without caps");
-            let info = gst_video::VideoInfo::from_caps(caps).expect("Failed to parse caps");
-
-            let frame = gst_video::VideoFrameRef::from_buffer_ref_readable(buffer, &info)
-                .map_err(|_| {
-                    element_error!(
-                        appsink,
-                        gst::ResourceError::Failed,
-                        ("Failed to map buff readable")
-                    );
-                    gst::FlowError::Error
-                })
-                .unwrap();
-
-            let aspect_ratio = (frame.width() as f64 * info.par().numer() as f64)
-                / (frame.height() as f64 * info.par().denom() as f64);
-            let target_height = THUMBNAIL_HEIGHT;
-            let target_width = target_height as f64 * aspect_ratio;
-
-            let img = image::FlatSamples::<&[u8]> {
-                samples: frame.plane_data(0).unwrap(),
-                layout: image::flat::SampleLayout {
-                    channels: 3,
-                    channel_stride: 1,
-                    width: frame.width(),
-                    width_stride: 4,
-                    height: frame.height(),
-                    height_stride: frame.plane_stride()[0] as usize,
-                },
-                color_hint: Some(image::ColorType::Rgb8),
-            };
-
-            let scaled_img = image::imageops::thumbnail(
-                &img.as_view::<image::Rgb<u8>>()
-                    .expect("could not create image view"),
-                target_width as u32,
-                target_height,
-            );
-
             let thumbnail_save_path = Self::thumbnail_save_path(curr_thumbnail);
-
-            scaled_img
-                .save(&thumbnail_save_path)
-                .map_err(|err| {
-                    element_error!(
-                        appsink,
-                        gst::ResourceError::Write,
-                        (
-                            "Failed to write a preview file {}: {}",
-                            &thumbnail_save_path.display(),
-                            err
-                        )
-                    );
-                    gst::FlowError::Error
-                })
-                .unwrap();
-
+            Self::save_sample_as_image(&sample, THUMBNAIL_HEIGHT, thumbnail_save_path);
             barrier.wait();
         });
 

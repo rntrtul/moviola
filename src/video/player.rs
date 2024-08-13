@@ -1,8 +1,7 @@
 use std::fmt::Debug;
 
-use ges::prelude::{GESPipelineExt, LayerExt, TimelineExt};
-use ges::{Clip, PipelineFlags};
-use gst::prelude::{ElementExt, ElementExtManual};
+use gst::glib::FlagsClass;
+use gst::prelude::{ElementExt, ElementExtManual, ObjectExt};
 use gst::{Bus, ClockTime, SeekFlags, State};
 
 use crate::video::metadata_discoverer::VideoInfo;
@@ -11,39 +10,47 @@ use crate::video::metadata_discoverer::VideoInfo;
 pub struct Player {
     pub(crate) is_mute: bool,
     pub(crate) is_playing: bool,
-    pub(crate) pipeline: ges::Pipeline,
+    pub(crate) playbin: gst::Element,
     pub(crate) info: VideoInfo,
 }
 
 impl Player {
     pub fn new(sink: &gst::Element) -> Self {
-        let timeline = ges::Timeline::new_audio_video();
-        timeline.append_layer();
-        let pipeline = ges::Pipeline::new();
-        pipeline.set_timeline(&timeline).unwrap();
+        // todo: set to lower resolution for preview. might save more memory (higher cpu?)
+        let playbin = gst::ElementFactory::make("playbin")
+            .name("playbin")
+            .build()
+            .unwrap();
 
-        pipeline
-            .set_mode(PipelineFlags::FULL_PREVIEW)
-            .expect("unable to preview");
-        pipeline.preview_set_video_sink(Some(sink));
-        pipeline.set_state(State::Ready).unwrap();
+        let flags = playbin.property_value("flags");
+        let flags_class = FlagsClass::with_type(flags.type_()).unwrap();
+
+        let flags = flags_class
+            .builder_with_value(flags)
+            .unwrap()
+            .set_by_nick("audio")
+            .set_by_nick("video")
+            .unset_by_nick("text")
+            .build()
+            .unwrap();
+        playbin.set_property_from_value("flags", &flags);
+
+        let crop = gst::ElementFactory::make("videocrop")
+            .name("crop")
+            .build()
+            .unwrap();
+
+        playbin.set_property("video-sink", &sink);
+        playbin.set_property("video-filter", &crop);
+
+        playbin.set_state(State::Ready).unwrap();
 
         Self {
             is_mute: false,
             is_playing: false,
-            pipeline,
+            playbin,
             info: Default::default(),
         }
-    }
-
-    // todo: handle scenario with no clips
-    pub(crate) fn clip(&self) -> Clip {
-        let layers = self.pipeline.timeline().unwrap().layers();
-        let layer = layers.first().unwrap();
-        let clips = layer.clips();
-        let clip = clips.first().unwrap();
-
-        clip.to_owned()
     }
 
     pub fn is_playing(&self) -> bool {
@@ -59,16 +66,13 @@ impl Player {
     }
 
     pub fn position(&self) -> ClockTime {
-        let result = self.pipeline.query_position::<ClockTime>();
+        let result = self.playbin.query_position::<ClockTime>();
 
         result.unwrap_or_else(|| ClockTime::ZERO)
     }
 
     pub fn reset_pipeline(&mut self) {
-        self.pipeline.set_state(State::Null).unwrap();
-        self.pipeline
-            .set_mode(PipelineFlags::FULL_PREVIEW)
-            .expect("unable to preview");
+        self.playbin.set_state(State::Null).unwrap();
         self.is_playing = false;
         self.is_mute = false;
     }
@@ -78,14 +82,13 @@ impl Player {
     }
     pub fn set_is_mute(&mut self, is_mute: bool) {
         self.is_mute = is_mute;
-        // todo: get it as UriClip not Clip
-        // self.clip().set_mute(is_mute);
+        self.playbin.set_property("mute", is_mute);
     }
     pub fn set_is_playing(&mut self, play: bool) {
         self.is_playing = play;
 
         let state = if play { State::Playing } else { State::Paused };
-        self.pipeline.set_state(state).unwrap();
+        self.playbin.set_state(state).unwrap();
     }
 
     pub fn toggle_mute(&mut self) {
@@ -106,42 +109,24 @@ impl Player {
             ClockTime::ZERO,
         );
 
-        self.pipeline.send_event(seek);
+        self.playbin.send_event(seek);
     }
 
     pub fn play_uri(&mut self, uri: String) {
-        // fixme: why does this take 2 seconds (uri clip?)
-        self.pipeline.set_state(State::Null).unwrap();
-
-        let timeline = self.pipeline.timeline().unwrap();
-        let layers = timeline.layers();
-        let layer = layers.first().unwrap();
-
-        let clip = ges::UriClip::new(uri.as_str()).expect("failed to create clip");
-
-        let clips = layer.clips();
-        if !clips.is_empty() {
-            let prev_clip = clips.first().unwrap();
-            layer
-                .remove_clip(prev_clip)
-                .expect("unable to delet eprior clip");
-        }
-        layer.add_clip(&clip).expect("unable to add clip");
-
-        self.set_preview_aspect_ratio_original();
-        self.pipeline.set_state(State::Playing).unwrap();
-
+        // fixme: why does this take 2 seconds
+        self.playbin.set_state(State::Null).unwrap();
+        self.playbin.set_property("uri", uri.as_str());
+        self.playbin.set_state(State::Playing).unwrap();
         self.is_mute = false;
     }
 
     pub fn pipeline_bus(&self) -> Bus {
-        self.pipeline.bus().unwrap()
+        self.playbin.bus().unwrap()
     }
 
     pub fn wait_for_pipeline_init(bus: Bus) {
         for msg in bus.iter_timed(ClockTime::NONE) {
             use gst::MessageView;
-
             match msg.view() {
                 MessageView::AsyncDone(..) => {
                     break;
@@ -150,6 +135,4 @@ impl Player {
             }
         }
     }
-
-    //     todo: move export stuff here and make metadata async
 }
