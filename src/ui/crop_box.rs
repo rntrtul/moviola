@@ -32,10 +32,12 @@ pub enum CropMode {
     Free,
     Original,
     Square,
-    _5To4,
-    _4To3,
-    _3To2,
     _16To9,
+    _4To5,
+    _5To7,
+    _4To3,
+    _3To5,
+    _3To2,
 }
 
 impl CropMode {
@@ -44,10 +46,12 @@ impl CropMode {
             CropMode::Free => 0.,
             CropMode::Original => 0.,
             CropMode::Square => 1.,
-            CropMode::_5To4 => 1.25,
-            CropMode::_4To3 => 1.33333,
-            CropMode::_3To2 => 1.5,
-            CropMode::_16To9 => 1.77777,
+            CropMode::_16To9 => 16. / 9.,
+            CropMode::_4To3 => 4. / 3.,
+            CropMode::_3To2 => 2. / 3.,
+            CropMode::_4To5 => 4. / 5.,
+            CropMode::_5To7 => 5. / 7.,
+            CropMode::_3To5 => 3. / 5.,
         }
     }
 }

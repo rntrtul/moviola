@@ -33,8 +33,6 @@ pub enum CropControlsOutput {
 impl SimpleComponent for CropControlsModel {
     type Input = CropControlsMsg;
     type Output = CropControlsOutput;
-    type Init = ();
-
     view! {
         adw::PreferencesPage {
             set_hexpand: true,
@@ -58,17 +56,20 @@ impl SimpleComponent for CropControlsModel {
                     set_title: "Aspect Ratio",
                     #[wrap(Some)]
                     set_model = &gtk::StringList::new(
-                        &["Free", "Original", "Square", "5:4", "4:3", "3:2", "16:9"]),
+                        &["Free", "Original", "Square", "16:9", "4:5", "5:7", "4:3", "3:5", "3:2"]),
+                    set_selected: 1,
 
                     connect_selected_item_notify [sender] => move |dropdown| {
                         let mode = match dropdown.selected() {
-                            0 => CropMode::Free,
-                            1 => CropMode::Original,
+                            0 => CropMode::Original,
+                            1 => CropMode::Free,
                             2 => CropMode::Square,
-                            3 => CropMode::_5To4,
-                            4 => CropMode::_4To3,
-                            5 => CropMode::_3To2,
-                            6 => CropMode::_16To9,
+                            3 => CropMode::_16To9,
+                            4 => CropMode::_4To5,
+                            5 => CropMode::_5To7,
+                            6 => CropMode::_4To3,
+                            7 => CropMode::_3To5,
+                            8 => CropMode::_3To2,
                             _ => panic!("Unknown crop mode selected")
                         };
                         sender.input(CropControlsMsg::SetCropMode(mode));
@@ -77,6 +78,8 @@ impl SimpleComponent for CropControlsModel {
             },
         }
     }
+
+    type Init = ();
 
     fn init(
         _init: Self::Init,
