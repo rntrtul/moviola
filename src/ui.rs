@@ -5,6 +5,7 @@ pub mod controls_sidebar;
 pub mod crop_box;
 pub mod crop_controls;
 mod handle;
+mod output_controls;
 pub mod timeline;
 pub mod video_player;
 

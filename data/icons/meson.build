@@ -21,6 +21,7 @@ action_icons = [
     action_dir / 'rotate-right-symbolic.svg',
     action_dir / 'panorama-horizontal-symbolic.svg',
     action_dir / 'panorama-vertical-symbolic.svg',
+    action_dir / 'video-encoder-symbolic.svg',
 ]
 
 install_data(

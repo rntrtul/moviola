@@ -1,5 +1,5 @@
 use gst_video::VideoOrientationMethod;
-use gtk4::prelude::{ButtonExt, OrientableExt};
+use gtk4::prelude::OrientableExt;
 use relm4::adw::prelude::{ComboRowExt, ExpanderRowExt, PreferencesRowExt};
 use relm4::{adw, gtk, ComponentParts, ComponentSender, SimpleComponent};
 
@@ -16,7 +16,6 @@ pub struct CropControlsModel {
 
 #[derive(Debug)]
 pub enum CropControlsMsg {
-    ExportFrame,
     SetCropMode(CropMode),
     RotateRight90,
     RotateLeft90,
@@ -26,7 +25,6 @@ pub enum CropControlsMsg {
 
 #[derive(Debug)]
 pub enum CropControlsOutput {
-    ExportFrame,
     OrientVideo(VideoOrientationMethod),
     SetCropMode(CropMode),
 }
@@ -77,12 +75,6 @@ impl SimpleComponent for CropControlsModel {
                     }
                 },
             },
-
-            // todo: find better place for this button
-            gtk::Button {
-                set_label: "Export Frame",
-                connect_clicked => CropControlsMsg::ExportFrame,
-            },
         }
     }
 
@@ -113,14 +105,8 @@ impl SimpleComponent for CropControlsModel {
                     .output(CropControlsOutput::SetCropMode(mode))
                     .unwrap();
             }
-            CropControlsMsg::ExportFrame => {
-                sender.output(CropControlsOutput::ExportFrame).unwrap();
-            }
             CropControlsMsg::RotateRight90 => {
-                self.rotation_angle += 90;
-                if self.rotation_angle == 360 {
-                    self.rotation_angle = 0;
-                }
+                self.rotation_angle = (self.rotation_angle + 90) % 360;
                 self.update_video_orientation_val();
                 sender
                     .output(CropControlsOutput::OrientVideo(self.orientation))

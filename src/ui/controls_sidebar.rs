@@ -5,14 +5,17 @@ use relm4::{
 };
 
 use crate::ui::crop_box::CropMode;
-use crate::ui::crop_controls::{CropControlsModel, CropControlsOutput};
+use crate::ui::crop_controls::{CropControlsModel, CropControlsMsg, CropControlsOutput};
+use crate::ui::output_controls::{OutputControlsModel, OutputControlsOutput};
 
 pub struct ControlsModel {
     crop_page: Controller<CropControlsModel>,
+    output_page: Controller<OutputControlsModel>,
 }
 
 #[derive(Debug)]
 pub enum ControlsMsg {
+    Rotate,
     ExportFrame,
     Orient(VideoOrientationMethod),
     SetCropMode(CropMode),
@@ -38,7 +41,11 @@ impl SimpleComponent for ControlsModel {
             #[name="stack"]
             adw::ViewStack{
                 connect_visible_child_name_notify[sender] => move |stack|{
-                    println!("selected child: {}", stack.visible_child_name().unwrap());
+                    if stack.visible_child_name().unwrap() == "crop_page" {
+                        sender.output(ControlsOutput::ShowCropBox).unwrap()
+                    } else {
+                        sender.output(ControlsOutput::HideCropBox).unwrap()
+                    }
                 },
             },
 
@@ -59,12 +66,30 @@ impl SimpleComponent for ControlsModel {
             .forward(sender.input_sender(), |msg| match msg {
                 CropControlsOutput::SetCropMode(mode) => ControlsMsg::SetCropMode(mode),
                 CropControlsOutput::OrientVideo(orientation) => ControlsMsg::Orient(orientation),
-                CropControlsOutput::ExportFrame => ControlsMsg::ExportFrame,
             });
 
-        let model = ControlsModel { crop_page };
+        let output_page = OutputControlsModel::builder().launch(()).forward(
+            sender.input_sender(),
+            |msg| match msg {
+                OutputControlsOutput::ExportFrame => ControlsMsg::ExportFrame,
+            },
+        );
+
+        let model = ControlsModel {
+            crop_page,
+            output_page,
+        };
 
         let widgets = view_output!();
+
+        // todo: figure out way to select none?
+        // order matters
+        widgets.stack.add_titled_with_icon(
+            model.output_page.widget(),
+            Some("output_page"),
+            "Output",
+            "video-encoder-symbolic",
+        );
 
         widgets.stack.add_titled_with_icon(
             model.crop_page.widget(),
@@ -90,6 +115,7 @@ impl SimpleComponent for ControlsModel {
                 .output(ControlsOutput::OrientVideo(orientation))
                 .unwrap(),
             ControlsMsg::ExportFrame => sender.output(ControlsOutput::ExportFrame).unwrap(),
+            ControlsMsg::Rotate => self.crop_page.emit(CropControlsMsg::RotateRight90),
         }
     }
 }

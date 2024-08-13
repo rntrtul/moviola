@@ -13,7 +13,7 @@ use relm4::{
     Controller, RelmWidgetExt,
 };
 
-use crate::ui::controls_sidebar::{ControlsModel, ControlsOutput};
+use crate::ui::controls_sidebar::{ControlsModel, ControlsMsg, ControlsOutput};
 use crate::ui::crop_box::CropMode;
 use crate::ui::timeline::{TimelineModel, TimelineMsg, TimelineOutput};
 use crate::ui::CropBoxWidget;
@@ -51,6 +51,7 @@ pub(super) enum AppMsg {
     Orient(VideoOrientationMethod),
     ShowCropBox,
     HideCropBox,
+    Rotate,
     SetCropMode(CropMode),
     CropBoxDetectHandle((f32, f32)),
     CropBoxDragUpdate((f64, f64)),
@@ -172,6 +173,7 @@ impl Component for App {
                         set_icon_name: "rotate-right",
                         #[watch]
                         set_visible: model.video_selected && !model.video_is_exporting,
+                        connect_clicked => AppMsg::Rotate,
                     },
 
                     pack_end = &gtk::Button {
@@ -509,6 +511,7 @@ impl Component for App {
             AppMsg::VideoPlaying => self.video_is_playing = true,
             AppMsg::AudioMute => self.video_is_mute = true,
             AppMsg::AudioPlaying => self.video_is_mute = false,
+            AppMsg::Rotate => self.controls_panel.emit(ControlsMsg::Rotate),
         }
 
         self.update_view(widgets, sender);
