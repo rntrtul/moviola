@@ -41,7 +41,7 @@ impl Player {
             .unwrap();
 
         playbin.set_property("video-sink", &sink);
-        // fixme: does not work with some video formats
+        // fixme: for h265 can't handle P010_10LE.
         playbin.set_property("video-filter", &crop);
 
         playbin.set_state(State::Ready).unwrap();
@@ -181,8 +181,9 @@ impl Player {
             aspect_ratio,
             codec_info,
         };
-
+        println!("Video Info: {:?}", video_info);
         self.info = video_info;
+
         video_info
     }
 
