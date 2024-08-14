@@ -10,6 +10,11 @@ use crate::ui::crop_controls::{CropControlsModel, CropControlsMsg, CropControlsO
 use crate::ui::output_controls::{OutputControlsModel, OutputControlsMsg, OutputControlsOutput};
 use crate::video::metadata::VideoCodecInfo;
 
+pub struct ControlsExportSettings {
+    pub container: VideoCodecInfo,
+    pub container_is_default: bool,
+}
+
 pub struct ControlsModel {
     crop_page: Controller<CropControlsModel>,
     output_page: Controller<OutputControlsModel>,
@@ -145,4 +150,14 @@ impl SimpleComponent for ControlsModel {
     }
 }
 
-impl ControlsModel {}
+impl ControlsModel {
+    pub fn export_settings(&self) -> ControlsExportSettings {
+        let export_container = self.output_page.model().export_settings();
+
+        // fixme: actually get value, for if it is default
+        ControlsExportSettings {
+            container: export_container,
+            container_is_default: true,
+        }
+    }
+}

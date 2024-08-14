@@ -405,10 +405,14 @@ impl Component for App {
                     .timeline
                     .model()
                     .get_export_settings(self.player.clone());
+
+                let export_settings = self.controls_panel.model().export_settings();
+
                 self.player.borrow_mut().export_video(
                     self.uri.as_ref().unwrap().clone(),
                     save_uri,
                     timeline_export_settings,
+                    export_settings,
                     sender.clone(),
                 );
             }

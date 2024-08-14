@@ -87,7 +87,7 @@ impl AudioCodec {
         match self {
             AudioCodec::AAC => "audio/mpeg",
             AudioCodec::OPUS => "audio/x-opus",
-            AudioCodec::RAW => "audio/raw", // probably be wrong
+            AudioCodec::RAW => "audio/x-raw",
             AudioCodec::Unknown => "",
             AudioCodec::NoAudio => "",
         }
@@ -145,12 +145,12 @@ impl VideoCodec {
 
     pub fn caps_name(&self) -> &str {
         match self {
-            VideoCodec::AV1 => "videos/x-av1",
-            VideoCodec::MPEG => "videos/mpeg",
-            VideoCodec::VP8 => "videos/x-vp8",
-            VideoCodec::VP9 => "videos/x-vp9",
-            VideoCodec::X264 => "videos/x-h264",
-            VideoCodec::X265 => "videos/x-h265",
+            VideoCodec::AV1 => "video/x-av1",
+            VideoCodec::MPEG => "video/mpeg",
+            VideoCodec::VP8 => "video/x-vp8",
+            VideoCodec::VP9 => "video/x-vp9",
+            VideoCodec::X264 => "video/x-h264",
+            VideoCodec::X265 => "video/x-h265",
             VideoCodec::Unknown => "",
         }
     }
@@ -192,12 +192,12 @@ impl VideoCodec {
 
     pub fn from_description(description: &str) -> Self {
         match description {
-            desc if desc.starts_with("AV1") => VideoCodec::AV1,
-            desc if desc.starts_with("MPEG") => VideoCodec::MPEG,
-            desc if desc.starts_with("VP8") => VideoCodec::VP8,
-            desc if desc.starts_with("VP9") => VideoCodec::VP9,
-            desc if desc.starts_with("H.264") => VideoCodec::X264,
-            desc if desc.starts_with("H.265") => VideoCodec::X265,
+            desc if desc.contains("AV1") => VideoCodec::AV1,
+            desc if desc.contains("MPEG") => VideoCodec::MPEG,
+            desc if desc.contains("VP8") => VideoCodec::VP8,
+            desc if desc.contains("VP9") => VideoCodec::VP9,
+            desc if desc.contains("H.264") => VideoCodec::X264,
+            desc if desc.contains("H.265") => VideoCodec::X265,
             _ => VideoCodec::Unknown,
         }
     }
@@ -220,6 +220,16 @@ impl VideoContainer {
             VideoContainer::MKV => "mkv",
             VideoContainer::QUICKTIME => "mov",
             VideoContainer::WEBM => "webm",
+            VideoContainer::Unknown => "",
+        }
+    }
+
+    pub fn caps_name(&self) -> &str {
+        match self {
+            VideoContainer::MP4 => "video/mpeg",
+            VideoContainer::MKV => "video/x-matroska",
+            VideoContainer::QUICKTIME => "video/quicktime",
+            VideoContainer::WEBM => "video/x-webm",
             VideoContainer::Unknown => "",
         }
     }

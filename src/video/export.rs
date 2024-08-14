@@ -14,6 +14,8 @@ use gtk4::gdk;
 use relm4::ComponentSender;
 
 use crate::app::{App, AppMsg};
+use crate::ui::controls_sidebar::ControlsExportSettings;
+use crate::video::metadata::{AudioCodec, VideoCodecInfo};
 use crate::video::player::Player;
 use crate::video::thumbnail::Thumbnail;
 
@@ -68,20 +70,30 @@ impl Player {
         Thumbnail::save_sample_as_image(&sample, self.info.height, output);
     }
 
-    fn build_container_profile() -> EncodingContainerProfile {
-        // todo: pass in audio and video targets and target resolution/aspect ratio
-        let audio_profile =
-            gst_pbutils::EncodingAudioProfile::builder(&gst::Caps::builder("audio/mpeg").build())
-                .build();
-        let video_profile =
-            gst_pbutils::EncodingVideoProfile::builder(&gst::Caps::builder("video/x-h264").build())
-                .build();
+    fn build_container_profile(container: VideoCodecInfo) -> EncodingContainerProfile {
+        // todo: pass in resolution/aspect ratio target
+        let container_caps = gst::Caps::builder(container.container.caps_name()).build();
+        let video_caps = gst::Caps::builder(container.video_codec.caps_name()).build();
 
-        EncodingContainerProfile::builder(&gst::Caps::builder("video/x-matroska").build())
+        let video_profile = gst_pbutils::EncodingVideoProfile::builder(&video_caps).build();
+        let profile_builder = EncodingContainerProfile::builder(&container_caps)
             .name("Container")
-            .add_profile(video_profile)
-            .add_profile(audio_profile)
-            .build()
+            .add_profile(video_profile);
+
+        println!("video caps: {}", video_caps.to_string());
+        println!("container caps: {}", container_caps.to_string());
+
+        match container.audio_codec {
+            AudioCodec::NoAudio => profile_builder.build(),
+            _ => {
+                let audio_caps = gst::Caps::builder(container.audio_codec.caps_name()).build();
+                let audio_profile = gst_pbutils::EncodingAudioProfile::builder(&audio_caps).build();
+
+                println!("audio caps: {}", audio_caps.to_string());
+
+                profile_builder.add_profile(audio_profile).build()
+            }
+        }
     }
 
     pub fn export_video(
@@ -89,6 +101,7 @@ impl Player {
         source_uri: String,
         save_uri: String,
         timeline_export_settings: TimelineExportSettings,
+        controls_export_settings: ControlsExportSettings,
         app_sender: ComponentSender<App>,
     ) {
         let now = SystemTime::now();
@@ -106,14 +119,23 @@ impl Player {
             let clip = ges::UriClip::new(source_uri.as_str()).expect("Failed to create clip");
             layer.add_clip(&clip).unwrap();
 
-            let container_profile = Self::build_container_profile();
+            let container_profile =
+                Self::build_container_profile(controls_export_settings.container);
 
+            // fixme: some combos not working
             pipeline
                 .set_render_settings(&save_uri.as_str(), &container_profile)
                 .expect("unable to set render settings");
             // // todo: use smart_render? (only when using original container info?)
+
+            let render_mode = if controls_export_settings.container_is_default {
+                PipelineFlags::SMART_RENDER
+            } else {
+                PipelineFlags::RENDER
+            };
+
             pipeline
-                .set_mode(PipelineFlags::RENDER)
+                .set_mode(render_mode)
                 .expect("failed to set to render");
 
             clip.set_inpoint(timeline_export_settings.start);
