@@ -4,8 +4,7 @@ use gst::glib::FlagsClass;
 use gst::prelude::{ElementExt, ElementExtManual, ObjectExt, PadExt};
 use gst::{Bus, ClockTime, SeekFlags, State};
 
-use crate::video::codecs::{AudioCodec, VideoCodec, VideoCodecInfo, VideoContainer};
-use crate::video::metadata_discoverer::VideoInfo;
+use crate::video::metadata::{AudioCodec, VideoCodec, VideoCodecInfo, VideoContainer, VideoInfo};
 
 #[derive(Debug)]
 pub struct Player {

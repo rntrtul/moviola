@@ -17,7 +17,7 @@ use crate::ui::controls_sidebar::{ControlsModel, ControlsMsg, ControlsOutput};
 use crate::ui::crop_box::CropMode;
 use crate::ui::timeline::{TimelineModel, TimelineMsg, TimelineOutput};
 use crate::ui::CropBoxWidget;
-use crate::video::metadata_discoverer::VideoInfo;
+use crate::video::metadata::VideoInfo;
 use crate::video::player::Player;
 
 use super::ui::video_player::{VideoPlayerModel, VideoPlayerMsg, VideoPlayerOutput};

@@ -1,5 +1,4 @@
-mod codecs;
 pub mod export;
-pub mod metadata_discoverer;
+pub mod metadata;
 pub mod player;
 pub mod thumbnail;
