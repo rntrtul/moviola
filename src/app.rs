@@ -17,7 +17,7 @@ use crate::ui::controls_sidebar::{ControlsModel, ControlsMsg, ControlsOutput};
 use crate::ui::crop_box::CropMode;
 use crate::ui::timeline::{TimelineModel, TimelineMsg, TimelineOutput};
 use crate::ui::CropBoxWidget;
-use crate::video::metadata_discoverer::{MetadataDiscoverer, VideoInfo};
+use crate::video::metadata_discoverer::VideoInfo;
 use crate::video::player::Player;
 
 use super::ui::video_player::{VideoPlayerModel, VideoPlayerMsg, VideoPlayerOutput};
@@ -32,7 +32,6 @@ pub(super) struct App {
     video_is_exporting: bool,
     video_is_mute: bool,
     show_crop_box: bool,
-    discoverer: MetadataDiscoverer,
     player: Rc<RefCell<Player>>,
     uri: Option<String>,
     frame_info: Option<VideoInfo>,
@@ -68,7 +67,6 @@ pub(super) enum AppMsg {
 #[derive(Debug)]
 pub enum AppCommandMsg {
     VideoLoaded,
-    MetadataDiscovered(MetadataDiscoverer),
     AnimateSeekBar,
 }
 
@@ -338,7 +336,6 @@ impl Component for App {
             video_is_exporting: false,
             video_is_mute: false,
             show_crop_box: false,
-            discoverer: MetadataDiscoverer::new(),
             player,
             uri: None,
             frame_info: None,
@@ -384,11 +381,14 @@ impl Component for App {
                 self.timeline
                     .emit(TimelineMsg::GenerateThumbnails(uri.clone()));
 
-                let uri_clone = uri.clone();
+                self.player
+                    .borrow_mut()
+                    .play_uri(self.uri.as_ref().unwrap().clone());
+
+                let bus = self.player.borrow_mut().pipeline_bus();
                 sender.oneshot_command(async move {
-                    let mut discoverer = MetadataDiscoverer::new();
-                    discoverer.discover_uri(uri_clone.as_str());
-                    AppCommandMsg::MetadataDiscovered(discoverer)
+                    Player::wait_for_pipeline_init(bus);
+                    AppCommandMsg::VideoLoaded
                 });
             }
             AppMsg::ExportFrame => {
@@ -528,34 +528,19 @@ impl Component for App {
                     curr_position.mseconds() as f64 / player.info().duration.mseconds() as f64;
                 self.timeline.emit(TimelineMsg::UpdateSeekBarPos(percent));
             }
-            AppCommandMsg::MetadataDiscovered(discoverer) => {
-                self.discoverer = discoverer;
-                let info = &self.discoverer.video_info;
-
-                self.frame_info = Some(info.clone());
-                widgets.crop_box.set_asepct_ratio(info.aspect_ratio);
-
-                self.player.borrow_mut().set_info(info.clone());
-                self.player
-                    .borrow_mut()
-                    .play_uri(self.uri.as_ref().unwrap().clone());
-
-                let bus = self.player.borrow_mut().pipeline_bus();
-                sender.oneshot_command(async move {
-                    Player::wait_for_pipeline_init(bus);
-                    AppCommandMsg::VideoLoaded
-                });
-            }
             AppCommandMsg::VideoLoaded => {
                 self.video_is_loaded = true;
                 self.video_is_playing = true;
 
                 let mut player = self.player.borrow_mut();
 
-                relm4::main_adw_application()
-                    .active_window()
-                    .unwrap()
-                    .set_title(Some(&*player.info.title));
+                player.discover_metadata();
+
+                // todo: probably don't need this in self?
+                self.frame_info = Some(player.info());
+                widgets
+                    .crop_box
+                    .set_asepct_ratio(player.info().aspect_ratio);
 
                 Self::update_label_timestamp(player.info.duration, &widgets.duration_label);
 

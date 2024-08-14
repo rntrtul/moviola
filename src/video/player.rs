@@ -1,9 +1,10 @@
 use std::fmt::Debug;
 
 use gst::glib::FlagsClass;
-use gst::prelude::{ElementExt, ElementExtManual, ObjectExt};
+use gst::prelude::{ElementExt, ElementExtManual, ObjectExt, PadExt};
 use gst::{Bus, ClockTime, SeekFlags, State};
 
+use crate::video::codecs::{AudioCodec, VideoCodec, VideoCodecInfo, VideoContainer};
 use crate::video::metadata_discoverer::VideoInfo;
 
 #[derive(Debug)]
@@ -41,6 +42,7 @@ impl Player {
             .unwrap();
 
         playbin.set_property("video-sink", &sink);
+        // fixme: does not work with some video formats
         playbin.set_property("video-filter", &crop);
 
         playbin.set_state(State::Ready).unwrap();
@@ -77,9 +79,6 @@ impl Player {
         self.is_mute = false;
     }
 
-    pub fn set_info(&mut self, info: VideoInfo) {
-        self.info = info;
-    }
     pub fn set_is_mute(&mut self, is_mute: bool) {
         self.is_mute = is_mute;
         self.playbin.set_property("mute", is_mute);
@@ -118,6 +117,74 @@ impl Player {
         self.playbin.set_property("uri", uri.as_str());
         self.playbin.set_state(State::Playing).unwrap();
         self.is_mute = false;
+    }
+
+    pub fn discover_metadata(&mut self) -> VideoInfo {
+        let duration = self.playbin.query_duration::<ClockTime>().unwrap();
+
+        let video_tags = self
+            .playbin
+            .emit_by_name::<Option<gst::TagList>>("get-video-tags", &[&0])
+            .expect("no video stream present");
+        let pad = self
+            .playbin
+            .emit_by_name::<Option<gst::Pad>>("get-video-pad", &[&0])
+            .expect("no pad availble for video stream");
+        let caps = pad.current_caps().unwrap();
+        let cap_struct = caps.structure(0).unwrap();
+
+        let width = cap_struct.get::<i32>("width").unwrap() as u32;
+        let height = cap_struct.get::<i32>("height").unwrap() as u32;
+        let framerate = cap_struct.get::<gst::Fraction>("framerate").unwrap();
+        let aspect_ratio = width as f64 / height as f64;
+
+        let video_codec_tag = video_tags.get::<gst::tags::VideoCodec>().unwrap();
+        let video_codec = VideoCodec::from_description(video_codec_tag.get());
+
+        let container_tag = video_tags.get::<gst::tags::ContainerFormat>().unwrap();
+        let container = VideoContainer::from_description(container_tag.get());
+
+        let num_audio_streams = self.playbin.property::<i32>("n-audio");
+        let audio_codec = if num_audio_streams > 0 {
+            let tags = self
+                .playbin
+                .emit_by_name::<Option<gst::TagList>>("get-audio-tags", &[&0])
+                .expect("un able to get first audio stream");
+            let audio_tag = tags
+                .get::<gst::tags::AudioCodec>()
+                .expect("no audio codec tag");
+            AudioCodec::from_description(audio_tag.get())
+        } else {
+            AudioCodec::NoAudio
+        };
+
+        for i in 0..num_audio_streams {
+            let tags = self
+                .playbin
+                .emit_by_name::<Option<gst::TagList>>("get-audio-tags", &[&i])
+                .expect("un able to get first audio stream");
+            if let Some(language_tag) = tags.get::<gst::tags::LanguageCode>() {
+                println!("audio stream {i} has language: {}", language_tag.get());
+            }
+        }
+
+        let codec_info = VideoCodecInfo {
+            container,
+            video_codec,
+            audio_codec,
+        };
+
+        let video_info = VideoInfo {
+            duration,
+            framerate,
+            width,
+            height,
+            aspect_ratio,
+            codec_info,
+        };
+
+        self.info = video_info;
+        video_info
     }
 
     pub fn pipeline_bus(&self) -> Bus {

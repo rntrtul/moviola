@@ -1,5 +1,5 @@
 // add e-ac-3 (atsc) ?
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub enum AudioCodec {
     AAC,
     OPUS,
@@ -8,7 +8,7 @@ pub enum AudioCodec {
     NoAudio,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub enum VideoCodec {
     AV1,
     MPEG,
@@ -19,7 +19,7 @@ pub enum VideoCodec {
     Unknown,
 }
 // maybe remove webm
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub enum VideoContainer {
     MP4,
     MKV,
@@ -29,7 +29,7 @@ pub enum VideoContainer {
 }
 
 // todo: handle multiple audio streams
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub struct VideoCodecInfo {
     pub(crate) container: VideoContainer,
     pub(crate) video_codec: VideoCodec,
