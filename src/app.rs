@@ -3,7 +3,7 @@ use std::rc::Rc;
 use std::time::Duration;
 
 use gst::ClockTime;
-use gst_video::VideoOrientationMethod;
+use gst_plugin_gtk4::Orientation;
 use gtk::glib;
 use gtk::prelude::{ApplicationExt, GtkWindowExt, OrientableExt, WidgetExt};
 use gtk4::gio;
@@ -48,7 +48,7 @@ pub(super) enum AppMsg {
     OpenFile,
     SaveFile,
     SetVideo(String),
-    Orient(VideoOrientationMethod),
+    Orient(Orientation),
     ShowCropBox,
     HideCropBox,
     Rotate,

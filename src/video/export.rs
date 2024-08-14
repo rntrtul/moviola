@@ -6,8 +6,9 @@ use ges::gst_pbutils::EncodingContainerProfile;
 use ges::prelude::{EncodingProfileBuilder, LayerExt};
 use ges::prelude::{GESPipelineExt, TimelineElementExt, TimelineExt};
 use ges::{gst_pbutils, PipelineFlags};
-use gst::prelude::{ElementExt, GObjectExtManualGst, GstObjectExt, ObjectExt};
+use gst::prelude::{ElementExt, GstObjectExt, ObjectExt};
 use gst::{ClockTime, State};
+use gst_plugin_gtk4::Orientation;
 use gst_video::VideoOrientationMethod;
 use gtk4::gdk;
 use relm4::ComponentSender;
@@ -22,31 +23,27 @@ pub struct TimelineExportSettings {
     pub duration: ClockTime,
 }
 
-fn video_orientation_method_to_val(method: VideoOrientationMethod) -> u8 {
+fn sink_orientation_to_effect(method: Orientation) -> VideoOrientationMethod {
     match method {
-        VideoOrientationMethod::Identity => 0,
-        VideoOrientationMethod::_90r => 1,
-        VideoOrientationMethod::_180 => 2,
-        VideoOrientationMethod::_90l => 3,
-        VideoOrientationMethod::Horiz => 4,
-        VideoOrientationMethod::Vert => 5,
-        VideoOrientationMethod::UlLr => 6,
-        VideoOrientationMethod::UrLl => 7,
-        VideoOrientationMethod::Auto => 8,
-        VideoOrientationMethod::Custom => 9,
-        _ => panic!("unknown value given"),
+        Orientation::Auto => VideoOrientationMethod::Auto,
+        Orientation::Rotate0 => VideoOrientationMethod::Identity,
+        Orientation::Rotate90 => VideoOrientationMethod::_90r,
+        Orientation::Rotate180 => VideoOrientationMethod::_180,
+        Orientation::Rotate270 => VideoOrientationMethod::_90l,
+        Orientation::FlipRotate0 => VideoOrientationMethod::Horiz,
+        Orientation::FlipRotate90 => VideoOrientationMethod::UrLl,
+        Orientation::FlipRotate180 => VideoOrientationMethod::Vert,
+        Orientation::FlipRotate270 => VideoOrientationMethod::UrLl,
     }
 }
+
 // todo: move export out of player. set effects to be preview_crop etc.
 impl Player {
-    pub fn set_video_orientation(&mut self, orientation: VideoOrientationMethod) {
-        // todo: split flip and rotates
-        let val = video_orientation_method_to_val(orientation);
-
+    pub fn set_video_orientation(&mut self, orientation: Orientation) {
         self.playbin
             .property::<gst::Element>("video-sink")
             .property::<gdk::Paintable>("paintable")
-            .set_property_from_str("orientation", "Rotate90");
+            .set_property("orientation", orientation);
     }
 
     pub fn set_video_crop(&mut self, left: i32, top: i32, right: i32, bottom: i32) {
@@ -105,10 +102,9 @@ impl Player {
             let pipeline = ges::Pipeline::new();
             pipeline.set_timeline(&timeline).unwrap();
 
+            // clip needs to be aquired in seperate thread from playbin
             let clip = ges::UriClip::new(source_uri.as_str()).expect("Failed to create clip");
             layer.add_clip(&clip).unwrap();
-
-            // todo: add crop + rotate effects now.
 
             let container_profile = Self::build_container_profile();
 
@@ -122,6 +118,7 @@ impl Player {
 
             clip.set_inpoint(timeline_export_settings.start);
             clip.set_duration(timeline_export_settings.duration);
+            // todo: add crop + rotate effects now.
 
             pipeline.set_state(State::Playing).unwrap();
 

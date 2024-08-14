@@ -1,4 +1,4 @@
-use gst_video::VideoOrientationMethod;
+use gst_plugin_gtk4::Orientation;
 use gtk4::prelude::{ButtonExt, WidgetExt};
 use relm4::{
     adw, gtk, Component, ComponentController, ComponentParts, ComponentSender, Controller,
@@ -18,7 +18,7 @@ pub struct ControlsModel {
 pub enum ControlsMsg {
     Rotate,
     ExportFrame,
-    Orient(VideoOrientationMethod),
+    Orient(Orientation),
     SetCropMode(CropMode),
 }
 
@@ -26,7 +26,7 @@ pub enum ControlsMsg {
 pub enum ControlsOutput {
     ExportFrame,
     HideCropBox,
-    OrientVideo(VideoOrientationMethod),
+    OrientVideo(Orientation),
     SetCropMode(CropMode),
     ShowCropBox,
     SaveFile,

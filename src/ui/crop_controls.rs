@@ -1,4 +1,4 @@
-use gst_video::VideoOrientationMethod;
+use gst_plugin_gtk4::Orientation;
 use gtk4::prelude::WidgetExt;
 use relm4::adw::prelude::{ComboRowExt, ExpanderRowExt, PreferencesRowExt};
 use relm4::{adw, gtk, ComponentParts, ComponentSender, SimpleComponent};
@@ -7,25 +7,23 @@ use crate::ui::crop_box::CropMode;
 
 pub struct CropControlsModel {
     crop_mode: CropMode,
-    orientation: VideoOrientationMethod,
+    orientation: Orientation,
     rotation_angle: i32,
     show_crop_box: bool,
-    is_flip_vertical: bool,
-    is_flip_horizontal: bool,
+    is_flip: bool,
 }
 
 #[derive(Debug)]
 pub enum CropControlsMsg {
     SetCropMode(CropMode),
     RotateRight90,
-    RotateLeft90,
     FlipHorizontally,
     FlipVertically,
 }
 
 #[derive(Debug)]
 pub enum CropControlsOutput {
-    OrientVideo(VideoOrientationMethod),
+    OrientVideo(Orientation),
     SetCropMode(CropMode),
 }
 
@@ -89,11 +87,10 @@ impl SimpleComponent for CropControlsModel {
         let widgets = view_output!();
         let model = CropControlsModel {
             crop_mode: CropMode::Free,
-            orientation: VideoOrientationMethod::Identity,
+            orientation: Orientation::Rotate0,
             rotation_angle: 0,
             show_crop_box: false,
-            is_flip_vertical: false,
-            is_flip_horizontal: false,
+            is_flip: false,
         };
 
         ComponentParts { model, widgets }
@@ -110,33 +107,23 @@ impl SimpleComponent for CropControlsModel {
             }
             CropControlsMsg::RotateRight90 => {
                 self.rotation_angle = (self.rotation_angle + 90) % 360;
-                self.update_video_orientation_val();
-                sender
-                    .output(CropControlsOutput::OrientVideo(self.orientation))
-                    .unwrap()
-            }
-            CropControlsMsg::RotateLeft90 => {
-                self.rotation_angle = if self.rotation_angle == 0 {
-                    270
-                } else {
-                    self.rotation_angle - 90
-                };
-                self.update_video_orientation_val();
-
+                self.update_video_orientation();
                 sender
                     .output(CropControlsOutput::OrientVideo(self.orientation))
                     .unwrap()
             }
             CropControlsMsg::FlipHorizontally => {
-                self.is_flip_horizontal = !self.is_flip_horizontal;
-                self.update_video_orientation_val();
+                self.is_flip = !self.is_flip;
+                self.update_video_orientation();
                 sender
                     .output(CropControlsOutput::OrientVideo(self.orientation))
                     .unwrap()
             }
             CropControlsMsg::FlipVertically => {
-                self.is_flip_vertical = !self.is_flip_vertical;
-                self.update_video_orientation_val();
+                self.rotation_angle = (self.rotation_angle + 180) % 360;
+                self.is_flip = !self.is_flip;
+
+                self.update_video_orientation();
                 sender
                     .output(CropControlsOutput::OrientVideo(self.orientation))
                     .unwrap()
@@ -146,26 +133,21 @@ impl SimpleComponent for CropControlsModel {
 }
 
 impl CropControlsModel {
-    fn update_video_orientation_val(&mut self) {
-        // todo: check scenarios for horizontal and rotations
-        self.orientation = if self.is_flip_horizontal {
-            VideoOrientationMethod::Horiz
-        } else if self.is_flip_vertical {
-            if self.rotation_angle == 270 {
-                VideoOrientationMethod::UlLr
-            } else if self.rotation_angle == 90 {
-                VideoOrientationMethod::UrLl
-            } else {
-                VideoOrientationMethod::Vert
+    fn update_video_orientation(&mut self) {
+        self.orientation = if self.is_flip {
+            match self.rotation_angle {
+                90 => Orientation::FlipRotate90,
+                180 => Orientation::FlipRotate180,
+                270 => Orientation::FlipRotate270,
+                _ => Orientation::FlipRotate0,
             }
-        } else if self.rotation_angle == 90 {
-            VideoOrientationMethod::_90r
-        } else if self.rotation_angle == 270 {
-            VideoOrientationMethod::_90l
-        } else if self.rotation_angle == 180 {
-            VideoOrientationMethod::_180
         } else {
-            VideoOrientationMethod::Identity
-        }
+            match self.rotation_angle {
+                90 => Orientation::Rotate90,
+                180 => Orientation::Rotate180,
+                270 => Orientation::Rotate270,
+                _ => Orientation::Rotate0,
+            }
+        };
     }
 }

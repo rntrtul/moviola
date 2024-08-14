@@ -188,6 +188,7 @@ impl CropBoxWidget {
         }
     }
     // returns (x, y, width, height)
+    // todo: deal with rotated video (not original aspect ratio anymore)
     fn preview_rect(&self, widget_width: f32, widget_height: f32) -> graphene::Rect {
         let marginless_width = widget_width - (MARGIN * 2f32);
         let marginless_height = widget_height - (MARGIN * 2f32);
