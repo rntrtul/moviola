@@ -76,6 +76,8 @@ pub struct CropBoxWidget {
     pub drag_active: Cell<bool>,
     #[property(get, set = Self::set_aspect_ratio)]
     pub asepct_ratio: Cell<f64>,
+    #[property(get, set = Self::set_is_preview_rotated)]
+    pub is_preview_rotated: Cell<bool>,
     #[property(get, set, builder(ActiveHandleType::None))]
     active_handle: Cell<ActiveHandleType>,
     #[property(get, set, builder(CropMode::Free))]
@@ -188,7 +190,6 @@ impl CropBoxWidget {
         }
     }
     // returns (x, y, width, height)
-    // todo: deal with rotated video (not original aspect ratio anymore)
     fn preview_rect(&self, widget_width: f32, widget_height: f32) -> graphene::Rect {
         let marginless_width = widget_width - (MARGIN * 2f32);
         let marginless_height = widget_height - (MARGIN * 2f32);
@@ -241,6 +242,13 @@ impl CropBoxWidget {
             self.prev_drag_x.set(0f32);
             self.prev_drag_y.set(0f32);
         }
+    }
+
+    pub fn set_is_preview_rotated(&self, is_preview_rotated: bool) {
+        if self.is_preview_rotated.get() != is_preview_rotated {
+            self.set_aspect_ratio(1. / self.asepct_ratio.get());
+        }
+        self.is_preview_rotated.set(is_preview_rotated);
     }
 }
 

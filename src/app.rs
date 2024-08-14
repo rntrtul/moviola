@@ -422,6 +422,16 @@ impl Component for App {
                 widgets.crop_box.reset_box();
             }
             AppMsg::Orient(orientation) => {
+                let is_vertical = matches!(
+                    orientation,
+                    Orientation::Rotate90
+                        | Orientation::Rotate270
+                        | Orientation::FlipRotate90
+                        | Orientation::FlipRotate270
+                );
+                widgets.crop_box.set_is_preview_rotated(is_vertical);
+                widgets.crop_box.queue_draw();
+
                 self.player.borrow_mut().set_video_orientation(orientation)
             }
             AppMsg::ShowCropBox => {
