@@ -55,12 +55,12 @@ impl SimpleComponent for CropControlsModel {
                     #[wrap(Some)]
                     set_model = &gtk::StringList::new(
                         &["Free", "Original", "Square", "16:9", "4:5", "5:7", "4:3", "3:5", "3:2"]),
-                    set_selected: 1,
+                    set_selected: 0,
 
                     connect_selected_item_notify [sender] => move |dropdown| {
                         let mode = match dropdown.selected() {
-                            0 => CropMode::Original,
-                            1 => CropMode::Free,
+                            0 => CropMode::Free,
+                            1 => CropMode::Original,
                             2 => CropMode::Square,
                             3 => CropMode::_16To9,
                             4 => CropMode::_4To5,
