@@ -181,7 +181,6 @@ impl Player {
             aspect_ratio,
             codec_info,
         };
-        println!("Video Info: {:?}", video_info);
         self.info = video_info;
 
         video_info

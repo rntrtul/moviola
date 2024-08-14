@@ -267,7 +267,11 @@ impl crate::ui::CropBoxWidget {
         let widget_width = self.width() as f32;
         let widget_height = self.height() as f32;
 
-        let crop_rect = self.imp().crop_rect(widget_width, widget_height);
+        let crop_rect = if self.drag_active() {
+            self.imp().crop_rect(widget_width, widget_height)
+        } else {
+            self.imp().preview_rect(widget_width, widget_height)
+        };
 
         let right_x = crop_rect.x() + crop_rect.width();
         let bottom_y = crop_rect.y() + crop_rect.height();
@@ -313,9 +317,8 @@ impl crate::ui::CropBoxWidget {
                 self.set_bottom_y(adjusted_bottom_y);
             }
             ActiveHandleType::None => {
-                // todo: stop making box smaller each time
-                self.set_left_x(adjusted_left_x);
                 self.set_right_x(adjusted_right_x);
+                self.set_bottom_y(adjusted_bottom_y);
             }
         }
     }
