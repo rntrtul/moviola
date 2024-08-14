@@ -7,7 +7,8 @@ use relm4::{
 
 use crate::ui::crop_box::CropMode;
 use crate::ui::crop_controls::{CropControlsModel, CropControlsMsg, CropControlsOutput};
-use crate::ui::output_controls::{OutputControlsModel, OutputControlsOutput};
+use crate::ui::output_controls::{OutputControlsModel, OutputControlsMsg, OutputControlsOutput};
+use crate::video::metadata::VideoCodecInfo;
 
 pub struct ControlsModel {
     crop_page: Controller<CropControlsModel>,
@@ -20,6 +21,7 @@ pub enum ControlsMsg {
     ExportFrame,
     Orient(Orientation),
     SetCropMode(CropMode),
+    DefaultCodec(VideoCodecInfo),
 }
 
 #[derive(Debug)]
@@ -135,6 +137,10 @@ impl SimpleComponent for ControlsModel {
                 .unwrap(),
             ControlsMsg::ExportFrame => sender.output(ControlsOutput::ExportFrame).unwrap(),
             ControlsMsg::Rotate => self.crop_page.emit(CropControlsMsg::RotateRight90),
+            ControlsMsg::DefaultCodec(defaults) => {
+                self.output_page
+                    .emit(OutputControlsMsg::DefaultCodecs(defaults));
+            }
         }
     }
 }
