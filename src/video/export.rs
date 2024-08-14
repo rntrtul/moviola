@@ -46,7 +46,7 @@ impl Player {
         self.playbin
             .property::<gst::Element>("video-sink")
             .property::<gdk::Paintable>("paintable")
-            .set_property_from_str("orientation", "90");
+            .set_property_from_str("orientation", "Rotate90");
     }
 
     pub fn set_video_crop(&mut self, left: i32, top: i32, right: i32, bottom: i32) {

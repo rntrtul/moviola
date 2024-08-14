@@ -14,6 +14,8 @@ fn main() {
     gst::init().unwrap();
     gtk::init().unwrap();
 
+    gst_plugin_gtk4::plugin_register_static().expect("failed to register plugin");
+
     let res = gio::Resource::load(RESOURCES_FILE).unwrap();
     gio::resources_register(&res);
 

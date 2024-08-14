@@ -35,19 +35,6 @@ modules:
         url: "https://gitlab.freedesktop.org/gstreamer/gstreamer.git"
         commit: 8d175ea255ea260ae4ad05175282bdfb1b975f35
         disable-submodules: false
-  - name: gst-plugins-rs
-    buildsystem: simple
-    build-options:
-      env:
-        CARGO_HOME: "$FLATPAK_BUILDER_BUILDDIR/cargo"
-    build-commands:
-      - "cargo cinstall --release --features=wayland,x11glx,x11egl,dmabuf,gtk_v4_14 --library-type=cdylib --prefix=/app --libdir=/app/lib"
-    sources:
-      - type: archive
-        url: "https://crates.io/api/v1/crates/gst-plugin-gtk4/0.13.0/download"
-        dest-filename: "gst-plugin-gtk4-0.13.0.tar.gz"
-        sha256: "69b98aeb531b6cf9c3a6eb36742cedc0168054e2f040b76ddc61260c10dec589"
-      - "gst-plugin-gtk4-sources.yml"
   - name: moviola
     builddir: true
     buildsystem: meson
