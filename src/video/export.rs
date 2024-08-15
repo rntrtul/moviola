@@ -126,13 +126,9 @@ impl Player {
             pipeline
                 .set_render_settings(&save_uri.as_str(), &container_profile)
                 .expect("unable to set render settings");
-            // // todo: use smart_render? (only when using original container info?)
 
-            let render_mode = if controls_export_settings.container_is_default {
-                PipelineFlags::SMART_RENDER
-            } else {
-                PipelineFlags::RENDER
-            };
+            //todo: use smart_render? (only when using original container info?)
+            let render_mode = PipelineFlags::RENDER;
 
             pipeline
                 .set_mode(render_mode)
