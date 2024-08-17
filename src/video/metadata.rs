@@ -77,7 +77,7 @@ pub enum VideoCodec {
     X265,
     Unknown,
 }
-// maybe remove webm
+
 #[derive(Debug, Clone, Copy)]
 pub enum ContainerFormat {
     MP4,
@@ -98,6 +98,7 @@ impl VideoContainerInfo {
     }
 }
 
+// todo: use trait to make string_list, from_string_list_index, to_string_list_index generic
 impl AudioCodec {
     pub fn display(&self) -> &str {
         match self {

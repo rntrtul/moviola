@@ -3,13 +3,12 @@ use std::thread;
 use std::time::SystemTime;
 
 use ges::gst_pbutils::EncodingContainerProfile;
-use ges::prelude::{EncodingProfileBuilder, LayerExt};
+use ges::prelude::{EncodingProfileBuilder, GESContainerExt, LayerExt};
 use ges::prelude::{GESPipelineExt, TimelineElementExt, TimelineExt};
 use ges::{gst_pbutils, PipelineFlags};
 use gst::prelude::{ElementExt, GstObjectExt, ObjectExt};
 use gst::{ClockTime, State};
 use gst_plugin_gtk4::Orientation;
-use gst_video::VideoOrientationMethod;
 use gtk4::gdk;
 use relm4::ComponentSender;
 
@@ -24,17 +23,17 @@ pub struct TimelineExportSettings {
     pub duration: ClockTime,
 }
 
-fn sink_orientation_to_effect(method: Orientation) -> VideoOrientationMethod {
+fn sink_orientation_to_effect(method: Orientation) -> String {
     match method {
-        Orientation::Auto => VideoOrientationMethod::Auto,
-        Orientation::Rotate0 => VideoOrientationMethod::Identity,
-        Orientation::Rotate90 => VideoOrientationMethod::_90r,
-        Orientation::Rotate180 => VideoOrientationMethod::_180,
-        Orientation::Rotate270 => VideoOrientationMethod::_90l,
-        Orientation::FlipRotate0 => VideoOrientationMethod::Horiz,
-        Orientation::FlipRotate90 => VideoOrientationMethod::UrLl,
-        Orientation::FlipRotate180 => VideoOrientationMethod::Vert,
-        Orientation::FlipRotate270 => VideoOrientationMethod::UrLl,
+        Orientation::Auto => "auto".to_string(),
+        Orientation::Rotate0 => "identity".to_string(),
+        Orientation::Rotate90 => "90r".to_string(),
+        Orientation::Rotate180 => "180".to_string(),
+        Orientation::Rotate270 => "90l".to_string(),
+        Orientation::FlipRotate0 => "horiz".to_string(),
+        Orientation::FlipRotate90 => "ur-ll".to_string(),
+        Orientation::FlipRotate180 => "vert".to_string(),
+        Orientation::FlipRotate270 => "ul-lr".to_string(),
     }
 }
 
@@ -115,6 +114,12 @@ impl Player {
 
         let container_profile = self.build_container_profile(controls_export_settings.container);
 
+        let orientation = self
+            .playbin
+            .property::<gst::Element>("video-sink")
+            .property::<gdk::Paintable>("paintable")
+            .property::<Orientation>("orientation");
+
         thread::spawn(move || {
             let timeline = ges::Timeline::new_audio_video();
             let layer = timeline.append_layer();
@@ -141,6 +146,12 @@ impl Player {
             clip.set_duration(timeline_export_settings.duration);
             // todo: add crop + rotate effects now.
             // todo: should resolution be set in encoding profile or clip caps?
+            let rotate = format!(
+                "autovideoflip video-direction={}",
+                sink_orientation_to_effect(orientation)
+            );
+            let rotate_effect = ges::Effect::new(&*rotate).unwrap();
+            clip.add(&rotate_effect).unwrap();
 
             pipeline.set_state(State::Playing).unwrap();
 

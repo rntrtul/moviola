@@ -168,8 +168,6 @@ impl Player {
                 .emit_by_name::<Option<gst::TagList>>("get-audio-tags", &[&i])
                 .expect("unable to get first audio stream");
 
-            println!("audio_tags: {}", audio_tags.to_string());
-
             let audio_codec = if let Some(tag) = audio_tags.get::<gst::tags::AudioCodec>() {
                 AudioCodec::from_description(tag.get())
             } else {
@@ -203,8 +201,6 @@ impl Player {
             video_bitrate,
             audio_streams: audio_streams_info,
         };
-
-        println!("codec info: {:?}", codec_info);
 
         let video_info = VideoInfo {
             duration,
