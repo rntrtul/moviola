@@ -3,7 +3,7 @@ use std::thread;
 use std::time::SystemTime;
 
 use ges::gst_pbutils::EncodingContainerProfile;
-use ges::prelude::{EncodingProfileBuilder, GESContainerExt, LayerExt};
+use ges::prelude::{EncodingProfileBuilder, GESContainerExt, GESTrackExt, LayerExt};
 use ges::prelude::{GESPipelineExt, TimelineElementExt, TimelineExt};
 use ges::{gst_pbutils, PipelineFlags};
 use gst::prelude::{ElementExt, GstObjectExt, ObjectExt};
@@ -120,6 +120,14 @@ impl Player {
             .property::<gdk::Paintable>("paintable")
             .property::<Orientation>("orientation");
 
+        let (width, height) = match orientation {
+            Orientation::Rotate90
+            | Orientation::Rotate270
+            | Orientation::FlipRotate270
+            | Orientation::FlipRotate90 => (self.info.height, self.info.width),
+            _ => (self.info.width, self.info.height),
+        };
+
         thread::spawn(move || {
             let timeline = ges::Timeline::new_audio_video();
             let layer = timeline.append_layer();
@@ -130,6 +138,14 @@ impl Player {
             // todo: select audio stream (ges does not support selection)
             let clip = ges::UriClip::new(source_uri.as_str()).expect("Failed to create clip");
             layer.add_clip(&clip).unwrap();
+
+            let tracks = timeline.tracks();
+            let track = tracks.first().expect("No first track");
+            let caps = gst::Caps::builder("video/x-raw")
+                .field("width", width as i32)
+                .field("height", height as i32)
+                .build();
+            track.set_restriction_caps(&caps);
 
             pipeline
                 .set_render_settings(&save_uri.as_str(), &container_profile)
