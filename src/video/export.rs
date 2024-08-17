@@ -15,7 +15,7 @@ use relm4::ComponentSender;
 
 use crate::app::{App, AppMsg};
 use crate::ui::controls_sidebar::ControlsExportSettings;
-use crate::video::metadata::{AudioCodec, VideoCodecInfo};
+use crate::video::metadata::{AudioCodec, VideoContainerInfo};
 use crate::video::player::Player;
 use crate::video::thumbnail::Thumbnail;
 
@@ -70,7 +70,7 @@ impl Player {
         Thumbnail::save_sample_as_image(&sample, self.info.height, output);
     }
 
-    fn build_container_profile(container: VideoCodecInfo) -> EncodingContainerProfile {
+    fn build_container_profile(container: VideoContainerInfo) -> EncodingContainerProfile {
         // todo: pass in resolution/aspect ratio target + bitrate to keep file size in check
         let container_caps = container.container.caps_builder().build();
         let video_caps = container.video_codec.caps_builder().build();
@@ -136,6 +136,7 @@ impl Player {
             clip.set_inpoint(timeline_export_settings.start);
             clip.set_duration(timeline_export_settings.duration);
             // todo: add crop + rotate effects now.
+            // todo: should resolution be set in encoding profile or clip caps?
 
             pipeline.set_state(State::Playing).unwrap();
 

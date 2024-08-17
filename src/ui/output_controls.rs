@@ -5,21 +5,21 @@ use relm4::{adw, gtk, Component, ComponentParts, ComponentSender};
 use crate::ui::output_controls::OutputControlsMsg::{
     AudioCodecChange, ContainerChange, CustomCodecSelected, VideoCodecChange,
 };
-use crate::video::metadata::{AudioCodec, VideoCodec, VideoCodecInfo, VideoContainer};
+use crate::video::metadata::{AudioCodec, ContainerFormat, VideoCodec, VideoContainerInfo};
 
 pub struct OutputControlsModel {
-    default_codec: VideoCodecInfo,
-    selected_codec: VideoCodecInfo,
+    default_codec: VideoContainerInfo,
+    selected_codec: VideoContainerInfo,
     non_default_selected: bool,
 }
 
 #[derive(Debug)]
 pub enum OutputControlsMsg {
-    DefaultCodecs(VideoCodecInfo),
+    DefaultCodecs(VideoContainerInfo),
     CustomCodecSelected(bool),
     VideoCodecChange(VideoCodec),
     AudioCodecChange(AudioCodec),
-    ContainerChange(VideoContainer),
+    ContainerChange(ContainerFormat),
 }
 
 #[derive(Debug)]
@@ -68,9 +68,9 @@ impl Component for OutputControlsModel {
                     add_row: container_row = &adw::ComboRow{
                         set_title: "Output Container",
                         #[wrap(Some)]
-                        set_model = &VideoContainer::string_list(),
+                        set_model = &ContainerFormat::string_list(),
                         connect_selected_item_notify [sender] => move |dropdown| {
-                            let container = VideoContainer::from_string_list_index(dropdown.selected());
+                            let container = ContainerFormat::from_string_list_index(dropdown.selected());
                             sender.input(ContainerChange(container));
                         }
                     },
@@ -99,8 +99,8 @@ impl Component for OutputControlsModel {
     ) -> ComponentParts<Self> {
         let widgets = view_output!();
         let model = OutputControlsModel {
-            default_codec: VideoCodecInfo::default(),
-            selected_codec: VideoCodecInfo::default(),
+            default_codec: VideoContainerInfo::default(),
+            selected_codec: VideoContainerInfo::default(),
             non_default_selected: false,
         };
 
@@ -144,7 +144,7 @@ impl Component for OutputControlsModel {
 }
 
 impl OutputControlsModel {
-    pub fn export_settings(&self) -> VideoCodecInfo {
+    pub fn export_settings(&self) -> VideoContainerInfo {
         if self.non_default_selected {
             self.selected_codec
         } else {

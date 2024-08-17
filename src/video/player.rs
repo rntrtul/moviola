@@ -4,7 +4,9 @@ use gst::glib::FlagsClass;
 use gst::prelude::{ElementExt, ElementExtManual, ObjectExt, PadExt};
 use gst::{Bus, ClockTime, SeekFlags, State};
 
-use crate::video::metadata::{AudioCodec, VideoCodec, VideoCodecInfo, VideoContainer, VideoInfo};
+use crate::video::metadata::{
+    AudioCodec, ContainerFormat, VideoCodec, VideoContainerInfo, VideoInfo,
+};
 
 #[derive(Debug)]
 pub struct Player {
@@ -141,7 +143,7 @@ impl Player {
         let video_codec = VideoCodec::from_description(video_codec_tag.get());
 
         let container_tag = video_tags.get::<gst::tags::ContainerFormat>().unwrap();
-        let container = VideoContainer::from_description(container_tag.get());
+        let container = ContainerFormat::from_description(container_tag.get());
 
         let num_audio_streams = self.playbin.property::<i32>("n-audio");
         let audio_codec = if num_audio_streams > 0 {
@@ -167,7 +169,7 @@ impl Player {
             }
         }
 
-        let codec_info = VideoCodecInfo {
+        let codec_info = VideoContainerInfo {
             container,
             video_codec,
             audio_codec,
@@ -179,7 +181,7 @@ impl Player {
             width,
             height,
             aspect_ratio,
-            codec_info,
+            container_info: codec_info,
         };
         self.info = video_info;
 

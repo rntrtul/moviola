@@ -5,17 +5,16 @@ use relm4::gtk;
 // todo: handle multiple audio streams
 // todo: include audio and video bitrate
 #[derive(Debug, Clone, Copy)]
-pub struct VideoCodecInfo {
-    pub(crate) container: VideoContainer,
+pub struct VideoContainerInfo {
+    pub(crate) container: ContainerFormat,
     pub(crate) video_codec: VideoCodec,
     pub(crate) audio_codec: AudioCodec,
 }
 
-// todo: rename to ContainerInfo, container -> container-format
-impl Default for VideoCodecInfo {
+impl Default for VideoContainerInfo {
     fn default() -> Self {
         Self {
-            container: VideoContainer::Unknown,
+            container: ContainerFormat::Unknown,
             video_codec: VideoCodec::Unknown,
             audio_codec: AudioCodec::Unknown,
         }
@@ -29,7 +28,7 @@ pub struct VideoInfo {
     pub(crate) width: u32,
     pub(crate) height: u32,
     pub(crate) aspect_ratio: f64,
-    pub(crate) codec_info: VideoCodecInfo,
+    pub(crate) container_info: VideoContainerInfo,
 }
 
 impl Default for VideoInfo {
@@ -40,7 +39,7 @@ impl Default for VideoInfo {
             width: 0,
             height: 0,
             aspect_ratio: 0.,
-            codec_info: VideoCodecInfo::default(),
+            container_info: VideoContainerInfo::default(),
         }
     }
 }
@@ -66,7 +65,7 @@ pub enum VideoCodec {
 }
 // maybe remove webm
 #[derive(Debug, Clone, Copy)]
-pub enum VideoContainer {
+pub enum ContainerFormat {
     MP4,
     MKV,
     QUICKTIME,
@@ -204,69 +203,69 @@ impl VideoCodec {
     }
 }
 
-impl VideoContainer {
+impl ContainerFormat {
     pub fn display(&self) -> &str {
         match self {
-            VideoContainer::MP4 => "MP4",
-            VideoContainer::MKV => "MKV",
-            VideoContainer::QUICKTIME => "Quicktime",
-            VideoContainer::Unknown => "Unknown",
+            ContainerFormat::MP4 => "MP4",
+            ContainerFormat::MKV => "MKV",
+            ContainerFormat::QUICKTIME => "Quicktime",
+            ContainerFormat::Unknown => "Unknown",
         }
     }
 
     // todo: use encoding profile file extension
     pub fn file_extension(&self) -> &str {
         match self {
-            VideoContainer::MP4 => "mp4",
-            VideoContainer::MKV => "mkv",
-            VideoContainer::QUICKTIME => "mov",
-            VideoContainer::Unknown => "",
+            ContainerFormat::MP4 => "mp4",
+            ContainerFormat::MKV => "mkv",
+            ContainerFormat::QUICKTIME => "mov",
+            ContainerFormat::Unknown => "",
         }
     }
 
     pub fn caps_builder(&self) -> Builder<NoFeature> {
         match self {
-            VideoContainer::MP4 => gst::Caps::builder("video/quicktime").field("variant", "iso"),
-            VideoContainer::MKV => gst::Caps::builder("video/x-matroska"),
-            VideoContainer::QUICKTIME => {
+            ContainerFormat::MP4 => gst::Caps::builder("video/quicktime").field("variant", "iso"),
+            ContainerFormat::MKV => gst::Caps::builder("video/x-matroska"),
+            ContainerFormat::QUICKTIME => {
                 gst::Caps::builder("video/quicktime").field("variant", "apple")
             }
-            VideoContainer::Unknown => gst::Caps::builder(""),
+            ContainerFormat::Unknown => gst::Caps::builder(""),
         }
     }
 
     pub fn string_list() -> gtk::StringList {
         gtk::StringList::new(&[
-            VideoContainer::MP4.display(),
-            VideoContainer::MKV.display(),
-            VideoContainer::QUICKTIME.display(),
+            ContainerFormat::MP4.display(),
+            ContainerFormat::MKV.display(),
+            ContainerFormat::QUICKTIME.display(),
         ])
     }
 
     pub fn from_string_list_index(idx: u32) -> Self {
         match idx {
-            0 => VideoContainer::MP4,
-            1 => VideoContainer::MKV,
-            2 => VideoContainer::QUICKTIME,
-            _ => VideoContainer::Unknown,
+            0 => ContainerFormat::MP4,
+            1 => ContainerFormat::MKV,
+            2 => ContainerFormat::QUICKTIME,
+            _ => ContainerFormat::Unknown,
         }
     }
 
     pub fn to_string_list_index(&self) -> u32 {
         match self {
-            VideoContainer::MP4 => 0,
-            VideoContainer::MKV => 1,
-            VideoContainer::QUICKTIME => 2,
-            VideoContainer::Unknown => 100,
+            ContainerFormat::MP4 => 0,
+            ContainerFormat::MKV => 1,
+            ContainerFormat::QUICKTIME => 2,
+            ContainerFormat::Unknown => 100,
         }
     }
     pub fn from_description(description: &str) -> Self {
         // see webm report as matroska?
         match description {
-            desc if desc == "Matroska" => VideoContainer::MKV,
-            desc if desc == "ISO MP4/M4A" => VideoContainer::MP4,
-            desc if desc == "Quicktime" => VideoContainer::QUICKTIME,
-            _ => VideoContainer::Unknown,
+            desc if desc == "Matroska" => ContainerFormat::MKV,
+            desc if desc == "ISO MP4/M4A" => ContainerFormat::MP4,
+            desc if desc == "Quicktime" => ContainerFormat::QUICKTIME,
+            _ => ContainerFormat::Unknown,
         }
     }
 }

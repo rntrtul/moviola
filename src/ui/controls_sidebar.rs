@@ -8,10 +8,10 @@ use relm4::{
 use crate::ui::crop_box::CropMode;
 use crate::ui::crop_controls::{CropControlsModel, CropControlsMsg, CropControlsOutput};
 use crate::ui::output_controls::{OutputControlsModel, OutputControlsMsg, OutputControlsOutput};
-use crate::video::metadata::VideoCodecInfo;
+use crate::video::metadata::VideoContainerInfo;
 
 pub struct ControlsExportSettings {
-    pub container: VideoCodecInfo,
+    pub container: VideoContainerInfo,
     pub container_is_default: bool,
 }
 
@@ -26,7 +26,7 @@ pub enum ControlsMsg {
     ExportFrame,
     Orient(Orientation),
     SetCropMode(CropMode),
-    DefaultCodec(VideoCodecInfo),
+    DefaultCodec(VideoContainerInfo),
 }
 
 #[derive(Debug)]
