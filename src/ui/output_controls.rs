@@ -1,22 +1,22 @@
 use gtk4::prelude::{ButtonExt, ListBoxRowExt, WidgetExt};
-use relm4::adw::prelude::{ComboRowExt, ExpanderRowExt, PreferencesRowExt};
+use relm4::adw::prelude::{ActionRowExt, ComboRowExt, PreferencesGroupExt, PreferencesRowExt};
 use relm4::{adw, gtk, Component, ComponentParts, ComponentSender};
 
 use crate::ui::output_controls::OutputControlsMsg::{
-    AudioCodecChange, ContainerChange, CustomCodecSelected, VideoCodecChange,
+    AudioCodecChange, ContainerChange, CustomEncoding, VideoCodecChange,
 };
 use crate::video::metadata::{AudioCodec, ContainerFormat, VideoCodec, VideoContainerInfo};
 
 pub struct OutputControlsModel {
     default_codec: VideoContainerInfo,
     selected_codec: VideoContainerInfo,
-    non_default_selected: bool,
+    custom_encoding: bool,
 }
 
 #[derive(Debug)]
 pub enum OutputControlsMsg {
     DefaultCodecs(VideoContainerInfo),
-    CustomCodecSelected(bool),
+    CustomEncoding(bool),
     VideoCodecChange(VideoCodec),
     AudioCodecChange(AudioCodec),
     ContainerChange(ContainerFormat),
@@ -38,34 +38,22 @@ impl Component for OutputControlsModel {
         adw::PreferencesPage{
             set_hexpand: true,
 
-            adw::PreferencesGroup{
-                #[name= "codec_row"]
-                adw::ExpanderRow {
-                    set_title: "Custom output format",
-                    set_show_enable_switch: true,
-                    set_enable_expansion: false,
+            adw::PreferencesGroup {
+                adw::SwitchRow {
+                    set_title: "Custom encoding",
+                    set_subtitle: "will lose lossless enconding",
 
-                    add_row: video_row = &adw::ComboRow{
-                        set_title: "Video Codec",
-                        #[wrap(Some)]
-                        set_model = &VideoCodec::string_list(),
-                        connect_selected_item_notify [sender] => move |dropdown| {
-                            let codec = VideoCodec::from_string_list_index(dropdown.selected());
-                            sender.input(VideoCodecChange(codec));
-                        }
+                    connect_active_notify[sender] => move |row| {
+                        sender.input(CustomEncoding(row.is_active()))
                     },
+                }
+            },
 
-                    add_row: audio_row = &adw::ComboRow{
-                        set_title: "Audio Codec",
-                        #[wrap(Some)]
-                        set_model = &AudioCodec::string_list(),
-                        connect_selected_item_notify [sender] => move |dropdown| {
-                            let codec = AudioCodec::from_string_list_index(dropdown.selected());
-                            sender.input(AudioCodecChange(codec));
-                        }
-                    },
-
-                    add_row: container_row = &adw::ComboRow{
+            adw::PreferencesGroup {
+                #[watch]
+                set_sensitive: model.custom_encoding,
+                #[name= "container_row"]
+                adw::ComboRow{
                         set_title: "Output Container",
                         #[wrap(Some)]
                         set_model = &ContainerFormat::string_list(),
@@ -73,11 +61,38 @@ impl Component for OutputControlsModel {
                             let container = ContainerFormat::from_string_list_index(dropdown.selected());
                             sender.input(ContainerChange(container));
                         }
-                    },
+                    }
+            },
 
-                    connect_enable_expansion_notify[sender] => move |row| {
-                        sender.input(CustomCodecSelected(row.enables_expansion()))
-                    },
+            adw::PreferencesGroup {
+                set_title: "Video",
+                #[watch]
+                set_sensitive: model.custom_encoding,
+                #[name= "video_codec_row"]
+                adw::ComboRow{
+                    set_title: "Codec",
+                    #[wrap(Some)]
+                    set_model = &VideoCodec::string_list(),
+                    connect_selected_item_notify [sender] => move |dropdown| {
+                        let codec = VideoCodec::from_string_list_index(dropdown.selected());
+                        sender.input(VideoCodecChange(codec));
+                    }
+                },
+            },
+
+             adw::PreferencesGroup {
+                set_title: "Audio",
+                #[watch]
+                set_sensitive: model.custom_encoding,
+                #[name= "audio_codec_row"]
+                adw::ComboRow{
+                    set_title: "Codec",
+                    #[wrap(Some)]
+                    set_model = &AudioCodec::string_list(),
+                    connect_selected_item_notify [sender] => move |dropdown| {
+                        let codec = AudioCodec::from_string_list_index(dropdown.selected());
+                        sender.input(AudioCodecChange(codec));
+                    }
                 },
             },
 
@@ -97,12 +112,13 @@ impl Component for OutputControlsModel {
         root: Self::Root,
         sender: ComponentSender<Self>,
     ) -> ComponentParts<Self> {
-        let widgets = view_output!();
         let model = OutputControlsModel {
             default_codec: VideoContainerInfo::default(),
             selected_codec: VideoContainerInfo::default(),
-            non_default_selected: false,
+            custom_encoding: false,
         };
+
+        let widgets = view_output!();
 
         ComponentParts { model, widgets }
     }
@@ -123,21 +139,21 @@ impl Component for OutputControlsModel {
                 let video_idx = defaults.video_codec.to_string_list_index();
                 let container_idx = defaults.container.to_string_list_index();
 
-                widgets.video_row.set_selected(video_idx);
+                widgets.video_codec_row.set_selected(video_idx);
                 widgets.container_row.set_selected(container_idx);
 
                 match defaults.audio_codec {
                     AudioCodec::NoAudio => {
-                        widgets.audio_row.set_selectable(false);
+                        widgets.audio_codec_row.set_selectable(false);
                     }
-                    _ => widgets.audio_row.set_selected(audio_idx),
+                    _ => widgets.audio_codec_row.set_selected(audio_idx),
                 }
             }
             // todo: some bookkeeping to keep selected_changed accurate
             VideoCodecChange(codec) => self.selected_codec.video_codec = codec,
             AudioCodecChange(codec) => self.selected_codec.audio_codec = codec,
             ContainerChange(container) => self.selected_codec.container = container,
-            CustomCodecSelected(enabled) => self.non_default_selected = enabled,
+            CustomEncoding(enabled) => self.custom_encoding = enabled,
         }
         self.update_view(widgets, sender);
     }
@@ -145,7 +161,9 @@ impl Component for OutputControlsModel {
 
 impl OutputControlsModel {
     pub fn export_settings(&self) -> VideoContainerInfo {
-        if self.non_default_selected {
+        // todo: pass container info regardless
+        //  changing container shouldn't trigger a reencoding
+        if self.custom_encoding {
             self.selected_codec
         } else {
             self.default_codec
