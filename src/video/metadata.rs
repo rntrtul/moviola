@@ -8,7 +8,9 @@ use relm4::gtk;
 pub struct VideoContainerInfo {
     pub(crate) container: ContainerFormat,
     pub(crate) video_codec: VideoCodec,
+    pub(crate) video_bitrate: u32,
     pub(crate) audio_codec: AudioCodec,
+    pub(crate) audio_bitrate: u32,
 }
 
 impl Default for VideoContainerInfo {
@@ -16,7 +18,9 @@ impl Default for VideoContainerInfo {
         Self {
             container: ContainerFormat::Unknown,
             video_codec: VideoCodec::Unknown,
+            video_bitrate: 0,
             audio_codec: AudioCodec::Unknown,
+            audio_bitrate: 0,
         }
     }
 }

@@ -75,6 +75,7 @@ impl SimpleComponent for ControlsModel {
                 },
             },
 
+            // todo: put in header bar instead of video title
             #[name="switch_bar"]
             add_bottom_bar = &adw::ViewSwitcherBar{
                 set_reveal: true,

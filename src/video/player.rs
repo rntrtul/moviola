@@ -140,23 +140,35 @@ impl Player {
         let aspect_ratio = width as f64 / height as f64;
 
         let video_codec_tag = video_tags.get::<gst::tags::VideoCodec>().unwrap();
+        let video_bitrate_tag = video_tags.get::<gst::tags::Bitrate>().unwrap();
+
         let video_codec = VideoCodec::from_description(video_codec_tag.get());
+        let video_bitrate = video_bitrate_tag.get();
 
         let container_tag = video_tags.get::<gst::tags::ContainerFormat>().unwrap();
         let container = ContainerFormat::from_description(container_tag.get());
 
         let num_audio_streams = self.playbin.property::<i32>("n-audio");
-        let audio_codec = if num_audio_streams > 0 {
-            let tags = self
+        let (audio_codec, audio_bitrate) = if num_audio_streams > 0 {
+            let audio_tags = self
                 .playbin
                 .emit_by_name::<Option<gst::TagList>>("get-audio-tags", &[&0])
                 .expect("un able to get first audio stream");
-            let audio_tag = tags
+
+            let audio_codec_tag = audio_tags
                 .get::<gst::tags::AudioCodec>()
                 .expect("no audio codec tag");
-            AudioCodec::from_description(audio_tag.get())
+
+            let audio_bitrate_tag = audio_tags
+                .get::<gst::tags::Bitrate>()
+                .expect("no audio bitrate tag");
+
+            (
+                AudioCodec::from_description(audio_codec_tag.get()),
+                audio_bitrate_tag.get(),
+            )
         } else {
-            AudioCodec::NoAudio
+            (AudioCodec::NoAudio, 0)
         };
 
         for i in 0..num_audio_streams {
@@ -173,6 +185,8 @@ impl Player {
             container,
             video_codec,
             audio_codec,
+            video_bitrate,
+            audio_bitrate,
         };
 
         let video_info = VideoInfo {
