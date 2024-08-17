@@ -3,7 +3,7 @@ use gst::ClockTime;
 use relm4::gtk;
 
 pub static VIDEO_BITRATE_DEFAULT: u32 = 3000000;
-pub static AUDIO_BITRATE_DEFAULT: u32 = 300000;
+pub static AUDIO_BITRATE_DEFAULT: u32 = 128000;
 
 #[derive(Debug, Clone)]
 pub struct AudioStreamInfo {
@@ -54,10 +54,14 @@ impl Default for VideoInfo {
     }
 }
 
-// add e-ac-3 (atsc) ?
+//
+// todo: check flatpak has plugins for each codec
+// e-ac-3 (atsc) and dts non-free no encoder in gstreamer. i think
+//      ffmpeg supports both
 #[derive(Debug, Clone, Copy)]
 pub enum AudioCodec {
     AAC,
+    AC3,
     OPUS,
     RAW,
     Unknown,
@@ -84,7 +88,7 @@ pub enum ContainerFormat {
 
 impl VideoContainerInfo {
     pub fn audio_streams_string_list(&self) -> gtk::StringList {
-        let mut list = gtk::StringList::new(&[]);
+        let list = gtk::StringList::new(&[]);
 
         for stream in self.audio_streams.iter() {
             list.append(stream.language.as_str());
@@ -98,6 +102,7 @@ impl AudioCodec {
     pub fn display(&self) -> &str {
         match self {
             AudioCodec::AAC => "AAC",
+            AudioCodec::AC3 => "AC-3",
             AudioCodec::OPUS => "Opus",
             AudioCodec::RAW => "Raw",
             AudioCodec::Unknown => "Unknown",
@@ -108,6 +113,7 @@ impl AudioCodec {
     pub fn caps_builder(&self) -> Builder<NoFeature> {
         match self {
             AudioCodec::AAC => gst::Caps::builder("audio/mpeg"),
+            AudioCodec::AC3 => gst::Caps::builder("audio/x-ac3"),
             AudioCodec::OPUS => gst::Caps::builder("audio/x-opus"),
             AudioCodec::RAW => gst::Caps::builder("audio/x-raw"),
             AudioCodec::Unknown => gst::Caps::builder(""),
@@ -119,6 +125,7 @@ impl AudioCodec {
         gtk::StringList::new(&[
             AudioCodec::AAC.display(),
             AudioCodec::OPUS.display(),
+            AudioCodec::AC3.display(),
             AudioCodec::RAW.display(),
         ])
     }
@@ -127,7 +134,8 @@ impl AudioCodec {
         match idx {
             0 => AudioCodec::AAC,
             1 => AudioCodec::OPUS,
-            2 => AudioCodec::RAW,
+            2 => AudioCodec::AC3,
+            3 => AudioCodec::RAW,
             _ => AudioCodec::Unknown,
         }
     }
@@ -136,7 +144,8 @@ impl AudioCodec {
         match self {
             AudioCodec::AAC => 0,
             AudioCodec::OPUS => 1,
-            AudioCodec::RAW => 2,
+            AudioCodec::AC3 => 2,
+            AudioCodec::RAW => 3,
             AudioCodec::Unknown => 100,
             AudioCodec::NoAudio => 100,
         }
@@ -146,6 +155,7 @@ impl AudioCodec {
         match description {
             desc if desc.starts_with("MPEG") => AudioCodec::AAC,
             desc if desc.starts_with("Opus") => AudioCodec::OPUS,
+            desc if desc.starts_with("AC-3") => AudioCodec::AC3,
             desc if desc.starts_with("Raw") || desc.starts_with("Uncompressed") => AudioCodec::RAW,
             _ => AudioCodec::Unknown,
         }
