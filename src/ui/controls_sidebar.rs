@@ -8,10 +8,22 @@ use relm4::{
 use crate::ui::crop_box::CropMode;
 use crate::ui::crop_controls::{CropControlsModel, CropControlsMsg, CropControlsOutput};
 use crate::ui::output_controls::{OutputControlsModel, OutputControlsMsg, OutputControlsOutput};
-use crate::video::metadata::VideoContainerInfo;
+use crate::video::metadata::{AudioCodec, ContainerFormat, VideoCodec, VideoContainerInfo};
+
+// fixme: too similar to videoContainerInfo
+#[derive(Debug, Clone, Copy)]
+pub struct OutputContainerSettings {
+    pub(crate) no_audio: bool,
+    pub(crate) audio_stream_idx: u32,
+    pub(crate) audio_codec: AudioCodec,
+    pub(crate) audio_bitrate: u32,
+    pub(crate) container: ContainerFormat,
+    pub(crate) video_codec: VideoCodec,
+    pub(crate) video_bitrate: u32,
+}
 
 pub struct ControlsExportSettings {
-    pub container: VideoContainerInfo,
+    pub container: OutputContainerSettings,
     pub container_is_default: bool,
 }
 
@@ -145,7 +157,7 @@ impl SimpleComponent for ControlsModel {
             ControlsMsg::Rotate => self.crop_page.emit(CropControlsMsg::RotateRight90),
             ControlsMsg::DefaultCodec(defaults) => {
                 self.output_page
-                    .emit(OutputControlsMsg::DefaultCodecs(defaults));
+                    .emit(OutputControlsMsg::VideoInfo(defaults));
             }
         }
     }

@@ -2,15 +2,22 @@ use gst::caps::{Builder, NoFeature};
 use gst::ClockTime;
 use relm4::gtk;
 
-// todo: handle multiple audio streams
-// todo: include audio and video bitrate
-#[derive(Debug, Clone, Copy)]
+pub static VIDEO_BITRATE_DEFAULT: u32 = 3000000;
+pub static AUDIO_BITRATE_DEFAULT: u32 = 300000;
+
+#[derive(Debug, Clone)]
+pub struct AudioStreamInfo {
+    pub(crate) codec: AudioCodec,
+    pub(crate) bitrate: u32,
+    pub(crate) language: String,
+}
+
+#[derive(Debug, Clone)]
 pub struct VideoContainerInfo {
     pub(crate) container: ContainerFormat,
     pub(crate) video_codec: VideoCodec,
     pub(crate) video_bitrate: u32,
-    pub(crate) audio_codec: AudioCodec,
-    pub(crate) audio_bitrate: u32,
+    pub(crate) audio_streams: Vec<AudioStreamInfo>,
 }
 
 impl Default for VideoContainerInfo {
@@ -19,13 +26,12 @@ impl Default for VideoContainerInfo {
             container: ContainerFormat::Unknown,
             video_codec: VideoCodec::Unknown,
             video_bitrate: 0,
-            audio_codec: AudioCodec::Unknown,
-            audio_bitrate: 0,
+            audio_streams: Vec::new(),
         }
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub struct VideoInfo {
     pub(crate) duration: ClockTime,
     pub(crate) framerate: gst::Fraction,
@@ -74,6 +80,18 @@ pub enum ContainerFormat {
     MKV,
     QUICKTIME,
     Unknown,
+}
+
+impl VideoContainerInfo {
+    pub fn audio_streams_string_list(&self) -> gtk::StringList {
+        let mut list = gtk::StringList::new(&[]);
+
+        for stream in self.audio_streams.iter() {
+            list.append(stream.language.as_str());
+        }
+
+        list
+    }
 }
 
 impl AudioCodec {

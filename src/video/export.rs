@@ -14,8 +14,7 @@ use gtk4::gdk;
 use relm4::ComponentSender;
 
 use crate::app::{App, AppMsg};
-use crate::ui::controls_sidebar::ControlsExportSettings;
-use crate::video::metadata::{AudioCodec, VideoContainerInfo};
+use crate::ui::controls_sidebar::{ControlsExportSettings, OutputContainerSettings};
 use crate::video::player::Player;
 use crate::video::thumbnail::Thumbnail;
 
@@ -70,7 +69,10 @@ impl Player {
         Thumbnail::save_sample_as_image(&sample, self.info.height, output);
     }
 
-    fn build_container_profile(container: VideoContainerInfo) -> EncodingContainerProfile {
+    fn build_container_profile(
+        &self,
+        container: OutputContainerSettings,
+    ) -> EncodingContainerProfile {
         // todo: pass in resolution/aspect ratio target + bitrate to keep file size in check
         let container_caps = container.container.caps_builder().build();
         let video_caps = container.video_codec.caps_builder().build();
@@ -82,16 +84,18 @@ impl Player {
             .name("Container")
             .add_profile(video_profile);
 
-        match container.audio_codec {
-            AudioCodec::NoAudio => profile_builder.build(),
-            _ => {
-                let audio_caps = container.audio_codec.caps_builder().build();
-                let audio_profile = gst_pbutils::EncodingAudioProfile::builder(&audio_caps)
-                    .name("audio_profile")
-                    .build();
+        if container.no_audio {
+            profile_builder.build()
+        } else {
+            let audio_stream =
+                &self.info.container_info.audio_streams[container.audio_stream_idx as usize];
 
-                profile_builder.add_profile(audio_profile).build()
-            }
+            let audio_caps = audio_stream.codec.caps_builder().build();
+            let audio_profile = gst_pbutils::EncodingAudioProfile::builder(&audio_caps)
+                .name("audio_profile")
+                .build();
+
+            profile_builder.add_profile(audio_profile).build()
         }
     }
 
@@ -109,6 +113,8 @@ impl Player {
         // todo: set bitrate to original video, to keep file size smaller at min
         self.playbin.set_state(State::Null).unwrap();
 
+        let container_profile = self.build_container_profile(controls_export_settings.container);
+
         thread::spawn(move || {
             let timeline = ges::Timeline::new_audio_video();
             let layer = timeline.append_layer();
@@ -116,11 +122,9 @@ impl Player {
             pipeline.set_timeline(&timeline).unwrap();
 
             // clip needs to be aquired in seperate thread from playbin
+            // todo: select audio stream (ges does not support selection)
             let clip = ges::UriClip::new(source_uri.as_str()).expect("Failed to create clip");
             layer.add_clip(&clip).unwrap();
-
-            let container_profile =
-                Self::build_container_profile(controls_export_settings.container);
 
             pipeline
                 .set_render_settings(&save_uri.as_str(), &container_profile)

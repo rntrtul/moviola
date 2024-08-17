@@ -556,8 +556,9 @@ impl Component for App {
                 widgets
                     .crop_box
                     .set_asepct_ratio(player.info().aspect_ratio);
-                self.controls_panel
-                    .emit(ControlsMsg::DefaultCodec(player.info.container_info));
+                self.controls_panel.emit(ControlsMsg::DefaultCodec(
+                    player.info.container_info.clone(),
+                ));
 
                 Self::update_label_timestamp(player.info.duration, &widgets.duration_label);
 

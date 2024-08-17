@@ -5,7 +5,8 @@ use gst::prelude::{ElementExt, ElementExtManual, ObjectExt, PadExt};
 use gst::{Bus, ClockTime, SeekFlags, State};
 
 use crate::video::metadata::{
-    AudioCodec, ContainerFormat, VideoCodec, VideoContainerInfo, VideoInfo,
+    AudioCodec, AudioStreamInfo, ContainerFormat, VideoCodec, VideoContainerInfo, VideoInfo,
+    AUDIO_BITRATE_DEFAULT, VIDEO_BITRATE_DEFAULT,
 };
 
 #[derive(Debug)]
@@ -139,55 +140,69 @@ impl Player {
         let framerate = cap_struct.get::<gst::Fraction>("framerate").unwrap();
         let aspect_ratio = width as f64 / height as f64;
 
-        let video_codec_tag = video_tags.get::<gst::tags::VideoCodec>().unwrap();
-        let video_bitrate_tag = video_tags.get::<gst::tags::Bitrate>().unwrap();
-
-        let video_codec = VideoCodec::from_description(video_codec_tag.get());
-        let video_bitrate = video_bitrate_tag.get();
-
-        let container_tag = video_tags.get::<gst::tags::ContainerFormat>().unwrap();
-        let container = ContainerFormat::from_description(container_tag.get());
-
-        let num_audio_streams = self.playbin.property::<i32>("n-audio");
-        let (audio_codec, audio_bitrate) = if num_audio_streams > 0 {
-            let audio_tags = self
-                .playbin
-                .emit_by_name::<Option<gst::TagList>>("get-audio-tags", &[&0])
-                .expect("un able to get first audio stream");
-
-            let audio_codec_tag = audio_tags
-                .get::<gst::tags::AudioCodec>()
-                .expect("no audio codec tag");
-
-            let audio_bitrate_tag = audio_tags
-                .get::<gst::tags::Bitrate>()
-                .expect("no audio bitrate tag");
-
-            (
-                AudioCodec::from_description(audio_codec_tag.get()),
-                audio_bitrate_tag.get(),
-            )
+        let video_codec = if let Some(tag) = video_tags.get::<gst::tags::VideoCodec>() {
+            VideoCodec::from_description(tag.get())
         } else {
-            (AudioCodec::NoAudio, 0)
+            VideoCodec::Unknown
         };
 
+        let video_bitrate = if let Some(tag) = video_tags.get::<gst::tags::Bitrate>() {
+            tag.get()
+        } else {
+            VIDEO_BITRATE_DEFAULT
+        };
+
+        let container = if let Some(tag) = video_tags.get::<gst::tags::ContainerFormat>() {
+            ContainerFormat::from_description(tag.get())
+        } else {
+            ContainerFormat::Unknown
+        };
+
+        let num_audio_streams = self.playbin.property::<i32>("n-audio");
+        let mut audio_streams_info: Vec<AudioStreamInfo> =
+            Vec::with_capacity(num_audio_streams as usize);
+
         for i in 0..num_audio_streams {
-            let tags = self
+            let audio_tags = self
                 .playbin
                 .emit_by_name::<Option<gst::TagList>>("get-audio-tags", &[&i])
-                .expect("un able to get first audio stream");
-            if let Some(language_tag) = tags.get::<gst::tags::LanguageCode>() {
-                println!("audio stream {i} has language: {}", language_tag.get());
-            }
+                .expect("unable to get first audio stream");
+
+            let audio_codec = if let Some(tag) = audio_tags.get::<gst::tags::AudioCodec>() {
+                AudioCodec::from_description(tag.get())
+            } else {
+                AudioCodec::Unknown
+            };
+
+            let audio_bitrate = if let Some(tag) = audio_tags.get::<gst::tags::Bitrate>() {
+                tag.get()
+            } else {
+                AUDIO_BITRATE_DEFAULT
+            };
+
+            let language = if let Some(tag) = audio_tags.get::<gst::tags::LanguageCode>() {
+                tag.get().to_string()
+            } else {
+                "Unknown".to_string()
+            };
+
+            let stream_info = AudioStreamInfo {
+                codec: audio_codec,
+                bitrate: audio_bitrate,
+                language,
+            };
+
+            audio_streams_info.push(stream_info);
         }
 
         let codec_info = VideoContainerInfo {
             container,
             video_codec,
-            audio_codec,
             video_bitrate,
-            audio_bitrate,
+            audio_streams: audio_streams_info,
         };
+
+        println!("codec info: {:?}", codec_info);
 
         let video_info = VideoInfo {
             duration,
@@ -197,7 +212,7 @@ impl Player {
             aspect_ratio,
             container_info: codec_info,
         };
-        self.info = video_info;
+        self.info = video_info.clone();
 
         video_info
     }
