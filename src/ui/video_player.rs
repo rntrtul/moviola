@@ -40,8 +40,8 @@ impl Component for VideoPlayerModel {
         #[name = "vid_container"]
         gtk::Box {
             set_orientation: gtk::Orientation::Vertical,
-            set_width_request: 640,
-            set_height_request: 360,
+            set_width_request: 426,
+            set_height_request: 240,
 
             add_controller = gtk::GestureClick {
                 connect_pressed[sender] => move |_,_,_,_| {

@@ -147,8 +147,8 @@ impl Component for App {
     type Init = u8;
     view! {
         main_window = adw::ApplicationWindow::new(&main_application()) {
-            set_default_width: 900,
-            set_default_height: 500,
+            set_default_width: 1160,
+            set_default_height: 600,
 
             connect_close_request[sender] => move |_| {
                 sender.input(AppMsg::Quit);
@@ -160,6 +160,7 @@ impl Component for App {
                 #[watch]
                 set_show_sidebar: model.video_selected,
                 set_sidebar_position: gtk::PackType::Start,
+                set_min_sidebar_width: 280.,
 
                 #[wrap(Some)]
                 set_sidebar = model.controls_panel.widget(),
