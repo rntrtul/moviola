@@ -41,7 +41,7 @@ impl Player {
             .unwrap();
 
         playbin.set_property("video-sink", &sink);
-        // fixme: for h265 can't handle P010_10LE.
+        // fixme: for h265 10bit (or higher) can't handle P010_10LE.
         playbin.set_property("video-filter", &crop);
 
         playbin.set_state(State::Ready).unwrap();

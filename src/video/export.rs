@@ -71,25 +71,24 @@ impl Player {
     }
 
     fn build_container_profile(container: VideoCodecInfo) -> EncodingContainerProfile {
-        // todo: pass in resolution/aspect ratio target
-        let container_caps = gst::Caps::builder(container.container.caps_name()).build();
-        let video_caps = gst::Caps::builder(container.video_codec.caps_name()).build();
+        // todo: pass in resolution/aspect ratio target + bitrate to keep file size in check
+        let container_caps = container.container.caps_builder().build();
+        let video_caps = container.video_codec.caps_builder().build();
 
-        let video_profile = gst_pbutils::EncodingVideoProfile::builder(&video_caps).build();
+        let video_profile = gst_pbutils::EncodingVideoProfile::builder(&video_caps)
+            .name("video_profile")
+            .build();
         let profile_builder = EncodingContainerProfile::builder(&container_caps)
             .name("Container")
             .add_profile(video_profile);
 
-        println!("video caps: {}", video_caps.to_string());
-        println!("container caps: {}", container_caps.to_string());
-
         match container.audio_codec {
             AudioCodec::NoAudio => profile_builder.build(),
             _ => {
-                let audio_caps = gst::Caps::builder(container.audio_codec.caps_name()).build();
-                let audio_profile = gst_pbutils::EncodingAudioProfile::builder(&audio_caps).build();
-
-                println!("audio caps: {}", audio_caps.to_string());
+                let audio_caps = container.audio_codec.caps_builder().build();
+                let audio_profile = gst_pbutils::EncodingAudioProfile::builder(&audio_caps)
+                    .name("audio_profile")
+                    .build();
 
                 profile_builder.add_profile(audio_profile).build()
             }
@@ -107,6 +106,7 @@ impl Player {
         let now = SystemTime::now();
         // todo: use toggle_play_pause for setting state to keep ui insync
         // todo: go back to original resolution.
+        // todo: set bitrate to original video, to keep file size smaller at min
         self.playbin.set_state(State::Null).unwrap();
 
         thread::spawn(move || {
@@ -122,7 +122,6 @@ impl Player {
             let container_profile =
                 Self::build_container_profile(controls_export_settings.container);
 
-            // fixme: some combos not working
             pipeline
                 .set_render_settings(&save_uri.as_str(), &container_profile)
                 .expect("unable to set render settings");

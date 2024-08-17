@@ -126,8 +126,6 @@ impl Component for OutputControlsModel {
                 widgets.video_row.set_selected(video_idx);
                 widgets.container_row.set_selected(container_idx);
 
-                println!("defaults: {:?}", defaults);
-
                 match defaults.audio_codec {
                     AudioCodec::NoAudio => {
                         widgets.audio_row.set_selectable(false);

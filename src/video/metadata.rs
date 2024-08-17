@@ -1,7 +1,9 @@
+use gst::caps::{Builder, NoFeature};
 use gst::ClockTime;
 use relm4::gtk;
 
 // todo: handle multiple audio streams
+// todo: include audio and video bitrate
 #[derive(Debug, Clone, Copy)]
 pub struct VideoCodecInfo {
     pub(crate) container: VideoContainer,
@@ -9,6 +11,7 @@ pub struct VideoCodecInfo {
     pub(crate) audio_codec: AudioCodec,
 }
 
+// todo: rename to ContainerInfo, container -> container-format
 impl Default for VideoCodecInfo {
     fn default() -> Self {
         Self {
@@ -55,7 +58,6 @@ pub enum AudioCodec {
 #[derive(Debug, Clone, Copy)]
 pub enum VideoCodec {
     AV1,
-    MPEG,
     VP8,
     VP9,
     X264,
@@ -68,7 +70,6 @@ pub enum VideoContainer {
     MP4,
     MKV,
     QUICKTIME,
-    WEBM,
     Unknown,
 }
 
@@ -83,13 +84,13 @@ impl AudioCodec {
         }
     }
 
-    pub fn caps_name(&self) -> &str {
+    pub fn caps_builder(&self) -> Builder<NoFeature> {
         match self {
-            AudioCodec::AAC => "audio/mpeg",
-            AudioCodec::OPUS => "audio/x-opus",
-            AudioCodec::RAW => "audio/x-raw",
-            AudioCodec::Unknown => "",
-            AudioCodec::NoAudio => "",
+            AudioCodec::AAC => gst::Caps::builder("audio/mpeg"),
+            AudioCodec::OPUS => gst::Caps::builder("audio/x-opus"),
+            AudioCodec::RAW => gst::Caps::builder("audio/x-raw"),
+            AudioCodec::Unknown => gst::Caps::builder(""),
+            AudioCodec::NoAudio => gst::Caps::builder(""),
         }
     }
 
@@ -134,7 +135,6 @@ impl VideoCodec {
     pub fn display(&self) -> &str {
         match self {
             VideoCodec::AV1 => "AV1",
-            VideoCodec::MPEG => "MPEG",
             VideoCodec::VP8 => "VP8",
             VideoCodec::VP9 => "VP9",
             VideoCodec::X264 => "H264",
@@ -143,22 +143,26 @@ impl VideoCodec {
         }
     }
 
-    pub fn caps_name(&self) -> &str {
+    pub fn caps_builder(&self) -> Builder<NoFeature> {
+        // todo: should this information be set on encoding profile or caps?
+        // x-av1 needs stream-format: obu-stream, alignment: tu
+        // x-265 needs stream-format: byte-stream, alignment: au, profile: alot of options (main or main 10)
+        // x-264 needs stream-format: avc/byte-stream, alignment: au, profile: alot of options (high?)
+        // x-vp9 needs profile 0
+        // x-vp8 needs profile 0
         match self {
-            VideoCodec::AV1 => "video/x-av1",
-            VideoCodec::MPEG => "video/mpeg",
-            VideoCodec::VP8 => "video/x-vp8",
-            VideoCodec::VP9 => "video/x-vp9",
-            VideoCodec::X264 => "video/x-h264",
-            VideoCodec::X265 => "video/x-h265",
-            VideoCodec::Unknown => "",
+            VideoCodec::AV1 => gst::Caps::builder("video/x-av1"),
+            VideoCodec::VP8 => gst::Caps::builder("video/x-vp8"),
+            VideoCodec::VP9 => gst::Caps::builder("video/x-vp9"),
+            VideoCodec::X264 => gst::Caps::builder("video/x-h264").field("profile", "high"),
+            VideoCodec::X265 => gst::Caps::builder("video/x-h265"),
+            VideoCodec::Unknown => gst::Caps::builder(""),
         }
     }
 
     pub fn string_list() -> gtk::StringList {
         gtk::StringList::new(&[
             VideoCodec::AV1.display(),
-            VideoCodec::MPEG.display(),
             VideoCodec::VP8.display(),
             VideoCodec::VP9.display(),
             VideoCodec::X264.display(),
@@ -169,11 +173,10 @@ impl VideoCodec {
     pub fn from_string_list_index(idx: u32) -> Self {
         match idx {
             0 => VideoCodec::AV1,
-            1 => VideoCodec::MPEG,
-            2 => VideoCodec::VP8,
-            3 => VideoCodec::VP9,
-            4 => VideoCodec::X264,
-            5 => VideoCodec::X265,
+            1 => VideoCodec::VP8,
+            2 => VideoCodec::VP9,
+            3 => VideoCodec::X264,
+            4 => VideoCodec::X265,
             _ => VideoCodec::Unknown,
         }
     }
@@ -181,11 +184,10 @@ impl VideoCodec {
     pub fn to_string_list_index(&self) -> u32 {
         match self {
             VideoCodec::AV1 => 0,
-            VideoCodec::MPEG => 1,
-            VideoCodec::VP8 => 2,
-            VideoCodec::VP9 => 3,
-            VideoCodec::X264 => 4,
-            VideoCodec::X265 => 5,
+            VideoCodec::VP8 => 1,
+            VideoCodec::VP9 => 2,
+            VideoCodec::X264 => 3,
+            VideoCodec::X265 => 4,
             VideoCodec::Unknown => 100,
         }
     }
@@ -193,7 +195,6 @@ impl VideoCodec {
     pub fn from_description(description: &str) -> Self {
         match description {
             desc if desc.contains("AV1") => VideoCodec::AV1,
-            desc if desc.contains("MPEG") => VideoCodec::MPEG,
             desc if desc.contains("VP8") => VideoCodec::VP8,
             desc if desc.contains("VP9") => VideoCodec::VP9,
             desc if desc.contains("H.264") => VideoCodec::X264,
@@ -209,28 +210,28 @@ impl VideoContainer {
             VideoContainer::MP4 => "MP4",
             VideoContainer::MKV => "MKV",
             VideoContainer::QUICKTIME => "Quicktime",
-            VideoContainer::WEBM => "WEBM",
             VideoContainer::Unknown => "Unknown",
         }
     }
 
+    // todo: use encoding profile file extension
     pub fn file_extension(&self) -> &str {
         match self {
             VideoContainer::MP4 => "mp4",
             VideoContainer::MKV => "mkv",
             VideoContainer::QUICKTIME => "mov",
-            VideoContainer::WEBM => "webm",
             VideoContainer::Unknown => "",
         }
     }
 
-    pub fn caps_name(&self) -> &str {
+    pub fn caps_builder(&self) -> Builder<NoFeature> {
         match self {
-            VideoContainer::MP4 => "video/mpeg",
-            VideoContainer::MKV => "video/x-matroska",
-            VideoContainer::QUICKTIME => "video/quicktime",
-            VideoContainer::WEBM => "video/x-webm",
-            VideoContainer::Unknown => "",
+            VideoContainer::MP4 => gst::Caps::builder("video/quicktime").field("variant", "iso"),
+            VideoContainer::MKV => gst::Caps::builder("video/x-matroska"),
+            VideoContainer::QUICKTIME => {
+                gst::Caps::builder("video/quicktime").field("variant", "apple")
+            }
+            VideoContainer::Unknown => gst::Caps::builder(""),
         }
     }
 
@@ -256,7 +257,6 @@ impl VideoContainer {
             VideoContainer::MP4 => 0,
             VideoContainer::MKV => 1,
             VideoContainer::QUICKTIME => 2,
-            VideoContainer::WEBM => 3,
             VideoContainer::Unknown => 100,
         }
     }
