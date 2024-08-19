@@ -162,6 +162,7 @@ impl Player {
             clip.set_duration(timeline_export_settings.duration);
             // todo: add crop + rotate effects now.
             // todo: should resolution be set in encoding profile or clip caps?
+            // fixme: squished video, use gesVideoUriSource properties (video-direction)
             let rotate = format!(
                 "autovideoflip video-direction={}",
                 sink_orientation_to_effect(orientation)

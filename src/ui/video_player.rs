@@ -63,7 +63,6 @@ impl Component for VideoPlayerModel {
             .unwrap();
 
         let paintable = gtk_sink.property::<gdk::Paintable>("paintable");
-        // todo: need gst-plugins-gtk4 13.0 to be able to use orientation property with paintable
         let picture = gtk::Picture::new();
 
         picture.set_paintable(Some(&paintable));

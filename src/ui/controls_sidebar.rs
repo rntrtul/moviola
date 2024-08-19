@@ -146,7 +146,6 @@ impl SimpleComponent for ControlsModel {
     fn update(&mut self, message: Self::Input, sender: ComponentSender<Self>) {
         match message {
             ControlsMsg::SetCropMode(mode) => {
-                // todo: show and hide crop mode when crop_page selected
                 sender.output(ControlsOutput::SetCropMode(mode)).unwrap();
                 sender.output(ControlsOutput::ShowCropBox).unwrap();
             }

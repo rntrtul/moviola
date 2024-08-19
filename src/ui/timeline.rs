@@ -50,11 +50,6 @@ impl Component for TimelineModel {
 
     view! {
         gtk::Overlay {
-            connect_get_child_position => move |_, _| {
-                // fixme: adjust handlebar position on resize of timeline
-                return None;
-            },
-
             #[wrap(Some)]
             set_child: timeline = &gtk::Box {
                 set_hexpand: true,

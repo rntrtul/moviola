@@ -275,7 +275,6 @@ impl Component for App {
 
                             gtk::Box{
                                 set_halign: gtk::Align::Center,
-                                // todo: sync labels with start and end handles
                                 #[name = "position_label"]
                                 gtk::Label {
                                     add_css_class: "monospace"
@@ -471,7 +470,6 @@ impl Component for App {
             }
             AppMsg::SetCropMode(mode) => {
                 widgets.crop_box.set_crop_mode(mode);
-                // fixme: crop box does not change aspect ratio until click.
                 widgets.crop_box.maintain_aspect_ratio();
                 widgets.crop_box.queue_draw();
             }
