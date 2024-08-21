@@ -29,10 +29,8 @@ impl Preview {
 
         paintable.connect_invalidate_contents(clone!(
             @strong self as preview =>
-            move |x| {
-                // preview.test();
+            move |_x| {
                 preview.queue_draw();
-                println!("contents: {}x{}", x.intrinsic_height(), x.intrinsic_width());
             }
         ));
 

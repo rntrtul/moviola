@@ -31,7 +31,17 @@ impl ObjectImpl for Preview {}
 
 impl WidgetImpl for Preview {
     fn snapshot(&self, snapshot: &gtk4::Snapshot) {
-        gdk::Paintable::snapshot(&*self.paintable.borrow(), snapshot, 200f64, 200f64);
+        //  rotate will rotate
+        //  zoom in and out with scale
+        //  to crop just zoom in on cropped area and don't show other area
+        //          add mask or set overflow to none?
+        snapshot.save();
+        // snapshot.rotate(5f32);
+        // snapshot.scale(2f32, 2f32);
+        snapshot.translate(&graphene::Point::new(100f32, 100f32));
+
+        gdk::Paintable::snapshot(&*self.paintable.borrow(), snapshot, 640f64, 360f64);
+        snapshot.restore();
     }
 }
 
