@@ -5,7 +5,7 @@ use relm4::{adw, gtk, ComponentParts, ComponentSender, SimpleComponent};
 
 use crate::ui::crop_box::CropMode;
 
-pub struct CropControlsModel {
+pub struct CropPageModel {
     crop_mode: CropMode,
     orientation: Orientation,
     rotation_angle: i32,
@@ -14,7 +14,7 @@ pub struct CropControlsModel {
 }
 
 #[derive(Debug)]
-pub enum CropControlsMsg {
+pub enum CropPageMsg {
     SetCropMode(CropMode),
     RotateRight90,
     FlipHorizontally,
@@ -22,15 +22,15 @@ pub enum CropControlsMsg {
 }
 
 #[derive(Debug)]
-pub enum CropControlsOutput {
+pub enum CropPageOutput {
     OrientVideo(Orientation),
     SetCropMode(CropMode),
 }
 
 #[relm4::component(pub)]
-impl SimpleComponent for CropControlsModel {
-    type Input = CropControlsMsg;
-    type Output = CropControlsOutput;
+impl SimpleComponent for CropPageModel {
+    type Input = CropPageMsg;
+    type Output = CropPageOutput;
     view! {
         adw::PreferencesPage {
             set_hexpand: true,
@@ -41,12 +41,12 @@ impl SimpleComponent for CropControlsModel {
 
                     add_row= &adw::SwitchRow{
                         set_title: "Vertical Flip",
-                        connect_active_notify => CropControlsMsg::FlipVertically,
+                        connect_active_notify => CropPageMsg::FlipVertically,
                     },
 
                     add_row= &adw::SwitchRow{
                         set_title: "Horizontal Flip",
-                        connect_active_notify => CropControlsMsg::FlipHorizontally,
+                        connect_active_notify => CropPageMsg::FlipHorizontally,
                     }
                 },
 
@@ -70,7 +70,7 @@ impl SimpleComponent for CropControlsModel {
                             8 => CropMode::_3To2,
                             _ => panic!("Unknown crop mode selected")
                         };
-                        sender.input(CropControlsMsg::SetCropMode(mode));
+                        sender.input(CropPageMsg::SetCropMode(mode));
                     }
                 },
             },
@@ -85,7 +85,7 @@ impl SimpleComponent for CropControlsModel {
         sender: ComponentSender<Self>,
     ) -> ComponentParts<Self> {
         let widgets = view_output!();
-        let model = CropControlsModel {
+        let model = CropPageModel {
             crop_mode: CropMode::Free,
             orientation: Orientation::Rotate0,
             rotation_angle: 0,
@@ -98,41 +98,39 @@ impl SimpleComponent for CropControlsModel {
 
     fn update(&mut self, message: Self::Input, sender: ComponentSender<Self>) {
         match message {
-            CropControlsMsg::SetCropMode(mode) => {
+            CropPageMsg::SetCropMode(mode) => {
                 self.crop_mode = mode;
                 self.show_crop_box = true;
-                sender
-                    .output(CropControlsOutput::SetCropMode(mode))
-                    .unwrap();
+                sender.output(CropPageOutput::SetCropMode(mode)).unwrap();
             }
-            CropControlsMsg::RotateRight90 => {
+            CropPageMsg::RotateRight90 => {
                 self.rotation_angle = (self.rotation_angle + 90) % 360;
                 self.update_video_orientation();
                 sender
-                    .output(CropControlsOutput::OrientVideo(self.orientation))
+                    .output(CropPageOutput::OrientVideo(self.orientation))
                     .unwrap()
             }
-            CropControlsMsg::FlipHorizontally => {
+            CropPageMsg::FlipHorizontally => {
                 self.is_flip = !self.is_flip;
                 self.update_video_orientation();
                 sender
-                    .output(CropControlsOutput::OrientVideo(self.orientation))
+                    .output(CropPageOutput::OrientVideo(self.orientation))
                     .unwrap()
             }
-            CropControlsMsg::FlipVertically => {
+            CropPageMsg::FlipVertically => {
                 self.rotation_angle = (self.rotation_angle + 180) % 360;
                 self.is_flip = !self.is_flip;
 
                 self.update_video_orientation();
                 sender
-                    .output(CropControlsOutput::OrientVideo(self.orientation))
+                    .output(CropPageOutput::OrientVideo(self.orientation))
                     .unwrap()
             }
         }
     }
 }
 
-impl CropControlsModel {
+impl CropPageModel {
     fn update_video_orientation(&mut self) {
         self.orientation = if self.is_flip {
             match self.rotation_angle {

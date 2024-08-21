@@ -3,14 +3,14 @@ use relm4::adw::prelude::{ActionRowExt, ComboRowExt, PreferencesGroupExt, Prefer
 use relm4::{adw, gtk, Component, ComponentParts, ComponentSender};
 
 use crate::ui::controls_sidebar::OutputContainerSettings;
-use crate::ui::output_controls::OutputControlsMsg::{
+use crate::ui::output_page::OutputPageMsg::{
     AudioCodecChange, AudioStreamChange, ContainerChange, CustomEncoding, VideoCodecChange,
 };
 use crate::video::metadata::{
     AudioCodec, ContainerFormat, VideoCodec, VideoContainerInfo, AUDIO_BITRATE_DEFAULT,
 };
 
-pub struct OutputControlsModel {
+pub struct OutputPageModel {
     video_info: VideoContainerInfo,
     export_settings: OutputContainerSettings,
     selected_audio_stream_idx: u32,
@@ -18,7 +18,7 @@ pub struct OutputControlsModel {
 }
 
 #[derive(Debug)]
-pub enum OutputControlsMsg {
+pub enum OutputPageMsg {
     VideoInfo(VideoContainerInfo),
     CustomEncoding(bool),
     VideoCodecChange(VideoCodec),
@@ -28,14 +28,14 @@ pub enum OutputControlsMsg {
 }
 
 #[derive(Debug)]
-pub enum OutputControlsOutput {
+pub enum OutputPageOutput {
     ExportFrame,
 }
 
 #[relm4::component(pub)]
-impl Component for OutputControlsModel {
-    type Input = OutputControlsMsg;
-    type Output = OutputControlsOutput;
+impl Component for OutputPageModel {
+    type Input = OutputPageMsg;
+    type Output = OutputPageOutput;
     type CommandOutput = ();
     type Init = ();
 
@@ -115,7 +115,7 @@ impl Component for OutputControlsModel {
                  gtk::Button {
                     set_label: "Export Frame",
                     connect_clicked[sender] => move |_| {
-                        sender.output(OutputControlsOutput::ExportFrame).unwrap()
+                        sender.output(OutputPageOutput::ExportFrame).unwrap()
                     },
                 },
             },
@@ -137,7 +137,7 @@ impl Component for OutputControlsModel {
             container: ContainerFormat::Unknown,
         };
 
-        let model = OutputControlsModel {
+        let model = OutputPageModel {
             video_info: VideoContainerInfo::default(),
             export_settings: settings,
             custom_encoding: false,
@@ -157,7 +157,7 @@ impl Component for OutputControlsModel {
         _root: &Self::Root,
     ) {
         match message {
-            OutputControlsMsg::VideoInfo(video_info) => {
+            OutputPageMsg::VideoInfo(video_info) => {
                 self.video_info = video_info.clone();
                 self.export_settings = self.export_settings_from_video_info();
 
@@ -211,7 +211,7 @@ impl Component for OutputControlsModel {
     }
 }
 
-impl OutputControlsModel {
+impl OutputPageModel {
     fn export_settings_from_video_info(&self) -> OutputContainerSettings {
         OutputContainerSettings {
             no_audio: false,

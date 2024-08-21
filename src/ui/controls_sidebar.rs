@@ -6,8 +6,8 @@ use relm4::{
 };
 
 use crate::ui::crop_box::CropMode;
-use crate::ui::crop_controls::{CropControlsModel, CropControlsMsg, CropControlsOutput};
-use crate::ui::output_controls::{OutputControlsModel, OutputControlsMsg, OutputControlsOutput};
+use crate::ui::crop_page::{CropPageModel, CropPageMsg, CropPageOutput};
+use crate::ui::output_page::{OutputPageModel, OutputPageMsg, OutputPageOutput};
 use crate::video::metadata::{AudioCodec, ContainerFormat, VideoCodec, VideoContainerInfo};
 
 // fixme: too similar to videoContainerInfo
@@ -28,8 +28,8 @@ pub struct ControlsExportSettings {
 }
 
 pub struct ControlsModel {
-    crop_page: Controller<CropControlsModel>,
-    output_page: Controller<OutputControlsModel>,
+    crop_page: Controller<CropPageModel>,
+    output_page: Controller<OutputPageModel>,
 }
 
 #[derive(Debug)]
@@ -100,19 +100,20 @@ impl SimpleComponent for ControlsModel {
         root: Self::Root,
         sender: ComponentSender<Self>,
     ) -> ComponentParts<Self> {
-        let crop_page: Controller<CropControlsModel> = CropControlsModel::builder()
-            .launch(())
-            .forward(sender.input_sender(), |msg| match msg {
-                CropControlsOutput::SetCropMode(mode) => ControlsMsg::SetCropMode(mode),
-                CropControlsOutput::OrientVideo(orientation) => ControlsMsg::Orient(orientation),
-            });
+        let crop_page: Controller<CropPageModel> =
+            CropPageModel::builder()
+                .launch(())
+                .forward(sender.input_sender(), |msg| match msg {
+                    CropPageOutput::SetCropMode(mode) => ControlsMsg::SetCropMode(mode),
+                    CropPageOutput::OrientVideo(orientation) => ControlsMsg::Orient(orientation),
+                });
 
-        let output_page = OutputControlsModel::builder().launch(()).forward(
-            sender.input_sender(),
-            |msg| match msg {
-                OutputControlsOutput::ExportFrame => ControlsMsg::ExportFrame,
-            },
-        );
+        let output_page =
+            OutputPageModel::builder()
+                .launch(())
+                .forward(sender.input_sender(), |msg| match msg {
+                    OutputPageOutput::ExportFrame => ControlsMsg::ExportFrame,
+                });
 
         let model = ControlsModel {
             crop_page,
@@ -153,10 +154,9 @@ impl SimpleComponent for ControlsModel {
                 .output(ControlsOutput::OrientVideo(orientation))
                 .unwrap(),
             ControlsMsg::ExportFrame => sender.output(ControlsOutput::ExportFrame).unwrap(),
-            ControlsMsg::Rotate => self.crop_page.emit(CropControlsMsg::RotateRight90),
+            ControlsMsg::Rotate => self.crop_page.emit(CropPageMsg::RotateRight90),
             ControlsMsg::DefaultCodec(defaults) => {
-                self.output_page
-                    .emit(OutputControlsMsg::VideoInfo(defaults));
+                self.output_page.emit(OutputPageMsg::VideoInfo(defaults));
             }
         }
     }
