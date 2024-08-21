@@ -4,7 +4,7 @@ use gtk4::gdk::Paintable;
 use gtk4::prelude::{PaintableExt, SnapshotExt, WidgetExt};
 use gtk4::subclass::prelude::ObjectSubclassExt;
 use gtk4::subclass::widget::WidgetImpl;
-use gtk4::{gdk, Orientation};
+use gtk4::{gdk, graphene, Orientation};
 use std::cell::RefCell;
 
 static DEFAULT_WIDTH: f64 = 640f64;
@@ -62,8 +62,6 @@ impl WidgetImpl for Preview {
         let widget_aspect_ratio = widget_width / widget_height;
 
         let video_aspect_ratio = paintable.intrinsic_aspect_ratio();
-        let video_width = paintable.intrinsic_width() as f64;
-        let video_height = paintable.intrinsic_height() as f64;
 
         let (preview_width, preview_height) = if widget_aspect_ratio > video_aspect_ratio {
             // more width available then height, so change width to fit aspect ratio
@@ -72,13 +70,14 @@ impl WidgetImpl for Preview {
             (widget_width, widget_width / video_aspect_ratio)
         };
 
+        let x_instep = (widget_width - preview_width) / 2.;
+        let y_instep = (widget_height - preview_height).floor() / 2.;
+
         //  rotate will rotate
         //  zoom in and out with scale
         //  to crop just zoom in on cropped area and don't show other area add mask or set overflow to none?
         snapshot.save();
-        // snapshot.rotate(5f32);
-        // snapshot.scale(2f32, 2f32);
-        // snapshot.translate(&graphene::Point::new(100f32, 100f32));
+        snapshot.translate(&graphene::Point::new(x_instep as f32, y_instep as f32));
         gdk::Paintable::snapshot(&*paintable, snapshot, preview_width, preview_height);
         snapshot.restore();
     }
