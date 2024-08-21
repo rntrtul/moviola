@@ -1,11 +1,10 @@
-use std::cell::{Cell, RefCell};
+use std::cell::{RefCell};
 use gst::glib;
 use gst::subclass::prelude::{ObjectImpl, ObjectSubclass};
-use gtk4::{gdk, graphene, gsk};
-use gtk4::gdk::{Paintable, Snapshot};
+use gtk4::{gdk, graphene};
+use gtk4::gdk::{Paintable};
 use gtk4::prelude::{PaintableExt, SnapshotExt};
 use gtk4::subclass::widget::WidgetImpl;
-use relm4::adw::subclass::prelude::PaintableImpl;
 
 
 pub struct Preview {

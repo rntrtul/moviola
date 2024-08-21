@@ -6,7 +6,6 @@ use gtk::prelude::{
 use gtk::{glib};
 use gst::prelude::*;
 use relm4::adw::gdk;
-use relm4::adw::gdk::pango::ffi::pango_read_line;
 use crate::preview::Preview;
 
 pub(super) struct App {}
