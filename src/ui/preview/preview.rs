@@ -55,8 +55,23 @@ impl WidgetImpl for Preview {
     }
 
     fn snapshot(&self, snapshot: &gtk4::Snapshot) {
-        let width = self.obj().width();
-        let height = self.obj().height();
+        let paintable = self.paintable.borrow();
+
+        let widget_width = self.obj().width() as f64;
+        let widget_height = self.obj().height() as f64;
+        let widget_aspect_ratio = widget_width / widget_height;
+
+        let video_aspect_ratio = paintable.intrinsic_aspect_ratio();
+        let video_width = paintable.intrinsic_width() as f64;
+        let video_height = paintable.intrinsic_height() as f64;
+
+        let (preview_width, preview_height) = if widget_aspect_ratio > video_aspect_ratio {
+            // more width available then height, so change width to fit aspect ratio
+            (widget_height * video_aspect_ratio, widget_height)
+        } else {
+            (widget_width, widget_width / video_aspect_ratio)
+        };
+
         //  rotate will rotate
         //  zoom in and out with scale
         //  to crop just zoom in on cropped area and don't show other area add mask or set overflow to none?
@@ -64,12 +79,7 @@ impl WidgetImpl for Preview {
         // snapshot.rotate(5f32);
         // snapshot.scale(2f32, 2f32);
         // snapshot.translate(&graphene::Point::new(100f32, 100f32));
-        gdk::Paintable::snapshot(
-            &*self.paintable.borrow(),
-            snapshot,
-            width as f64,
-            height as f64,
-        );
+        gdk::Paintable::snapshot(&*paintable, snapshot, preview_width, preview_height);
         snapshot.restore();
     }
 }
