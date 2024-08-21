@@ -82,7 +82,6 @@ impl Component for VideoPlayerModel {
         let widgets = view_output!();
 
         widgets.vid_container.append(&offload);
-        // widgets.vid_container.append(&preview);
 
         ComponentParts { model, widgets }
     }

@@ -4,7 +4,7 @@ use gtk4::gdk::Paintable;
 use gtk4::prelude::{PaintableExt, SnapshotExt, WidgetExt};
 use gtk4::subclass::prelude::ObjectSubclassExt;
 use gtk4::subclass::widget::WidgetImpl;
-use gtk4::{gdk, graphene, Orientation};
+use gtk4::{graphene, Orientation};
 use std::cell::RefCell;
 
 static DEFAULT_WIDTH: f64 = 640f64;
@@ -77,8 +77,16 @@ impl WidgetImpl for Preview {
         //  zoom in and out with scale
         //  to crop just zoom in on cropped area and don't show other area add mask or set overflow to none?
         snapshot.save();
+
+        // todo: need to make it smaller around video and remove black blending
+        snapshot.push_opacity(0.4);
+        snapshot.push_blur(100.);
+        paintable.snapshot(snapshot, widget_width, widget_height);
+        snapshot.pop();
+        snapshot.pop();
+
         snapshot.translate(&graphene::Point::new(x_instep as f32, y_instep as f32));
-        gdk::Paintable::snapshot(&*paintable, snapshot, preview_width, preview_height);
+        paintable.snapshot(snapshot, preview_width, preview_height);
         snapshot.restore();
     }
 }
