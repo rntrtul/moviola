@@ -1,5 +1,5 @@
 [package]
-name = "vidEditor"
+name = "moviola"
 version = "0.1.0"
 authors = ["Fareed Hussain <fareedsharhussain@gmail.com>"]
 edition = "2021"

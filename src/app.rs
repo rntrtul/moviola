@@ -6,6 +6,8 @@ use gtk::prelude::{
 use gtk::{glib};
 use gst::prelude::*;
 use relm4::adw::gdk;
+use relm4::adw::gdk::pango::ffi::pango_read_line;
+use crate::preview::Preview;
 
 pub(super) struct App {}
 
@@ -74,12 +76,15 @@ impl SimpleComponent for App {
 
         let paintable = gtk_sink.property::<gdk::Paintable>("paintable");
         let picture = gtk::Picture::new();
-        
-        picture.set_paintable(Some(&paintable));
+
+        let preview = Preview::new();
+        preview.set_paintable(paintable);
+        // picture.set_paintable(Some(&paintable));
 
         let offload = gtk4::GraphicsOffload::new(Some(&picture));
         offload.set_enabled(gtk::GraphicsOffloadEnabled::Enabled);
-        widgets.pic_frame.append(&offload);
+        // widgets.pic_frame.append(&offload);
+        widgets.pic_frame.append(&preview);
 
         playbin.set_state(gst::State::Playing).unwrap();
 
