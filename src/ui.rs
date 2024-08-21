@@ -6,6 +6,7 @@ pub mod crop_box;
 pub mod crop_controls;
 mod handle;
 mod output_controls;
+mod preview;
 pub mod timeline;
 pub mod video_player;
 

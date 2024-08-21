@@ -7,6 +7,7 @@ use relm4::adw::gdk;
 use relm4::*;
 
 use crate::ui::crop_box::MARGIN;
+use crate::ui::preview::Preview;
 
 pub struct VideoPlayerModel {
     video_is_loaded: bool,
@@ -63,12 +64,12 @@ impl Component for VideoPlayerModel {
             .unwrap();
 
         let paintable = gtk_sink.property::<gdk::Paintable>("paintable");
-        let picture = gtk::Picture::new();
 
-        picture.set_paintable(Some(&paintable));
-        picture.set_margin_all(MARGIN as i32);
+        let preview = Preview::new();
+        preview.set_paintable(paintable);
+        preview.set_margin_all(MARGIN as i32);
 
-        let offload = gtk4::GraphicsOffload::new(Some(&picture));
+        let offload = gtk4::GraphicsOffload::new(Some(&preview));
         offload.set_enabled(gtk::GraphicsOffloadEnabled::Enabled);
         offload.set_visible(false);
 
@@ -81,6 +82,7 @@ impl Component for VideoPlayerModel {
         let widgets = view_output!();
 
         widgets.vid_container.append(&offload);
+        // widgets.vid_container.append(&preview);
 
         ComponentParts { model, widgets }
     }
