@@ -1,22 +1,27 @@
 # Moviola
 
-A simple video editor for daily needs
 ![image showing video editor ui](data/screenshots/basic_ui.png)
 
-## Basic Features for 1.0
+Moviola aims to be a surprisingly capable video editor with a pleasing and simple-to-use interface.
+
+It is not a timeline based editor, and they are currently no plans for features that will require timing.
+
+## Supported Features
 
 - Crop Videos
-- Trim Video start and end
-- Export Current Frame
+- Trim video start and end
+- Export current frame
 - Rotate
 - Flip video
-- Remove Audio
+- Remove audio
 
-## Features to add later
+## Planned New Features
 
-- basic color balance (brightness, contrast, hue, saturation)
-- playback speed
-- normalized audio
-- loseless if only trimming length
-- convert to gif
-- markup (text and pen)
+- Basic colour balance (brightness, contrast, hue, saturation)
+- Straigten and Skew
+- Loseless encoding when applicable
+- Convert to gif
+- Text overlay
+- Pen markup
+- Keyboard shortcuts
+- Zoom on preview
