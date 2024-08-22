@@ -85,7 +85,6 @@ impl Preview {
                 let y = start_y + y_offset;
                 obj.imp().update_drag_pos((x, y));
                 obj.queue_draw();
-                // println!("DRAGGING");
             }
         ));
 
@@ -93,6 +92,8 @@ impl Preview {
             #[weak]
             obj,
             move |_, _, _| {
+                obj.imp().prev_drag_x.set(0.);
+                obj.imp().prev_drag_y.set(0.);
                 obj.imp().drag_active.set(false);
                 obj.queue_draw();
             }
