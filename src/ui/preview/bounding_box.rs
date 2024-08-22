@@ -47,7 +47,7 @@ impl Preview {
 
                 let handle_centers = obj.imp().handle_centers(&box_rect);
 
-                let mut point_in_circle = false;
+                let mut point_on_handle = false;
 
                 for (idx, point) in handle_centers.iter().enumerate() {
                     let path_builder = gsk::PathBuilder::new();
@@ -63,13 +63,13 @@ impl Preview {
                             _ => panic!("too many handle indicies"),
                         };
                         obj.imp().active_handle.set(handle);
-                        point_in_circle = true;
+                        point_on_handle = true;
                         break;
                     }
                 }
 
-                obj.imp().drag_active.set(point_in_circle);
-                if !obj.imp().drag_active.get() {
+                obj.imp().handle_drag_active.set(point_on_handle);
+                if !obj.imp().handle_drag_active.get() {
                     obj.imp().active_handle.set(HandleType::None);
                 }
             }
@@ -94,7 +94,7 @@ impl Preview {
             move |_, _, _| {
                 obj.imp().prev_drag_x.set(0.);
                 obj.imp().prev_drag_y.set(0.);
-                obj.imp().drag_active.set(false);
+                obj.imp().handle_drag_active.set(false);
                 obj.queue_draw();
             }
         ));
@@ -112,8 +112,6 @@ impl Preview {
 
         let right_x = ((preview.width()) * self.right_x.get()) + preview.x();
         let bottom_y = ((preview.height()) * self.bottom_y.get()) + preview.y();
-
-        // println!("bounding box is: {left_x},{top_y} to {right_x},{bottom_y}");
 
         Rect::new(left_x, top_y, right_x - left_x, bottom_y - top_y)
     }
@@ -180,7 +178,7 @@ impl Preview {
             self.crop_mode.get().value()
         };
 
-        let crop_rect = if self.drag_active.get() {
+        let crop_rect = if self.handle_drag_active.get() {
             self.bounding_box_rect()
         } else {
             self.preview_rect()

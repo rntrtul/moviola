@@ -21,7 +21,7 @@ pub struct Preview {
     pub(crate) prev_drag_x: Cell<f32>,
     pub(crate) prev_drag_y: Cell<f32>,
     pub(crate) active_handle: Cell<HandleType>,
-    pub(crate) drag_active: Cell<bool>,
+    pub(crate) handle_drag_active: Cell<bool>,
     pub(crate) crop_mode: Cell<CropMode>,
     pub(crate) show_crop_box: Cell<bool>,
 }
@@ -37,7 +37,7 @@ impl Default for Preview {
             prev_drag_x: Cell::new(0f32),
             prev_drag_y: Cell::new(0f32),
             active_handle: Cell::new(HandleType::None),
-            drag_active: Cell::new(false),
+            handle_drag_active: Cell::new(false),
             crop_mode: Cell::new(CropMode::Free),
             show_crop_box: Cell::new(false),
         }
@@ -53,7 +53,6 @@ impl ObjectSubclass for Preview {
 
 impl ObjectImpl for Preview {
     fn constructed(&self) {
-        // todo: setup drag stuff bounding box
         self.box_connect_gestures();
     }
 }
@@ -94,6 +93,7 @@ impl WidgetImpl for Preview {
 
         //  rotate will rotate
         //  zoom in and out with scale
+        //  flip with scale (set to -1 for flip direction)
         //  to crop just zoom in on cropped area and don't show other area add mask or set overflow to none?
         snapshot.save();
 
@@ -105,6 +105,7 @@ impl WidgetImpl for Preview {
 
         snapshot.translate(&graphene::Point::new(preview.x(), preview.y()));
         paintable.snapshot(snapshot, preview.width() as f64, preview.height() as f64);
+
         snapshot.restore();
 
         if self.show_crop_box.get() {
