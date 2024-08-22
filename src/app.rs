@@ -156,7 +156,7 @@ impl Component for App {
                 set_pin_sidebar: true,
                 #[watch]
                 set_show_sidebar: model.video_selected,
-                set_sidebar_position: gtk::PackType::Start,
+                set_sidebar_position: gtk::PackType::End,
                 set_min_sidebar_width: 280.,
 
                 #[wrap(Some)]
@@ -165,7 +165,15 @@ impl Component for App {
                 #[wrap(Some)]
                 set_content = &adw::ToolbarView{
                     add_top_bar = &adw::HeaderBar {
-                      pack_end = &gtk::Button {
+                        pack_start = &gtk::Button {
+                            set_label: "Save",
+                            #[watch]
+                            set_visible: model.video_selected && !model.video_is_exporting,
+                            add_css_class: "suggested-action",
+                            connect_clicked => AppMsg::SaveFile,
+                        },
+
+                        pack_end = &gtk::Button {
                             set_icon_name: "document-open-symbolic",
                             #[watch]
                             set_visible: model.video_selected && !model.video_is_exporting,
@@ -292,7 +300,6 @@ impl Component for App {
                 ControlsOutput::ExportFrame => AppMsg::ExportFrame,
                 ControlsOutput::ShowCropBox => AppMsg::ShowCropBox,
                 ControlsOutput::HideCropBox => AppMsg::HideCropBox,
-                ControlsOutput::SaveFile => AppMsg::SaveFile,
             });
 
         let timeline: Controller<TimelineModel> =
