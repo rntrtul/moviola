@@ -30,6 +30,7 @@ pub struct ControlsExportSettings {
 pub struct ControlsModel {
     crop_page: Controller<CropPageModel>,
     output_page: Controller<OutputPageModel>,
+    stack: adw::ViewStack,
 }
 
 #[derive(Debug)]
@@ -76,17 +77,11 @@ impl SimpleComponent for ControlsModel {
                     }
                 },
             },
-
-            // todo: put in header bar instead of video title
-            #[name="switch_bar"]
-            add_bottom_bar = &adw::ViewSwitcherBar{
-                set_reveal: true,
-            },
         },
     }
 
     fn init(
-        _init: Self::Init,
+        _: Self::Init,
         root: Self::Root,
         sender: ComponentSender<Self>,
     ) -> ComponentParts<Self> {
@@ -105,31 +100,29 @@ impl SimpleComponent for ControlsModel {
                     OutputPageOutput::ExportFrame => ControlsMsg::ExportFrame,
                 });
 
+        let widgets = view_output!();
+
         let model = ControlsModel {
             crop_page,
             output_page,
+            stack: widgets.stack.clone(),
         };
-
-        let widgets = view_output!();
 
         // todo: figure out way to select none?
         // order matters
-        widgets.stack.add_titled_with_icon(
+        model.stack.add_titled_with_icon(
             model.output_page.widget(),
             Some("output_page"),
             "Output",
             "video-encoder-symbolic",
         );
 
-        widgets.stack.add_titled_with_icon(
+        model.stack.add_titled_with_icon(
             model.crop_page.widget(),
             Some("crop_page"),
             "Crop",
             "crop-symbolic",
         );
-
-        widgets.switch_bar.set_reveal(true);
-        widgets.switch_bar.set_stack(Some(&widgets.stack));
 
         ComponentParts { model, widgets }
     }
@@ -161,5 +154,9 @@ impl ControlsModel {
             container: export_container,
             container_is_default: true,
         }
+    }
+
+    pub fn connect_switcher_to_stack(&self, switcher: &adw::ViewSwitcherBar) {
+        switcher.set_stack(Some(&self.stack))
     }
 }

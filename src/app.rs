@@ -164,7 +164,7 @@ impl Component for App {
 
                 #[wrap(Some)]
                 set_content = &adw::ToolbarView{
-                    add_top_bar = &adw::HeaderBar {
+                    add_top_bar: header_bar = &adw::HeaderBar {
                         pack_start = &gtk::Button {
                             set_label: "Save",
                             #[watch]
@@ -173,12 +173,25 @@ impl Component for App {
                             connect_clicked => AppMsg::SaveFile,
                         },
 
+                        pack_start = &gtk::Scale::with_range(gtk::Orientation::Horizontal, 1f64, 4f64, 0.1f64){
+                            #[watch]
+                            set_visible: model.video_selected && !model.video_is_exporting,
+                            set_width_request: 120,
+                        },
+
                         pack_end = &gtk::Button {
                             set_icon_name: "document-open-symbolic",
                             #[watch]
                             set_visible: model.video_selected && !model.video_is_exporting,
                             connect_clicked => AppMsg::OpenFile,
-                        }
+                        },
+
+                        #[wrap(Some)]
+                        set_title_widget: page_switcher = &adw::ViewSwitcherBar{
+                            #[watch]
+                            set_visible: model.video_selected && !model.video_is_exporting,
+                            set_reveal: true,
+                        },
                     },
 
                     #[wrap(Some)]
@@ -198,6 +211,7 @@ impl Component for App {
                                 set_hexpand: false,
                                 add_css_class: "suggested-action",
                                 add_css_class: "pill",
+                                connect_clicked => AppMsg::OpenFile,
                             },
                         },
 
@@ -329,9 +343,10 @@ impl Component for App {
 
         let widgets = view_output!();
 
-        widgets.open_file_btn.connect_clicked(move |_| {
-            sender.input(AppMsg::OpenFile);
-        });
+        model
+            .controls_panel
+            .model()
+            .connect_switcher_to_stack(&widgets.page_switcher);
 
         ComponentParts { model, widgets }
     }
