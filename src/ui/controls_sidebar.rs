@@ -5,9 +5,9 @@ use relm4::{
     SimpleComponent,
 };
 
-use crate::ui::crop_box::CropMode;
 use crate::ui::crop_page::{CropPageModel, CropPageMsg, CropPageOutput};
 use crate::ui::output_page::{OutputPageModel, OutputPageMsg, OutputPageOutput};
+use crate::ui::preview::CropMode;
 use crate::video::metadata::{AudioCodec, ContainerFormat, VideoCodec, VideoContainerInfo};
 
 // fixme: too similar to videoContainerInfo

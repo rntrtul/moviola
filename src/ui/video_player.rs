@@ -6,8 +6,7 @@ use gtk4::prelude::{BoxExt, OrientableExt, WidgetExt};
 use relm4::adw::gdk;
 use relm4::*;
 
-use crate::ui::crop_box::MARGIN;
-use crate::ui::preview::Preview;
+use crate::ui::preview::{Preview, MARGIN};
 
 pub struct VideoPlayerModel {
     video_is_loaded: bool,
@@ -37,27 +36,21 @@ impl Component for VideoPlayerModel {
     type CommandOutput = ();
     type Input = VideoPlayerMsg;
     type Output = VideoPlayerOutput;
+    type Init = Preview;
+
     view! {
         #[name = "vid_container"]
         gtk::Box {
             set_orientation: gtk::Orientation::Vertical,
             set_width_request: 426,
             set_height_request: 240,
-
-            add_controller = gtk::GestureClick {
-                connect_pressed[sender] => move |_,_,_,_| {
-                    sender.input(VideoPlayerMsg::TogglePlayPause)
-                }
-            },
         }
     }
 
-    type Init = ();
-
     fn init(
-        _: Self::Init,
+        preview: Self::Init,
         root: Self::Root,
-        sender: ComponentSender<Self>,
+        _sender: ComponentSender<Self>,
     ) -> ComponentParts<Self> {
         let gtk_sink = gst::ElementFactory::make("gtk4paintablesink")
             .build()
@@ -65,8 +58,8 @@ impl Component for VideoPlayerModel {
 
         let paintable = gtk_sink.property::<gdk::Paintable>("paintable");
 
-        let preview = Preview::new();
         preview.set_paintable(paintable);
+        // todo: maybe add margin in construction of other obj or
         preview.set_margin_all(MARGIN as i32);
 
         let offload = gtk4::GraphicsOffload::new(Some(&preview));

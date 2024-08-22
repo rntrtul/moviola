@@ -3,7 +3,7 @@ use gtk4::prelude::WidgetExt;
 use relm4::adw::prelude::{ComboRowExt, ExpanderRowExt, PreferencesRowExt};
 use relm4::{adw, gtk, ComponentParts, ComponentSender, SimpleComponent};
 
-use crate::ui::crop_box::CropMode;
+use crate::ui::preview::CropMode;
 
 pub struct CropPageModel {
     crop_mode: CropMode,

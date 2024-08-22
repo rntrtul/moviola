@@ -7,16 +7,15 @@ use gst_plugin_gtk4::Orientation;
 use gtk::glib;
 use gtk::prelude::{ApplicationExt, GtkWindowExt, OrientableExt, WidgetExt};
 use gtk4::gio;
-use gtk4::prelude::{BoxExt, ButtonExt, FileExt, GestureDragExt, GtkApplicationExt};
+use gtk4::prelude::{BoxExt, ButtonExt, FileExt, GtkApplicationExt};
 use relm4::{
     adw, gtk, main_application, Component, ComponentController, ComponentParts, ComponentSender,
     Controller, RelmWidgetExt,
 };
 
 use crate::ui::controls_sidebar::{ControlsModel, ControlsMsg, ControlsOutput};
-use crate::ui::crop_box::CropMode;
+use crate::ui::preview::{CropMode, Preview};
 use crate::ui::timeline::{TimelineModel, TimelineMsg, TimelineOutput};
-use crate::ui::CropBoxWidget;
 use crate::video::metadata::VideoInfo;
 use crate::video::player::Player;
 
@@ -26,6 +25,7 @@ pub(super) struct App {
     video_player: Controller<VideoPlayerModel>,
     controls_panel: Controller<ControlsModel>,
     timeline: Controller<TimelineModel>,
+    preview: Preview,
     video_selected: bool,
     video_is_loaded: bool,
     video_is_playing: bool,
@@ -52,9 +52,6 @@ pub(super) enum AppMsg {
     HideCropBox,
     Rotate,
     SetCropMode(CropMode),
-    CropBoxDetectHandle((f32, f32)),
-    CropBoxDragUpdate((f64, f64)),
-    CropBoxDragEnd,
     SeekToPercent(f64),
     TogglePlayPause,
     ToggleMute,
@@ -212,27 +209,6 @@ impl Component for App {
                             set_visible: model.video_is_loaded,
                             #[wrap(Some)]
                             set_child = model.video_player.widget(),
-
-                            add_overlay: crop_box = &CropBoxWidget::default(){
-                                #[watch]
-                                set_visible: model.show_crop_box,
-                                add_controller = gtk::GestureDrag {
-                                    connect_drag_begin[sender] => move |_,x,y| {
-                                        sender.input(AppMsg::CropBoxDetectHandle((x as f32,y as f32)));
-                                    },
-                                    connect_drag_update[sender] => move |drag, x_offset, y_offset| {
-                                        let (start_x, start_y) = drag.start_point().unwrap();
-
-                                        let x = start_x + x_offset;
-                                        let y = start_y + y_offset;
-
-                                        sender.input(AppMsg::CropBoxDragUpdate((x,y)));
-                                    },
-                                    connect_drag_end[sender] => move |_,_,_| {
-                                        sender.input(AppMsg::CropBoxDragEnd);
-                                    },
-                                },
-                            },
                         },
 
                         gtk::Box{
@@ -300,8 +276,10 @@ impl Component for App {
         root: Self::Root,
         sender: ComponentSender<Self>,
     ) -> ComponentParts<Self> {
+        let preview = Preview::new();
+
         let video_player: Controller<VideoPlayerModel> = VideoPlayerModel::builder()
-            .launch(())
+            .launch(preview.clone())
             .forward(sender.input_sender(), |msg| match msg {
                 VideoPlayerOutput::ToggleVideoPlay => AppMsg::TogglePlayPause,
             });
@@ -330,6 +308,7 @@ impl Component for App {
             video_player,
             controls_panel,
             timeline,
+            preview,
             video_selected: false,
             video_is_loaded: false,
             video_is_playing: false,
@@ -376,7 +355,7 @@ impl Component for App {
                     self.player.borrow_mut().set_is_playing(false);
                 }
                 self.uri.replace(uri.clone());
-                widgets.crop_box.reset_box();
+                // widgets.crop_box.reset_box();
 
                 self.timeline
                     .emit(TimelineMsg::GenerateThumbnails(uri.clone()));
@@ -423,7 +402,7 @@ impl Component for App {
 
                 self.player.borrow_mut().reset_pipeline();
                 self.timeline.emit(TimelineMsg::Reset);
-                widgets.crop_box.reset_box();
+                // widgets.crop_box.reset_box();
             }
             AppMsg::Orient(orientation) => {
                 let is_vertical = matches!(
@@ -433,57 +412,21 @@ impl Component for App {
                         | Orientation::FlipRotate90
                         | Orientation::FlipRotate270
                 );
-                widgets.crop_box.set_is_preview_rotated(is_vertical);
-                widgets.crop_box.queue_draw();
+                // widgets.crop_box.set_is_preview_rotated(is_vertical);
+                // widgets.crop_box.queue_draw();
 
                 self.player.borrow_mut().set_video_orientation(orientation)
             }
             AppMsg::ShowCropBox => {
-                self.show_crop_box = true;
-                self.player.borrow_mut().remove_crop();
+                self.preview.show_crop_box();
+                // self.player.borrow_mut().remove_crop();
             }
             AppMsg::HideCropBox => {
-                let crop_box = &widgets.crop_box;
-
-                // todo: make function crop_box.has_changed()
-                if crop_box.left_x() == 0f32
-                    && crop_box.top_y() == 0f32
-                    && crop_box.bottom_y() == 1f32
-                    && crop_box.right_x() == 1f32
-                {
-                    println!("Can skip adding effect");
-                } else {
-                    let width = self.frame_info.as_ref().unwrap().width as f32;
-                    let height = self.frame_info.as_ref().unwrap().height as f32;
-
-                    let left = (width * crop_box.left_x()) as i32;
-                    let top = (height * crop_box.top_y()) as i32;
-                    let right = (width - (width * crop_box.right_x())) as i32;
-                    let bottom = (height - (height * crop_box.bottom_y())) as i32;
-
-                    self.player
-                        .borrow_mut()
-                        .set_video_crop(left, top, right, bottom);
-                }
-
+                self.preview.hide_crop_box();
                 self.show_crop_box = false
             }
             AppMsg::SetCropMode(mode) => {
-                widgets.crop_box.set_crop_mode(mode);
-                widgets.crop_box.maintain_aspect_ratio();
-                widgets.crop_box.queue_draw();
-            }
-            AppMsg::CropBoxDetectHandle(pos) => {
-                widgets.crop_box.is_point_in_handle(pos.0, pos.1);
-                widgets.crop_box.queue_draw();
-            }
-            AppMsg::CropBoxDragUpdate(target) => {
-                widgets.crop_box.update_drag_pos(target);
-                widgets.crop_box.queue_draw();
-            }
-            AppMsg::CropBoxDragEnd => {
-                widgets.crop_box.set_drag_active(false);
-                widgets.crop_box.queue_draw();
+                self.preview.set_crop_mode(mode);
             }
             AppMsg::SeekToPercent(percent) => {
                 let timestamp = ClockTime::from_nseconds(
@@ -551,9 +494,9 @@ impl Component for App {
 
                 // todo: probably don't need this in self?
                 self.frame_info = Some(player.info());
-                widgets
-                    .crop_box
-                    .set_asepct_ratio(player.info().aspect_ratio);
+                // widgets
+                //     .crop_box
+                //     .set_asepct_ratio(player.info().aspect_ratio);
                 self.controls_panel.emit(ControlsMsg::DefaultCodec(
                     player.info.container_info.clone(),
                 ));
