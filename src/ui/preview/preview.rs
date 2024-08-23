@@ -20,6 +20,8 @@ pub struct Preview {
     pub(crate) bottom_y: Cell<f32>,
     pub(crate) prev_drag_x: Cell<f32>,
     pub(crate) prev_drag_y: Cell<f32>,
+    pub(crate) translate_x: Cell<f32>,
+    pub(crate) translate_y: Cell<f32>,
     pub(crate) active_handle: Cell<HandleType>,
     pub(crate) handle_drag_active: Cell<bool>,
     pub(crate) zoom: Cell<f64>,
@@ -37,6 +39,8 @@ impl Default for Preview {
             bottom_y: Cell::new(1f32),
             prev_drag_x: Cell::new(0f32),
             prev_drag_y: Cell::new(0f32),
+            translate_x: Cell::new(0f32),
+            translate_y: Cell::new(0f32),
             active_handle: Cell::new(HandleType::None),
             handle_drag_active: Cell::new(false),
             zoom: Cell::new(1f64),
@@ -56,6 +60,7 @@ impl ObjectSubclass for Preview {
 impl ObjectImpl for Preview {
     fn constructed(&self) {
         self.box_connect_gestures();
+        self.pan_connect_gestures();
     }
 }
 
@@ -107,6 +112,10 @@ impl WidgetImpl for Preview {
 
         snapshot.scale(self.zoom.get() as f32, self.zoom.get() as f32);
         snapshot.translate(&graphene::Point::new(preview.x(), preview.y()));
+        snapshot.translate(&graphene::Point::new(
+            self.translate_x.get(),
+            self.translate_y.get(),
+        ));
         paintable.snapshot(snapshot, preview.width() as f64, preview.height() as f64);
 
         snapshot.restore();

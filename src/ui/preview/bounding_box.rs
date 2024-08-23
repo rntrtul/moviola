@@ -86,7 +86,6 @@ impl Preview {
                 let x = start_x + x_offset;
                 let y = start_y + y_offset;
                 obj.imp().update_drag_pos((x, y));
-                obj.queue_draw();
             }
         ));
 
@@ -94,8 +93,6 @@ impl Preview {
             #[weak]
             obj,
             move |_, _, _| {
-                obj.imp().prev_drag_x.set(0.);
-                obj.imp().prev_drag_y.set(0.);
                 obj.imp().handle_drag_active.set(false);
                 obj.queue_draw();
             }
@@ -237,6 +234,8 @@ impl Preview {
     }
 
     fn get_cordinate_percent_from_drag(&self, x: f64, y: f64) -> (f64, f64) {
+        // todo: be aware of scale factor and convert screen pixel to video pixel.
+        //      probably handled in zoom with func like screen_coords_to_video
         let preview = self.preview_rect();
 
         let x_adj = (x - preview.x() as f64).clamp(0., preview.width() as f64);
@@ -253,79 +252,32 @@ impl Preview {
         let x = x_percent as f32;
         let y = y_percent as f32;
 
-        if self.prev_drag_x.get() == 0. && self.prev_drag_y.get() == 0. {
-            self.prev_drag_x.set(x);
-            self.prev_drag_y.set(y);
-        }
-
         match self.active_handle.get() {
             HandleType::TopLeft => {
                 self.left_x.set(x);
                 self.top_y.set(y);
                 self.maintain_aspect_ratio();
+                self.obj().queue_draw();
             }
             HandleType::BottomLeft => {
                 self.left_x.set(x);
                 self.bottom_y.set(y);
                 self.maintain_aspect_ratio();
+                self.obj().queue_draw();
             }
             HandleType::TopRight => {
                 self.right_x.set(x);
                 self.top_y.set(y);
                 self.maintain_aspect_ratio();
+                self.obj().queue_draw();
             }
             HandleType::BottomRight => {
                 self.right_x.set(x);
                 self.bottom_y.set(y);
                 self.maintain_aspect_ratio();
+                self.obj().queue_draw();
             }
-            HandleType::None => {
-                let offset_x = x - self.prev_drag_x.get();
-                let offset_y = y - self.prev_drag_y.get();
-
-                if offset_x == 0. && offset_y == 0. {
-                    return;
-                }
-
-                // make sure step is only as big as space available to prevent box warping.
-                let step_x = if offset_x < 0. && (offset_x * -1.) > self.left_x.get() {
-                    self.left_x.get() * -1.
-                } else if offset_x > 0. && (1. - self.right_x.get()) < offset_x {
-                    1. - self.right_x.get()
-                } else {
-                    offset_x
-                };
-                let step_y = if offset_y < 0. && (offset_y * -1.) > self.top_y.get() {
-                    self.top_y.get() * -1.
-                } else if offset_y > 0. && (1. - self.bottom_y.get()) < offset_y {
-                    1. - self.bottom_y.get()
-                } else {
-                    offset_y
-                };
-
-                if (step_x < 0. && self.left_x.get() > 0.)
-                    || (step_x > 0. && self.right_x.get() < 1.)
-                {
-                    let left_x = (self.left_x.get() + step_x).clamp(0., self.right_x.get());
-                    let right_x = (self.right_x.get() + step_x).clamp(self.left_x.get(), 1.);
-
-                    self.left_x.set(left_x);
-                    self.right_x.set(right_x);
-                }
-
-                if (step_y < 0. && self.top_y.get() > 0.)
-                    || (step_y > 0. && self.bottom_y.get() < 1.)
-                {
-                    let top_y = (self.top_y.get() + step_y).clamp(0., self.bottom_y.get());
-                    let bottom_y = (self.bottom_y.get() + step_y).clamp(self.top_y.get(), 1.);
-
-                    self.top_y.set(top_y);
-                    self.bottom_y.set(bottom_y);
-                }
-
-                self.prev_drag_x.set(x);
-                self.prev_drag_y.set(y);
-            }
+            HandleType::None => {}
         }
     }
 }

@@ -1,4 +1,5 @@
 mod bounding_box;
+mod pan;
 mod preview;
 mod zoom;
 
