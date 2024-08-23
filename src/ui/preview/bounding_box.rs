@@ -30,7 +30,9 @@ impl Preview {
 
         snapshot.append_border(&border, &border_widths, &border_colours);
 
-        self.draw_box_grid(snapshot, &rect, 3, 3);
+        if self.handle_drag_active.get() {
+            self.draw_box_grid(snapshot, &rect, 3, 3);
+        }
         self.draw_box_handles(snapshot, &rect);
     }
 
