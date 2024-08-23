@@ -7,7 +7,7 @@ use gst_plugin_gtk4::Orientation;
 use gtk::glib;
 use gtk::prelude::{ApplicationExt, GtkWindowExt, OrientableExt, WidgetExt};
 use gtk4::gio;
-use gtk4::prelude::{BoxExt, ButtonExt, FileExt, GtkApplicationExt};
+use gtk4::prelude::{BoxExt, ButtonExt, FileExt, GtkApplicationExt, RangeExt};
 use relm4::{
     adw, gtk, main_application, Component, ComponentController, ComponentParts, ComponentSender,
     Controller, RelmWidgetExt,
@@ -58,6 +58,7 @@ pub(super) enum AppMsg {
     VideoLoaded,
     VideoPaused,
     VideoPlaying,
+    Zoom(f64),
     Quit,
 }
 
@@ -173,10 +174,14 @@ impl Component for App {
                             connect_clicked => AppMsg::SaveFile,
                         },
 
-                        pack_start = &gtk::Scale::with_range(gtk::Orientation::Horizontal, 1f64, 4f64, 0.1f64){
+                        pack_start : preview_zoom = &gtk::Scale::with_range(gtk::Orientation::Horizontal, 1f64, 4f64, 0.1f64){
                             #[watch]
                             set_visible: model.video_selected && !model.video_is_exporting,
                             set_width_request: 120,
+
+                            connect_value_changed[sender] => move|scale| {
+                                sender.input(AppMsg::Zoom(scale.value()));
+                            },
                         },
 
                         pack_end = &gtk::Button {
@@ -476,6 +481,7 @@ impl Component for App {
             AppMsg::AudioMute => self.video_is_mute = true,
             AppMsg::AudioPlaying => self.video_is_mute = false,
             AppMsg::Rotate => self.controls_panel.emit(ControlsMsg::Rotate),
+            AppMsg::Zoom(level) => self.preview.set_zoom(level),
         }
 
         self.update_view(widgets, sender);

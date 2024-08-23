@@ -1,5 +1,6 @@
 mod bounding_box;
 mod preview;
+mod zoom;
 
 use gtk4::gdk::Paintable;
 use gtk4::glib;
