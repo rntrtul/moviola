@@ -110,6 +110,8 @@ impl WidgetImpl for Preview {
         snapshot.pop();
         snapshot.pop();
 
+        snapshot.push_clip(&preview);
+
         snapshot.scale(self.zoom.get() as f32, self.zoom.get() as f32);
         snapshot.translate(&graphene::Point::new(preview.x(), preview.y()));
         snapshot.translate(&graphene::Point::new(
@@ -118,6 +120,7 @@ impl WidgetImpl for Preview {
         ));
         paintable.snapshot(snapshot, preview.width() as f64, preview.height() as f64);
 
+        snapshot.pop();
         snapshot.restore();
 
         if self.show_crop_box.get() {
