@@ -31,9 +31,18 @@ impl Preview {
                 let offset_x = x - obj.imp().prev_drag_x.get();
                 let offset_y = y - obj.imp().prev_drag_y.get();
 
-                // todo: clamp to not allow moving out of widget
-                let translate_x = obj.imp().translate_x.get() + offset_x;
-                let translate_y = obj.imp().translate_y.get() + offset_y;
+                let preview = obj.imp().preview_rect();
+                // todo: need to account for padding?
+                // todo: maybe update preview rect on resize and store. stop recomputes on all drag events
+                let min_translate_x =
+                    -(preview.width() - (preview.width() / obj.imp().zoom.get() as f32));
+                let min_translate_y =
+                    -(preview.height() - (preview.height() / obj.imp().zoom.get() as f32));
+
+                let translate_x =
+                    (obj.imp().translate_x.get() + offset_x).clamp(min_translate_x, 0f32);
+                let translate_y =
+                    (obj.imp().translate_y.get() + offset_y).clamp(min_translate_y, 0f32);
 
                 obj.imp().translate_x.set(translate_x);
                 obj.imp().translate_y.set(translate_y);
@@ -49,6 +58,7 @@ impl Preview {
             #[weak]
             obj,
             move |_, _, _| {
+                // todo: should this only be in one drag handle?
                 obj.imp().prev_drag_x.set(0f32);
                 obj.imp().prev_drag_y.set(0f32);
             }
