@@ -112,8 +112,8 @@ impl WidgetImpl for Preview {
 
         snapshot.push_clip(&preview);
 
-        snapshot.scale(self.zoom.get() as f32, self.zoom.get() as f32);
         snapshot.translate(&graphene::Point::new(preview.x(), preview.y()));
+        snapshot.scale(self.zoom.get() as f32, self.zoom.get() as f32);
         snapshot.translate(&graphene::Point::new(
             self.translate_x.get(),
             self.translate_y.get(),
