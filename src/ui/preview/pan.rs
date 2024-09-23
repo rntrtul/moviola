@@ -32,7 +32,6 @@ impl Preview {
                 let offset_y = y - obj.imp().prev_drag_y.get();
 
                 let preview = obj.imp().preview_rect();
-                // todo: need to account for padding?
                 // todo: maybe update preview rect on resize and store. stop recomputes on all drag events
                 let min_translate_x =
                     -(preview.width() - (preview.width() / obj.imp().zoom.get() as f32));

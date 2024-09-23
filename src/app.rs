@@ -31,10 +31,10 @@ pub(super) struct App {
     video_is_playing: bool,
     video_is_exporting: bool,
     video_is_mute: bool,
-    show_crop_box: bool,
     player: Rc<RefCell<Player>>,
     uri: Option<String>,
     frame_info: Option<VideoInfo>,
+    previous_zoom: f64,
 }
 
 #[derive(Debug)]
@@ -59,6 +59,8 @@ pub(super) enum AppMsg {
     VideoPaused,
     VideoPlaying,
     Zoom(f64),
+    ZoomTempReset,
+    ZoomRestore,
     Quit,
 }
 
@@ -319,6 +321,8 @@ impl Component for App {
                 ControlsOutput::ExportFrame => AppMsg::ExportFrame,
                 ControlsOutput::ShowCropBox => AppMsg::ShowCropBox,
                 ControlsOutput::HideCropBox => AppMsg::HideCropBox,
+                ControlsOutput::TempResetZoom => AppMsg::ZoomTempReset,
+                ControlsOutput::RestoreZoom => AppMsg::ZoomRestore,
             });
 
         let timeline: Controller<TimelineModel> =
@@ -340,10 +344,10 @@ impl Component for App {
             video_is_playing: false,
             video_is_exporting: false,
             video_is_mute: false,
-            show_crop_box: false,
             player,
             uri: None,
             frame_info: None,
+            previous_zoom: 1f64,
         };
 
         let widgets = view_output!();
@@ -450,7 +454,6 @@ impl Component for App {
             }
             AppMsg::HideCropBox => {
                 self.preview.hide_crop_box();
-                self.show_crop_box = false
             }
             AppMsg::SetCropMode(mode) => {
                 self.preview.set_crop_mode(mode);
@@ -482,6 +485,16 @@ impl Component for App {
             AppMsg::AudioPlaying => self.video_is_mute = false,
             AppMsg::Rotate => self.controls_panel.emit(ControlsMsg::Rotate),
             AppMsg::Zoom(level) => self.preview.set_zoom(level),
+            AppMsg::ZoomTempReset => {
+                widgets.preview_zoom.set_sensitive(false);
+                self.previous_zoom = self.preview.zoom();
+                self.preview.set_zoom(1f64);
+            }
+            AppMsg::ZoomRestore => {
+                // fixme: reapply translation
+                widgets.preview_zoom.set_sensitive(true);
+                self.preview.set_zoom(self.previous_zoom);
+            }
         }
 
         self.update_view(widgets, sender);

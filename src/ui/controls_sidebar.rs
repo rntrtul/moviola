@@ -40,15 +40,19 @@ pub enum ControlsMsg {
     Orient(Orientation),
     SetCropMode(CropMode),
     DefaultCodec(VideoContainerInfo),
+    CropPageSelected,
+    OutputPageSelected,
 }
 
 #[derive(Debug)]
 pub enum ControlsOutput {
     ExportFrame,
+    ShowCropBox,
     HideCropBox,
+    TempResetZoom,
+    RestoreZoom,
     OrientVideo(Orientation),
     SetCropMode(CropMode),
-    ShowCropBox,
 }
 
 #[relm4::component(pub)]
@@ -71,9 +75,9 @@ impl SimpleComponent for ControlsModel {
             adw::ViewStack{
                 connect_visible_child_name_notify[sender] => move |stack|{
                     if stack.visible_child_name().unwrap() == "crop_page" {
-                        sender.output(ControlsOutput::ShowCropBox).unwrap()
+                        sender.input(ControlsMsg::CropPageSelected)
                     } else {
-                        sender.output(ControlsOutput::HideCropBox).unwrap()
+                        sender.input(ControlsMsg::OutputPageSelected)
                     }
                 },
             },
@@ -140,6 +144,14 @@ impl SimpleComponent for ControlsModel {
             ControlsMsg::Rotate => self.crop_page.emit(CropPageMsg::RotateRight90),
             ControlsMsg::DefaultCodec(defaults) => {
                 self.output_page.emit(OutputPageMsg::VideoInfo(defaults));
+            }
+            ControlsMsg::CropPageSelected => {
+                sender.output(ControlsOutput::ShowCropBox).unwrap();
+                sender.output(ControlsOutput::TempResetZoom).unwrap();
+            }
+            ControlsMsg::OutputPageSelected => {
+                sender.output(ControlsOutput::HideCropBox).unwrap();
+                sender.output(ControlsOutput::RestoreZoom).unwrap();
             }
         }
     }
