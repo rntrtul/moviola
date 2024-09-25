@@ -10,12 +10,19 @@ impl crate::ui::preview::Preview {
         self.imp().zoom.set(zoom);
 
         // todo: clamp translate on zoom changes
-
         if zoom == 1f64 {
             self.imp().translate_x.set(0f32);
             self.imp().translate_y.set(0f32);
         }
 
         self.queue_draw();
+    }
+
+    pub fn hide_zoom(&self) {
+        self.imp().show_zoom.set(false);
+    }
+
+    pub fn show_zoom(&self) {
+        self.imp().show_zoom.set(true);
     }
 }

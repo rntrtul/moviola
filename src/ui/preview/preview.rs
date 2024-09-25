@@ -27,6 +27,7 @@ pub struct Preview {
     pub(crate) zoom: Cell<f64>,
     pub(crate) crop_mode: Cell<CropMode>,
     pub(crate) show_crop_box: Cell<bool>,
+    pub(crate) show_zoom: Cell<bool>,
 }
 
 impl Default for Preview {
@@ -46,6 +47,7 @@ impl Default for Preview {
             zoom: Cell::new(1f64),
             crop_mode: Cell::new(CropMode::Free),
             show_crop_box: Cell::new(false),
+            show_zoom: Cell::new(true),
         }
     }
 }
@@ -113,11 +115,15 @@ impl WidgetImpl for Preview {
         snapshot.push_clip(&preview);
 
         snapshot.translate(&graphene::Point::new(preview.x(), preview.y()));
-        snapshot.scale(self.zoom.get() as f32, self.zoom.get() as f32);
-        snapshot.translate(&graphene::Point::new(
-            self.translate_x.get(),
-            self.translate_y.get(),
-        ));
+
+        if self.show_zoom.get() {
+            snapshot.scale(self.zoom.get() as f32, self.zoom.get() as f32);
+            snapshot.translate(&graphene::Point::new(
+                self.translate_x.get(),
+                self.translate_y.get(),
+            ));
+        }
+
         paintable.snapshot(snapshot, preview.width() as f64, preview.height() as f64);
 
         snapshot.pop();

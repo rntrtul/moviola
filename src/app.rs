@@ -34,7 +34,6 @@ pub(super) struct App {
     player: Rc<RefCell<Player>>,
     uri: Option<String>,
     frame_info: Option<VideoInfo>,
-    previous_zoom: f64,
 }
 
 #[derive(Debug)]
@@ -347,7 +346,6 @@ impl Component for App {
             player,
             uri: None,
             frame_info: None,
-            previous_zoom: 1f64,
         };
 
         let widgets = view_output!();
@@ -487,13 +485,11 @@ impl Component for App {
             AppMsg::Zoom(level) => self.preview.set_zoom(level),
             AppMsg::ZoomTempReset => {
                 widgets.preview_zoom.set_sensitive(false);
-                self.previous_zoom = self.preview.zoom();
-                self.preview.set_zoom(1f64);
+                self.preview.hide_zoom();
             }
             AppMsg::ZoomRestore => {
-                // fixme: reapply translation
                 widgets.preview_zoom.set_sensitive(true);
-                self.preview.set_zoom(self.previous_zoom);
+                self.preview.show_zoom();
             }
         }
 
