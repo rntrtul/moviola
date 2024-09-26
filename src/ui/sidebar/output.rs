@@ -2,10 +2,10 @@ use gtk4::prelude::{ButtonExt, ListBoxRowExt, WidgetExt};
 use relm4::adw::prelude::{ActionRowExt, ComboRowExt, PreferencesGroupExt, PreferencesRowExt};
 use relm4::{adw, gtk, Component, ComponentParts, ComponentSender};
 
-use crate::ui::controls_sidebar::OutputContainerSettings;
-use crate::ui::output_page::OutputPageMsg::{
+use crate::ui::sidebar::output::OutputPageMsg::{
     AudioCodecChange, AudioStreamChange, ContainerChange, CustomEncoding, VideoCodecChange,
 };
+use crate::ui::sidebar::sidebar::OutputContainerSettings;
 use crate::video::metadata::{
     AudioCodec, ContainerFormat, VideoCodec, VideoContainerInfo, AUDIO_BITRATE_DEFAULT,
 };

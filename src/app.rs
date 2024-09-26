@@ -13,8 +13,8 @@ use relm4::{
     Controller, RelmWidgetExt,
 };
 
-use crate::ui::controls_sidebar::{ControlsModel, ControlsMsg, ControlsOutput};
 use crate::ui::preview::{CropMode, Preview};
+use crate::ui::sidebar::sidebar::{ControlsModel, ControlsMsg, ControlsOutput};
 use crate::ui::timeline::{TimelineModel, TimelineMsg, TimelineOutput};
 use crate::video::metadata::VideoInfo;
 use crate::video::player::Player;

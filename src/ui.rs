@@ -1,11 +1,9 @@
 use gtk4;
 use gtk4::{gdk, glib};
 
-pub mod controls_sidebar;
-pub mod crop_page;
 mod handle;
-mod output_page;
 pub mod preview;
+pub(crate) mod sidebar;
 pub mod timeline;
 pub mod video_player;
 

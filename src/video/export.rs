@@ -13,7 +13,7 @@ use gtk4::gdk;
 use relm4::ComponentSender;
 
 use crate::app::{App, AppMsg};
-use crate::ui::controls_sidebar::{ControlsExportSettings, OutputContainerSettings};
+use crate::ui::sidebar::sidebar::{ControlsExportSettings, OutputContainerSettings};
 use crate::video::player::Player;
 use crate::video::thumbnail::Thumbnail;
 
