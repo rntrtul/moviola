@@ -5,7 +5,7 @@ use relm4::{adw, gtk, Component, ComponentParts, ComponentSender};
 use crate::ui::sidebar::output::OutputPageMsg::{
     AudioCodecChange, AudioStreamChange, ContainerChange, CustomEncoding, VideoCodecChange,
 };
-use crate::ui::sidebar::sidebar::OutputContainerSettings;
+use crate::ui::sidebar::OutputContainerSettings;
 use crate::video::metadata::{
     AudioCodec, ContainerFormat, VideoCodec, VideoContainerInfo, AUDIO_BITRATE_DEFAULT,
 };
