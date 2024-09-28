@@ -13,6 +13,7 @@ use gtk4::gdk;
 use relm4::ComponentSender;
 
 use crate::app::{App, AppMsg};
+use crate::ui::preview::BoundingBoxDimensions;
 use crate::ui::sidebar::{ControlsExportSettings, OutputContainerSettings};
 use crate::video::player::Player;
 use crate::video::thumbnail::Thumbnail;
@@ -104,6 +105,7 @@ impl Player {
         save_uri: String,
         timeline_export_settings: TimelineExportSettings,
         controls_export_settings: ControlsExportSettings,
+        bounding_box: BoundingBoxDimensions,
         app_sender: ComponentSender<App>,
     ) {
         let now = SystemTime::now();

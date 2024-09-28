@@ -40,6 +40,13 @@ impl CropMode {
     }
 }
 
+pub struct BoundingBoxDimensions {
+    pub(crate) left_x: f32,
+    pub(crate) top_y: f32,
+    pub(crate) right_x: f32,
+    pub(crate) bottom_y: f32,
+}
+
 glib::wrapper! {
     pub struct Preview(ObjectSubclass<preview::Preview>)
         @extends gtk4::Widget;
@@ -72,8 +79,18 @@ impl Preview {
         self.imp().show_crop_box.set(true);
         self.queue_draw();
     }
+
     pub fn hide_crop_box(&self) {
         self.imp().show_crop_box.set(false);
         self.queue_draw();
+    }
+
+    pub fn export_settings(&self) -> BoundingBoxDimensions {
+        BoundingBoxDimensions {
+            left_x: self.imp().left_x.get(),
+            top_y: self.imp().top_y.get(),
+            right_x: self.imp().right_x.get(),
+            bottom_y: self.imp().bottom_y.get(),
+        }
     }
 }
