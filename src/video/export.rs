@@ -3,13 +3,14 @@ use std::thread;
 use std::time::SystemTime;
 
 use ges::gst_pbutils::EncodingContainerProfile;
-use ges::prelude::{EncodingProfileBuilder, GESContainerExt, GESTrackExt, LayerExt};
+use ges::prelude::{EncodingProfileBuilder, GESTrackExt, LayerExt};
 use ges::prelude::{GESPipelineExt, TimelineElementExt, TimelineExt};
 use ges::{gst_pbutils, PipelineFlags};
 use gst::prelude::{ElementExt, GstObjectExt, ObjectExt};
 use gst::{ClockTime, State};
 use gst_plugin_gtk4::Orientation;
 use gtk4::gdk;
+use gtk4::prelude::ToValue;
 use relm4::ComponentSender;
 
 use crate::app::{App, AppMsg};
@@ -130,6 +131,12 @@ impl Player {
             _ => (self.info.width, self.info.height),
         };
 
+        let pos_x = -(bounding_box.left_x * width as f32) as i32;
+        let pos_y = -(bounding_box.top_y * height as f32) as i32;
+
+        let output_width = (width as f32 * (bounding_box.right_x - bounding_box.left_x)) as i32;
+        let output_height = (height as f32 * (bounding_box.bottom_y - bounding_box.top_y)) as i32;
+
         thread::spawn(move || {
             let timeline = ges::Timeline::new_audio_video();
             let layer = timeline.append_layer();
@@ -144,10 +151,26 @@ impl Player {
             let tracks = timeline.tracks();
             let track = tracks.first().expect("No first track");
             let caps = gst::Caps::builder("video/x-raw")
-                .field("width", width as i32)
-                .field("height", height as i32)
+                .field("width", output_width)
+                .field("height", output_height)
                 .build();
             track.set_restriction_caps(&caps);
+
+            track.elements().into_iter().for_each(|track_element| {
+                track_element
+                    .set_child_property("width", &(width.to_value()))
+                    .unwrap();
+                track_element
+                    .set_child_property("height", &(height.to_value()))
+                    .unwrap();
+
+                track_element
+                    .set_child_property("posx", &(pos_x.to_value()))
+                    .unwrap();
+                track_element
+                    .set_child_property("posy", &(pos_y.to_value()))
+                    .unwrap();
+            });
 
             pipeline
                 .set_render_settings(&save_uri.as_str(), &container_profile)
@@ -165,12 +188,12 @@ impl Player {
             // todo: add crop + rotate effects now.
             // todo: should resolution be set in encoding profile or clip caps?
             // fixme: squished video, use gesVideoUriSource properties (video-direction)
-            let rotate = format!(
-                "autovideoflip video-direction={}",
-                sink_orientation_to_effect(orientation)
-            );
-            let rotate_effect = ges::Effect::new(&*rotate).unwrap();
-            clip.add(&rotate_effect).unwrap();
+            // let rotate = format!(
+            //     "autovideoflip video-direction={}",
+            //     sink_orientation_to_effect(orientation)
+            // );
+            // let rotate_effect = ges::Effect::new(&*rotate).unwrap();
+            // clip.add(&rotate_effect).unwrap();
 
             pipeline.set_state(State::Playing).unwrap();
 
