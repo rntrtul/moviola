@@ -9,8 +9,6 @@ use gtk4::glib::clone;
 use gtk4::prelude::{PaintableExt, WidgetExt};
 use gtk4::subclass::prelude::ObjectSubclassIsExt;
 
-pub static MARGIN: f32 = 5.;
-
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub enum CropMode {
     Free,

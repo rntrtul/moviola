@@ -1,5 +1,5 @@
 use crate::ui::preview::preview::Preview;
-use crate::ui::preview::{CropMode, MARGIN};
+use crate::ui::preview::CropMode;
 use ges::subclass::prelude::ObjectSubclassExt;
 use gtk4::glib;
 use gtk4::glib::clone;
@@ -8,13 +8,10 @@ use gtk4::prelude::{GestureDragExt, PaintableExt, SnapshotExt, SnapshotExtManual
 use gtk4::subclass::prelude::ObjectSubclassIsExt;
 use gtk4::{gdk, gsk};
 use gtk4::{graphene, Snapshot};
-
 static BOX_COLOUR: gdk::RGBA = gdk::RGBA::WHITE;
 static HANDLE_FILL_RULE: gsk::FillRule = gsk::FillRule::Winding;
-static BOX_HANDLE_WIDTH: f32 = 4f32;
+static BOX_HANDLE_WIDTH: f32 = 2f32;
 static BOX_HANDLE_HEIGHT: f32 = 30f32;
-static BOX_HANDLE_HEIGHT_OFFSET: f32 = BOX_HANDLE_HEIGHT - BOX_HANDLE_WIDTH;
-static BOX_HANDLE_HALF_WIDTH: f32 = BOX_HANDLE_WIDTH / 2f32;
 static DIRECTIONS: [(f32, f32); 4] = [(1f32, 1f32), (1f32, -1f32), (-1f32, 1f32), (-1f32, -1f32)];
 #[derive(Debug, Clone, Copy)]
 pub enum HandleType {
@@ -52,16 +49,13 @@ impl Preview {
                 let target_point = graphene::Point::new(x as f32, y as f32);
                 let box_rect = obj.imp().bounding_box_rect();
 
-                let handle_centers = obj.imp().handle_centers(&box_rect);
+                let handle_paths = obj.imp().box_handle_paths(&box_rect);
 
                 let mut point_on_handle = false;
+                let stroke = gsk::Stroke::builder(BOX_HANDLE_WIDTH).build();
 
-                for (idx, point) in handle_centers.iter().enumerate() {
-                    let path_builder = gsk::PathBuilder::new();
-                    path_builder.add_circle(&point, MARGIN);
-                    let circle = path_builder.to_path();
-
-                    if circle.in_fill(&target_point, HANDLE_FILL_RULE) {
+                for (idx, handle_path) in handle_paths.iter().enumerate() {
+                    if handle_path.in_fill(&target_point, HANDLE_FILL_RULE) {
                         let handle = match idx {
                             0 => HandleType::TopLeft,
                             1 => HandleType::BottomLeft,
@@ -152,28 +146,40 @@ impl Preview {
     }
 
     fn draw_box_handles(&self, snapshot: &Snapshot, rect: &Rect) {
+        let paths = self.box_handle_paths(rect);
+        let stroke = gsk::Stroke::builder(BOX_HANDLE_WIDTH).build();
+
+        paths.into_iter().for_each(|handle_path| {
+            snapshot.append_stroke(&handle_path, &stroke, &BOX_COLOUR);
+        });
+    }
+
+    fn box_handle_paths(&self, rect: &Rect) -> Vec<gsk::Path> {
         let handle_center = self.handle_centers(rect);
-        let stroke = gsk::Stroke::builder(4f32).build();
+
+        let mut paths = Vec::with_capacity(4);
 
         for (center, direction) in handle_center.iter().zip(DIRECTIONS.iter()) {
             let path_builder = gsk::PathBuilder::new();
 
-            path_builder.move_to(
-                center.x() - (BOX_HANDLE_HALF_WIDTH * direction.0),
-                center.y() + (BOX_HANDLE_HEIGHT_OFFSET * direction.1),
-            );
-            path_builder.line_to(
-                center.x() - (BOX_HANDLE_HALF_WIDTH * direction.0),
-                center.y() - (BOX_HANDLE_HALF_WIDTH * direction.1),
-            );
-            path_builder.line_to(
-                center.x() + (BOX_HANDLE_HEIGHT_OFFSET * direction.0),
-                center.y() - (BOX_HANDLE_HALF_WIDTH * direction.1),
-            );
+            path_builder.add_rect(&Rect::new(
+                center.x() - (BOX_HANDLE_WIDTH * direction.0),
+                center.y() - (BOX_HANDLE_WIDTH * direction.1),
+                BOX_HANDLE_WIDTH * direction.0,
+                BOX_HANDLE_HEIGHT * direction.1,
+            ));
+            path_builder.add_rect(&Rect::new(
+                center.x() - (BOX_HANDLE_WIDTH * direction.0),
+                center.y() - (BOX_HANDLE_WIDTH * direction.1),
+                BOX_HANDLE_HEIGHT * direction.0,
+                BOX_HANDLE_WIDTH * direction.1,
+            ));
 
             let handle = path_builder.to_path();
-            snapshot.append_stroke(&handle, &stroke, &BOX_COLOUR);
+            paths.push(handle);
         }
+
+        paths
     }
 
     fn handle_centers(&self, rect: &Rect) -> [graphene::Point; 4] {

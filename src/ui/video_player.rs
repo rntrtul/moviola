@@ -6,7 +6,7 @@ use gtk4::prelude::{BoxExt, OrientableExt, WidgetExt};
 use relm4::adw::gdk;
 use relm4::*;
 
-use crate::ui::preview::{Preview, MARGIN};
+use crate::ui::preview::Preview;
 
 pub struct VideoPlayerModel {
     video_is_loaded: bool,
@@ -59,8 +59,6 @@ impl Component for VideoPlayerModel {
         let paintable = gtk_sink.property::<gdk::Paintable>("paintable");
 
         preview.set_paintable(paintable);
-        // todo: maybe add margin in construction of other obj or
-        preview.set_margin_all(MARGIN as i32);
 
         let offload = gtk4::GraphicsOffload::new(Some(&preview));
         offload.set_enabled(gtk::GraphicsOffloadEnabled::Enabled);
