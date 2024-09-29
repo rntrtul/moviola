@@ -131,6 +131,7 @@ impl Player {
             _ => (self.info.width, self.info.height),
         };
 
+        // offset is to place coordinate at 0,0. So use negative values
         let pos_x = -(bounding_box.left_x * width as f32) as i32;
         let pos_y = -(bounding_box.top_y * height as f32) as i32;
 
