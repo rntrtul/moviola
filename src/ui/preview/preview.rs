@@ -1,4 +1,4 @@
-use crate::ui::preview::bounding_box::HandleType;
+use crate::ui::preview::bounding_box::{HandleType, BOX_HANDLE_WIDTH};
 use crate::ui::preview::CropMode;
 use gst::glib;
 use gst::subclass::prelude::{ObjectImpl, ObjectSubclass};
@@ -92,9 +92,8 @@ impl WidgetImpl for Preview {
     fn snapshot(&self, snapshot: &gtk4::Snapshot) {
         let paintable = self.paintable.borrow();
 
-        // fixme: account for margin?
-        let widget_width = self.obj().width() as f64;
-        let widget_height = self.obj().height() as f64;
+        let widget_width = self.widget_width() as f64;
+        let widget_height = self.widget_height() as f64;
 
         let preview = self.preview_rect();
         // todo: need to make glow smaller around video and remove black blending
@@ -136,12 +135,21 @@ impl WidgetImpl for Preview {
 }
 
 impl Preview {
+    // widths + height accounting for space needed for bounding box handles
+    fn widget_width(&self) -> f32 {
+        self.obj().width() as f32 - (BOX_HANDLE_WIDTH * 2f32)
+    }
+
+    fn widget_height(&self) -> f32 {
+        self.obj().height() as f32 - (BOX_HANDLE_WIDTH * 2f32)
+    }
+
     // returns (width, height)
     fn preview_size(&self) -> (f32, f32) {
-        let widget_width = self.obj().width() as f32;
-        let widget_height = self.obj().height() as f32;
-        let widget_aspect_ratio = widget_width / widget_height;
+        let widget_width = self.widget_width();
+        let widget_height = self.widget_height();
 
+        let widget_aspect_ratio = widget_width / widget_height;
         let video_aspect_ratio = self.paintable.borrow().intrinsic_aspect_ratio() as f32;
 
         if widget_aspect_ratio > video_aspect_ratio {

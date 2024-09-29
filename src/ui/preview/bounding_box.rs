@@ -8,10 +8,10 @@ use gtk4::prelude::{GestureDragExt, PaintableExt, SnapshotExt, SnapshotExtManual
 use gtk4::subclass::prelude::ObjectSubclassIsExt;
 use gtk4::{gdk, gsk};
 use gtk4::{graphene, Snapshot};
+pub(crate) static BOX_HANDLE_WIDTH: f32 = 2f32;
+static BOX_HANDLE_HEIGHT: f32 = 30f32;
 static BOX_COLOUR: gdk::RGBA = gdk::RGBA::WHITE;
 static HANDLE_FILL_RULE: gsk::FillRule = gsk::FillRule::Winding;
-static BOX_HANDLE_WIDTH: f32 = 2f32;
-static BOX_HANDLE_HEIGHT: f32 = 30f32;
 static DIRECTIONS: [(f32, f32); 4] = [(1f32, 1f32), (1f32, -1f32), (-1f32, 1f32), (-1f32, -1f32)];
 #[derive(Debug, Clone, Copy)]
 pub enum HandleType {
