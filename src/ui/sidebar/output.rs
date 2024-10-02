@@ -1,6 +1,6 @@
-use gtk4::prelude::{ButtonExt, ListBoxRowExt, WidgetExt};
+use gtk4::prelude::{ListBoxRowExt, WidgetExt};
 use relm4::adw::prelude::{ActionRowExt, ComboRowExt, PreferencesGroupExt, PreferencesRowExt};
-use relm4::{adw, gtk, Component, ComponentParts, ComponentSender};
+use relm4::{adw, Component, ComponentParts, ComponentSender};
 
 use crate::ui::sidebar::output::OutputPageMsg::{
     AudioCodecChange, AudioStreamChange, ContainerChange, CustomEncoding, VideoCodecChange,
@@ -108,15 +108,6 @@ impl Component for OutputPageModel {
                         let codec = AudioCodec::from_string_list_index(dropdown.selected());
                         sender.input(AudioCodecChange(codec));
                     }
-                },
-            },
-
-            adw::PreferencesGroup{
-                 gtk::Button {
-                    set_label: "Export Frame",
-                    connect_clicked[sender] => move |_| {
-                        sender.output(OutputPageOutput::ExportFrame).unwrap()
-                    },
                 },
             },
         }
