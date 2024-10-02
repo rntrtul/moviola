@@ -9,6 +9,7 @@ use ges::{gst_pbutils, PipelineFlags};
 use gst::prelude::{ElementExt, GstObjectExt, ObjectExt};
 use gst::{ClockTime, State};
 use gst_plugin_gtk4::Orientation;
+use gst_video::VideoOrientationMethod;
 use gtk4::gdk;
 use gtk4::prelude::ToValue;
 use relm4::ComponentSender;
@@ -25,17 +26,17 @@ pub struct TimelineExportSettings {
     pub duration: ClockTime,
 }
 
-fn sink_orientation_to_effect(method: Orientation) -> String {
+fn sink_orientation_to_effect(method: Orientation) -> VideoOrientationMethod {
     match method {
-        Orientation::Auto => "auto".to_string(),
-        Orientation::Rotate0 => "identity".to_string(),
-        Orientation::Rotate90 => "90r".to_string(),
-        Orientation::Rotate180 => "180".to_string(),
-        Orientation::Rotate270 => "90l".to_string(),
-        Orientation::FlipRotate0 => "horiz".to_string(),
-        Orientation::FlipRotate90 => "ur-ll".to_string(),
-        Orientation::FlipRotate180 => "vert".to_string(),
-        Orientation::FlipRotate270 => "ul-lr".to_string(),
+        Orientation::Auto => VideoOrientationMethod::Auto,
+        Orientation::Rotate0 => VideoOrientationMethod::Identity,
+        Orientation::Rotate90 => VideoOrientationMethod::_90r,
+        Orientation::Rotate180 => VideoOrientationMethod::_180,
+        Orientation::Rotate270 => VideoOrientationMethod::_90l,
+        Orientation::FlipRotate0 => VideoOrientationMethod::Horiz,
+        Orientation::FlipRotate90 => VideoOrientationMethod::UrLl,
+        Orientation::FlipRotate180 => VideoOrientationMethod::Vert,
+        Orientation::FlipRotate270 => VideoOrientationMethod::UlLr,
     }
 }
 
@@ -123,20 +124,24 @@ impl Player {
             .property::<gdk::Paintable>("paintable")
             .property::<Orientation>("orientation");
 
-        let (width, height) = match orientation {
+        let video_direction = sink_orientation_to_effect(orientation);
+
+        let (source_width, source_height) = match orientation {
             Orientation::Rotate90
             | Orientation::Rotate270
             | Orientation::FlipRotate270
-            | Orientation::FlipRotate90 => (self.info.height, self.info.width),
-            _ => (self.info.width, self.info.height),
+            | Orientation::FlipRotate90 => (self.info.height as i32, self.info.width as i32),
+            _ => (self.info.width as i32, self.info.height as i32),
         };
 
         // offset is to place coordinate at 0,0. So use negative values
-        let pos_x = -(bounding_box.left_x * width as f32) as i32;
-        let pos_y = -(bounding_box.top_y * height as f32) as i32;
+        let pos_x = -(bounding_box.left_x * source_width as f32) as i32;
+        let pos_y = -(bounding_box.top_y * source_height as f32) as i32;
 
-        let output_width = (width as f32 * (bounding_box.right_x - bounding_box.left_x)) as i32;
-        let output_height = (height as f32 * (bounding_box.bottom_y - bounding_box.top_y)) as i32;
+        let output_width =
+            (source_width as f32 * (bounding_box.right_x - bounding_box.left_x)) as i32;
+        let output_height =
+            (source_height as f32 * (bounding_box.bottom_y - bounding_box.top_y)) as i32;
 
         thread::spawn(move || {
             let timeline = ges::Timeline::new_audio_video();
@@ -151,20 +156,24 @@ impl Player {
 
             let tracks = timeline.tracks();
             let track = tracks.first().expect("No first track");
+
             let caps = gst::Caps::builder("video/x-raw")
                 .field("width", output_width)
                 .field("height", output_height)
+                .field("pixel-aspect-ratio", gst::Fraction::new(1, 1))
                 .build();
             track.set_restriction_caps(&caps);
 
             track.elements().into_iter().for_each(|track_element| {
                 track_element
-                    .set_child_property("width", &(width.to_value()))
+                    .set_child_property("video-direction", &(video_direction.to_value()))
                     .unwrap();
                 track_element
-                    .set_child_property("height", &(height.to_value()))
+                    .set_child_property("width", &(source_width.to_value()))
                     .unwrap();
-
+                track_element
+                    .set_child_property("height", &(source_height.to_value()))
+                    .unwrap();
                 track_element
                     .set_child_property("posx", &(pos_x.to_value()))
                     .unwrap();
