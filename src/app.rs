@@ -207,7 +207,11 @@ impl Component for App {
 
                         adw::StatusPage {
                             set_title: "Select Video",
-                            set_description: Some("select a video file to edit"),
+                            set_description: Some("Choose a video file to edit"),
+                            set_valign: gtk::Align::Center,
+                            set_halign: gtk::Align::Center,
+                            set_vexpand: true,
+                            set_width_request: 250,
                             #[watch]
                             set_visible: !model.video_selected,
 
@@ -232,6 +236,7 @@ impl Component for App {
                             set_visible: (model.video_selected && !model.video_is_loaded) || model.video_is_exporting,
                         },
 
+                        // todo: remove overlay
                         gtk::Overlay{
                             #[watch]
                             set_visible: model.video_is_loaded,
