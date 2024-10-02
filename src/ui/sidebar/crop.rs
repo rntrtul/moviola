@@ -1,6 +1,6 @@
 use gst_plugin_gtk4::Orientation;
 use gtk4::prelude::WidgetExt;
-use relm4::adw::prelude::{ComboRowExt, ExpanderRowExt, PreferencesRowExt};
+use relm4::adw::prelude::{ComboRowExt, PreferencesRowExt};
 use relm4::{adw, gtk, ComponentParts, ComponentSender, SimpleComponent};
 
 use crate::ui::preview::CropMode;
@@ -36,20 +36,18 @@ impl SimpleComponent for CropPageModel {
             set_hexpand: true,
 
             adw::PreferencesGroup{
-                adw::ExpanderRow {
-                    set_title: "Flip",
-
-                    add_row= &adw::SwitchRow{
-                        set_title: "Vertical Flip",
-                        connect_active_notify => CropPageMsg::FlipVertically,
-                    },
-
-                    add_row= &adw::SwitchRow{
-                        set_title: "Horizontal Flip",
-                        connect_active_notify => CropPageMsg::FlipHorizontally,
-                    }
+                adw::SwitchRow{
+                    set_title: "Vertical Flip",
+                    connect_active_notify => CropPageMsg::FlipVertically,
                 },
 
+                adw::SwitchRow{
+                    set_title: "Horizontal Flip",
+                    connect_active_notify => CropPageMsg::FlipHorizontally,
+                },
+            },
+
+            adw::PreferencesGroup{
                 adw::ComboRow {
                     set_title: "Aspect Ratio",
                     #[wrap(Some)]
