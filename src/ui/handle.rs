@@ -9,7 +9,8 @@ use crate::ui::IGNORE_OVERLAY_COLOUR;
 
 static FILL_RULE: gsk::FillRule = gsk::FillRule::Winding;
 pub static HANDLE_WIDTH: f32 = 10f32;
-static SEEK_BAR_WIDTH: f32 = 5f32;
+static SEEK_BAR_WIDTH: f32 = 4f32;
+static SEEK_BAR_OFFSET: f32 = HANDLE_WIDTH - (SEEK_BAR_WIDTH / 2f32);
 
 #[derive(glib::Properties, Default, Debug)]
 #[properties(wrapper_type = super::HandleWidget)]
@@ -40,6 +41,7 @@ impl WidgetImpl for HandleWidget {
     fn snapshot(&self, snapshot: &Snapshot) {
         // todo: have shadow on handle?
         let widget = self.obj();
+        // println!("{}", widget.width());
 
         if self.start_x.get() != 0f32 {
             let start_not_playing_rect = graphene::Rect::new(
@@ -76,14 +78,11 @@ impl HandleWidget {
     }
 
     fn start_left_x(&self) -> f32 {
-        let width = self.marginless_width();
-        self.start_x.get() * width
+        self.start_x.get() * self.marginless_width()
     }
 
     fn end_left_x(&self) -> f32 {
-        // fixme: left edge not where it should be
-        let width = self.marginless_width();
-        (self.end_x.get() * width) + HANDLE_WIDTH
+        (self.end_x.get() * self.marginless_width()) + HANDLE_WIDTH
     }
 
     fn start_handle_path(&self) -> gsk::Path {
@@ -112,10 +111,8 @@ impl HandleWidget {
     }
 
     fn seek_bar_path(&self) -> gsk::Path {
-        let width = self.marginless_width();
-
         let bar_rect = graphene::Rect::new(
-            self.seek_x.get() * width,
+            self.seek_x.get() * self.marginless_width() + SEEK_BAR_OFFSET,
             0f32,
             SEEK_BAR_WIDTH,
             self.obj().height() as f32,
@@ -140,11 +137,7 @@ impl crate::ui::HandleWidget {
     }
 
     pub fn drag_update(&self, x: f32) {
-        let x_adj = if self.is_start_dragging() || self.is_end_dragging() {
-            x - HANDLE_WIDTH
-        } else {
-            x - SEEK_BAR_WIDTH
-        };
+        let x_adj = x - HANDLE_WIDTH;
         let percent = x_adj / (self.width() as f32 - (HANDLE_WIDTH * 2f32));
 
         if self.is_start_dragging() {
