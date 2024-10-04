@@ -8,7 +8,7 @@ use gtk4::prelude::{GestureDragExt, PaintableExt, SnapshotExt, SnapshotExtManual
 use gtk4::subclass::prelude::ObjectSubclassIsExt;
 use gtk4::{gdk, gsk};
 use gtk4::{graphene, Snapshot};
-pub(crate) static BOX_HANDLE_WIDTH: f32 = 2f32;
+pub(crate) static BOX_HANDLE_WIDTH: f32 = 3f32;
 static BOX_HANDLE_HEIGHT: f32 = 30f32;
 static BOX_COLOUR: gdk::RGBA = gdk::RGBA::WHITE;
 static HANDLE_FILL_RULE: gsk::FillRule = gsk::FillRule::Winding;
@@ -45,14 +45,14 @@ impl Preview {
         drag_gesture.connect_drag_begin(clone!(
             #[weak]
             obj,
-            move |drag, x, y| {
+            move |_, x, y| {
                 let target_point = graphene::Point::new(x as f32, y as f32);
                 let box_rect = obj.imp().bounding_box_rect();
 
                 let handle_paths = obj.imp().box_handle_paths(&box_rect);
 
-                let mut point_on_handle = false;
-                let stroke = gsk::Stroke::builder(BOX_HANDLE_WIDTH).build();
+                obj.imp().handle_drag_active.set(false);
+                obj.imp().active_handle.set(HandleType::None);
 
                 for (idx, handle_path) in handle_paths.iter().enumerate() {
                     if handle_path.in_fill(&target_point, HANDLE_FILL_RULE) {
@@ -64,14 +64,9 @@ impl Preview {
                             _ => panic!("too many handle indicies"),
                         };
                         obj.imp().active_handle.set(handle);
-                        point_on_handle = true;
+                        obj.imp().handle_drag_active.set(true);
                         break;
                     }
-                }
-
-                obj.imp().handle_drag_active.set(point_on_handle);
-                if !obj.imp().handle_drag_active.get() {
-                    obj.imp().active_handle.set(HandleType::None);
                 }
             }
         ));
@@ -80,11 +75,13 @@ impl Preview {
             #[weak]
             obj,
             move |drag, x_offset, y_offset| {
-                let (start_x, start_y) = drag.start_point().unwrap();
+                if obj.imp().handle_drag_active.get() {
+                    let (start_x, start_y) = drag.start_point().unwrap();
 
-                let x = start_x + x_offset;
-                let y = start_y + y_offset;
-                obj.imp().update_drag_pos((x, y));
+                    let x = start_x + x_offset;
+                    let y = start_y + y_offset;
+                    obj.imp().update_drag_pos((x, y));
+                }
             }
         ));
 

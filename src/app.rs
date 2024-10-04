@@ -230,6 +230,7 @@ impl Component for App {
                             set_halign: gtk::Align::Fill,
                             set_valign: gtk::Align::Fill,
                             set_hexpand: true,
+                            // todo: switch to single, show_spinner variable
                             #[watch]
                             set_spinning: (model.video_selected && !model.video_is_loaded) || model.video_is_exporting,
                             #[watch]
