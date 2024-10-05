@@ -1,4 +1,5 @@
 use crate::ui::preview::bounding_box::{HandleType, BOX_HANDLE_WIDTH};
+use crate::ui::preview::effects_pipeline::renderer::Renderer;
 use crate::ui::preview::CropMode;
 use gst::glib;
 use gst::subclass::prelude::{ObjectImpl, ObjectSubclass};
@@ -28,10 +29,12 @@ pub struct Preview {
     pub(crate) crop_mode: Cell<CropMode>,
     pub(crate) show_crop_box: Cell<bool>,
     pub(crate) show_zoom: Cell<bool>,
+    renderer: Renderer,
 }
 
 impl Default for Preview {
     fn default() -> Self {
+        let renderer = pollster::block_on(Renderer::new());
         Self {
             paintable: RefCell::new(Paintable::new_empty(0, 0)),
             left_x: Cell::new(0f32),
@@ -48,6 +51,7 @@ impl Default for Preview {
             crop_mode: Cell::new(CropMode::Free),
             show_crop_box: Cell::new(false),
             show_zoom: Cell::new(true),
+            renderer,
         }
     }
 }
@@ -179,5 +183,11 @@ impl Preview {
 
     pub(super) fn set_paintable(&self, paintable: Paintable) {
         self.paintable.replace(paintable);
+    }
+
+    pub(super) fn temp_render(&self) {
+        let cb = self.renderer.prepare_video_frame_render_pass();
+        pollster::block_on(self.renderer.render(cb)).expect("Could not render");
+        println!("APPSINK CALLBACK")
     }
 }

@@ -1,13 +1,13 @@
 use std::fmt::Debug;
 
-use gst::glib::FlagsClass;
-use gst::prelude::{ElementExt, ElementExtManual, ObjectExt, PadExt};
-use gst::{Bus, ClockTime, SeekFlags, State};
-
 use crate::video::metadata::{
     AudioCodec, AudioStreamInfo, ContainerFormat, VideoCodec, VideoContainerInfo, VideoInfo,
     AUDIO_BITRATE_DEFAULT, VIDEO_BITRATE_DEFAULT,
 };
+use gst::glib::FlagsClass;
+use gst::prelude::{ElementExt, ElementExtManual, ObjectExt, PadExt};
+use gst::{Bus, ClockTime, SeekFlags, State};
+use gst_video::VideoFrameExt;
 
 #[derive(Debug)]
 pub struct Player {
@@ -38,7 +38,36 @@ impl Player {
             .unwrap();
         playbin.set_property_from_value("flags", &flags);
 
-        playbin.set_property("video-sink", &sink);
+        let app_sink = gst_app::AppSink::builder()
+            .enable_last_sample(true)
+            .max_buffers(1)
+            .caps(
+                &gst_video::VideoCapsBuilder::new()
+                    .format(gst_video::VideoFormat::Rgba)
+                    .build(),
+            )
+            .build();
+
+        app_sink.set_callbacks(
+            (gst_app::AppSinkCallbacks::builder()
+                .new_sample(move |appsink| {
+                    let sample = appsink.pull_sample().unwrap();
+                    let info = sample
+                        .caps()
+                        .and_then(|caps| gst_video::VideoInfo::from_caps(caps).ok())
+                        .unwrap();
+                    let mut buffer = sample.buffer().unwrap();
+
+                    // println!("got buffer size: {}, {}", buffer.size(), buffer.map_readable().unwrap().len());
+                    // println!("got info {}, {}x{} {}", info.size(), info.width(), info.height(), info.format_info().to_string());
+
+                    Ok(gst::FlowSuccess::Ok)
+                })
+                .build()),
+        );
+
+        // playbin.set_property("video-sink", &sink);
+        playbin.set_property("video-sink", &app_sink);
 
         playbin.set_state(State::Ready).unwrap();
 

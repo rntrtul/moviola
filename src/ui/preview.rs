@@ -1,4 +1,5 @@
 mod bounding_box;
+mod effects_pipeline;
 mod pan;
 mod preview;
 mod zoom;
@@ -81,6 +82,10 @@ impl Preview {
     pub fn hide_crop_box(&self) {
         self.imp().show_crop_box.set(false);
         self.queue_draw();
+    }
+
+    pub fn temp_render(&self) {
+        self.imp().temp_render();
     }
 
     pub fn export_settings(&self) -> BoundingBoxDimensions {

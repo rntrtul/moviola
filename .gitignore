@@ -3,3 +3,4 @@
 .flatpak-builder/
 builddir
 /src/config.rs
+test_*.jpg
