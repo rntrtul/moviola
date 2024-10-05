@@ -58,7 +58,7 @@ impl Component for VideoPlayerModel {
 
         let paintable = gtk_sink.property::<gdk::Paintable>("paintable");
 
-        preview.set_paintable(paintable);
+        // preview.set_paintable(paintable);
 
         let offload = gtk4::GraphicsOffload::new(Some(&preview));
         offload.set_enabled(gtk::GraphicsOffloadEnabled::Enabled);

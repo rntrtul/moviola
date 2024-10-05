@@ -87,6 +87,7 @@ impl Preview {
 
     pub fn render_sample(&self, sample: Sample) {
         self.imp().render_sample(sample);
+        self.queue_draw();
     }
 
     pub fn export_settings(&self) -> BoundingBoxDimensions {

@@ -7,7 +7,7 @@ use gtk4::gdk::Paintable;
 use gtk4::prelude::{PaintableExt, SnapshotExt, WidgetExt};
 use gtk4::subclass::prelude::ObjectSubclassExt;
 use gtk4::subclass::widget::WidgetImpl;
-use gtk4::{graphene, Orientation};
+use gtk4::{gdk, graphene, Orientation};
 use std::cell::{Cell, RefCell};
 
 static DEFAULT_WIDTH: f64 = 640f64;
@@ -30,6 +30,7 @@ pub struct Preview {
     pub(crate) show_crop_box: Cell<bool>,
     pub(crate) show_zoom: Cell<bool>,
     pub(crate) renderer: Renderer,
+    pub(crate) texture: Cell<Option<gdk::Texture>>,
 }
 
 impl Default for Preview {
@@ -51,6 +52,7 @@ impl Default for Preview {
             crop_mode: Cell::new(CropMode::Free),
             show_crop_box: Cell::new(false),
             show_zoom: Cell::new(true),
+            texture: Cell::new(None),
             renderer,
         }
     }
@@ -107,30 +109,34 @@ impl WidgetImpl for Preview {
         //  zoom in and out with scale
         //  flip with scale (set to -1 for flip direction)
         //  to crop just zoom in on cropped area and don't show other area add mask or set overflow to none?
-        snapshot.save();
+        // snapshot.save();
+        //
+        // snapshot.push_opacity(0.4);
+        // snapshot.push_blur(100.);
+        // paintable.snapshot(snapshot, widget_width, widget_height);
+        // snapshot.pop();
+        // snapshot.pop();
+        //
+        // snapshot.push_clip(&preview);
+        //
+        // snapshot.translate(&graphene::Point::new(preview.x(), preview.y()));
+        //
+        // if self.show_zoom.get() {
+        //     snapshot.scale(self.zoom.get() as f32, self.zoom.get() as f32);
+        //     snapshot.translate(&graphene::Point::new(
+        //         self.translate_x.get(),
+        //         self.translate_y.get(),
+        //     ));
+        // }
+        //
+        // paintable.snapshot(snapshot, preview.width() as f64, preview.height() as f64);
+        //
+        // snapshot.pop();
+        // snapshot.restore();
 
-        snapshot.push_opacity(0.4);
-        snapshot.push_blur(100.);
-        paintable.snapshot(snapshot, widget_width, widget_height);
-        snapshot.pop();
-        snapshot.pop();
-
-        snapshot.push_clip(&preview);
-
-        snapshot.translate(&graphene::Point::new(preview.x(), preview.y()));
-
-        if self.show_zoom.get() {
-            snapshot.scale(self.zoom.get() as f32, self.zoom.get() as f32);
-            snapshot.translate(&graphene::Point::new(
-                self.translate_x.get(),
-                self.translate_y.get(),
-            ));
+        if let Some(texture) = self.texture.take() {
+            snapshot.append_texture(&texture, &preview);
         }
-
-        paintable.snapshot(snapshot, preview.width() as f64, preview.height() as f64);
-
-        snapshot.pop();
-        snapshot.restore();
 
         if self.show_crop_box.get() {
             self.draw_bounding_box(snapshot);
@@ -187,7 +193,8 @@ impl Preview {
 
     // todo: determine if taking sample and if memory not copied
     pub(super) fn render_sample(&self, sample: Sample) {
-        // let cb = self.renderer.prepare_video_frame_render_pass();
-        // pollster::block_on(self.renderer.render(cb)).expect("Could not render");
+        let cb = self.renderer.prepare_video_frame_render_pass(sample);
+        let texture = pollster::block_on(self.renderer.render(cb)).expect("Could not render");
+        self.texture.replace(Some(texture));
     }
 }

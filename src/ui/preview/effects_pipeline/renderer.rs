@@ -1,5 +1,9 @@
 use crate::ui::preview::effects_pipeline::vertex::{INDICES, VERTICES};
 use crate::ui::preview::effects_pipeline::{texture, vertex};
+use ges::glib;
+use gtk4::gdk;
+use std::cell::Cell;
+use std::time::SystemTime;
 use wgpu::util::DeviceExt;
 
 const OUTPUT_TEXTURE_DIMS: (usize, usize) = (512, 288);
@@ -15,6 +19,7 @@ pub struct Renderer {
     output_texture_view: wgpu::TextureView,
     render_target: wgpu::Texture,
     output_staging_buffer: wgpu::Buffer,
+    frame_count: Cell<u32>,
 }
 
 impl Renderer {
@@ -162,16 +167,25 @@ impl Renderer {
             frame_bind_group_layout,
             output_staging_buffer,
             output_texture_view,
+            frame_count: Cell::new(0),
         }
     }
 
     // todo: accept effect paramters
-    pub fn prepare_video_frame_render_pass(&self) -> wgpu::CommandBuffer {
+    pub fn prepare_video_frame_render_pass(&self, sample: gst::Sample) -> wgpu::CommandBuffer {
         // todo: determine format/type of video frame sent. meanwhile using this test img
         let diffuse_bytes = include_bytes!("test_orb in field.jpg");
+        // let frame_texture =
+        //     texture::Texture::from_bytes(&self.device, &self.queue, diffuse_bytes, "orb jbpg")
+        //         .unwrap();
         let frame_texture =
-            texture::Texture::from_bytes(&self.device, &self.queue, diffuse_bytes, "orb jbpg")
-                .unwrap();
+            texture::Texture::from_sample(&self.device, &self.queue, sample, "orb jbpg").unwrap();
+
+        println!(
+            "{}x{}",
+            frame_texture.texture.width(),
+            frame_texture.texture.height()
+        );
 
         let frame_bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
             layout: &self.frame_bind_group_layout,
@@ -244,31 +258,54 @@ impl Renderer {
     pub async fn render(
         &self,
         command_buffer: wgpu::CommandBuffer,
-    ) -> Result<(), wgpu::SurfaceError> {
+    ) -> Result<gdk::Texture, wgpu::SurfaceError> {
+        let now = SystemTime::now();
         self.queue.submit(Some(command_buffer));
+        println!("QUEUE DONE IN{:?}", now.elapsed());
+        let gdk_texture: gdk::Texture;
         {
             let buffer_slice = self.output_staging_buffer.slice(..);
             let (sender, receiver) = flume::bounded(1);
             buffer_slice.map_async(wgpu::MapMode::Read, move |r| sender.send(r).unwrap());
             self.device.poll(wgpu::Maintain::wait()).panic_on_timeout();
             receiver.recv_async().await.unwrap().unwrap();
+            println!("DEVICE DONE BY{:?}", now.elapsed());
             {
                 let mut output_texture_data =
                     Vec::<u8>::with_capacity(OUTPUT_TEXTURE_DIMS.0 * OUTPUT_TEXTURE_DIMS.1 * 4);
                 let view = buffer_slice.get_mapped_range();
                 output_texture_data.extend_from_slice(&view[..]);
 
-                let image_buffer = image::ImageBuffer::<image::Rgba<u8>, _>::from_raw(
-                    OUTPUT_TEXTURE_DIMS.0 as u32,
-                    OUTPUT_TEXTURE_DIMS.1 as u32,
-                    view,
-                )
-                .unwrap();
-                image_buffer.save("test_image.png").unwrap();
+                let pixbuf = gdk::gdk_pixbuf::Pixbuf::from_bytes(
+                    &glib::Bytes::from(&output_texture_data),
+                    gdk::gdk_pixbuf::Colorspace::Rgb,
+                    true,
+                    8,
+                    OUTPUT_TEXTURE_DIMS.0 as i32,
+                    OUTPUT_TEXTURE_DIMS.1 as i32,
+                    OUTPUT_TEXTURE_DIMS.0 as i32 * 32,
+                );
+
+                gdk_texture = gdk::Texture::for_pixbuf(&pixbuf);
+                println!("TEXTURE BY{:?}", now.elapsed());
+
+                // if self.frame_count.get() % 48 == 0 {
+                //     println!("SAVING IMG");
+                //     let image_buffer = image::ImageBuffer::<image::Rgba<u8>, _>::from_raw(
+                //         OUTPUT_TEXTURE_DIMS.0 as u32,
+                //         OUTPUT_TEXTURE_DIMS.1 as u32,
+                //         view,
+                //     )
+                //         .unwrap();
+                //     image_buffer.save("test_image.png").unwrap();
+                // }
+                self.frame_count.set(self.frame_count.get() + 1);
             }
 
             self.output_staging_buffer.unmap();
         }
-        Ok(())
+        println!("DONE all IN{:?}", now.elapsed());
+
+        Ok(gdk_texture)
     }
 }
