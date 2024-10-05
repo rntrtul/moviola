@@ -4,3 +4,4 @@
 builddir
 /src/config.rs
 test_*.jpg
+test_*.png

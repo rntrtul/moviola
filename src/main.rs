@@ -11,6 +11,7 @@ mod ui;
 mod video;
 
 fn main() {
+    env_logger::init();
     gst::init().unwrap();
     gtk::init().unwrap();
 

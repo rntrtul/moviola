@@ -264,7 +264,7 @@ impl Renderer {
                     view,
                 )
                 .unwrap();
-                image_buffer.save("image.png").unwrap();
+                image_buffer.save("test_image.png").unwrap();
             }
 
             self.output_staging_buffer.unmap();
