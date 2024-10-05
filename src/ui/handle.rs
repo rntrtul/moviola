@@ -1,16 +1,23 @@
 use std::cell::Cell;
 
-use gtk4::prelude::{ObjectExt, SnapshotExt, WidgetExt};
+use gtk4::prelude::{ObjectExt, SnapshotExt, SnapshotExtManual, WidgetExt};
 use gtk4::subclass::prelude::*;
 use gtk4::{gdk, glib, graphene, gsk, Snapshot};
+use lazy_static::lazy_static;
 use relm4::gtk;
 
 use crate::ui::IGNORE_OVERLAY_COLOUR;
 
 static FILL_RULE: gsk::FillRule = gsk::FillRule::Winding;
 pub static HANDLE_WIDTH: f32 = 10f32;
+static HANDLE_HEIGHT: f32 = 3f32;
 static SEEK_BAR_WIDTH: f32 = 4f32;
 static SEEK_BAR_OFFSET: f32 = HANDLE_WIDTH - (SEEK_BAR_WIDTH / 2f32);
+
+lazy_static! {
+    static ref HANDLE_CURVE: graphene::Size = graphene::Size::new(6f32, 6f32);
+    static ref ZERO_SIZE: graphene::Size = graphene::Size::zero();
+}
 
 #[derive(glib::Properties, Default, Debug)]
 #[properties(wrapper_type = super::HandleWidget)]
@@ -39,9 +46,7 @@ impl ObjectImpl for HandleWidget {}
 
 impl WidgetImpl for HandleWidget {
     fn snapshot(&self, snapshot: &Snapshot) {
-        // todo: have shadow on handle?
         let widget = self.obj();
-        // println!("{}", widget.width());
 
         if self.start_x.get() != 0f32 {
             let start_not_playing_rect = graphene::Rect::new(
@@ -66,6 +71,24 @@ impl WidgetImpl for HandleWidget {
             snapshot.append_color(&IGNORE_OVERLAY_COLOUR, &end_not_playing_rect);
         }
 
+        let border = graphene::Rect::new(
+            self.start_left_x() + HANDLE_WIDTH,
+            -HANDLE_HEIGHT,
+            self.end_left_x() - self.start_left_x() - HANDLE_WIDTH,
+            widget.height() as f32 + HANDLE_HEIGHT,
+        );
+        snapshot.append_border(
+            &gsk::RoundedRect::from_rect(border, 0f32),
+            &[HANDLE_HEIGHT, 0f32, HANDLE_HEIGHT, 0f32],
+            &[
+                gdk::RGBA::WHITE,
+                gdk::RGBA::WHITE,
+                gdk::RGBA::WHITE,
+                gdk::RGBA::WHITE,
+            ],
+        );
+        // fixme: sometimes can see line on top of handle
+
         snapshot.append_fill(&self.seek_bar_path(), FILL_RULE, &gdk::RGBA::WHITE);
         snapshot.append_fill(&self.start_handle_path(), FILL_RULE, &gdk::RGBA::WHITE);
         snapshot.append_fill(&self.end_handle_path(), FILL_RULE, &gdk::RGBA::WHITE);
@@ -87,9 +110,20 @@ impl HandleWidget {
 
     fn start_handle_path(&self) -> gsk::Path {
         let left_x = self.start_left_x();
-        let handle_rect =
-            graphene::Rect::new(left_x, 0f32, HANDLE_WIDTH, self.obj().height() as f32);
-        let handle_outline = gsk::RoundedRect::from_rect(handle_rect, 6f32);
+        let handle_rect = graphene::Rect::new(
+            left_x,
+            -HANDLE_HEIGHT,
+            HANDLE_WIDTH,
+            self.obj().height() as f32 + HANDLE_HEIGHT,
+        );
+
+        let handle_outline = gsk::RoundedRect::new(
+            handle_rect,
+            *HANDLE_CURVE,
+            *ZERO_SIZE,
+            *ZERO_SIZE,
+            *HANDLE_CURVE,
+        );
 
         let path_builder = gsk::PathBuilder::new();
         path_builder.add_rounded_rect(&handle_outline);
@@ -99,11 +133,17 @@ impl HandleWidget {
     fn end_handle_path(&self) -> gsk::Path {
         let handle_rect = graphene::Rect::new(
             self.end_left_x(),
-            0f32,
+            -HANDLE_HEIGHT,
             HANDLE_WIDTH,
-            self.obj().height() as f32,
+            self.obj().height() as f32 + HANDLE_HEIGHT,
         );
-        let handle_outline = gsk::RoundedRect::from_rect(handle_rect, 6f32);
+        let handle_outline = gsk::RoundedRect::new(
+            handle_rect,
+            *ZERO_SIZE,
+            *HANDLE_CURVE,
+            *HANDLE_CURVE,
+            *ZERO_SIZE,
+        );
 
         let path_builder = gsk::PathBuilder::new();
         path_builder.add_rounded_rect(&handle_outline);
