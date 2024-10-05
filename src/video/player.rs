@@ -1,13 +1,14 @@
-use std::fmt::Debug;
-
+use crate::app::{App, AppMsg};
 use crate::video::metadata::{
     AudioCodec, AudioStreamInfo, ContainerFormat, VideoCodec, VideoContainerInfo, VideoInfo,
     AUDIO_BITRATE_DEFAULT, VIDEO_BITRATE_DEFAULT,
 };
 use gst::glib::FlagsClass;
 use gst::prelude::{ElementExt, ElementExtManual, ObjectExt, PadExt};
-use gst::{Bus, ClockTime, SeekFlags, State};
+use gst::{Bus, ClockTime, FlowSuccess, SeekFlags, State};
 use gst_video::VideoFrameExt;
+use relm4::ComponentSender;
+use std::fmt::Debug;
 
 #[derive(Debug)]
 pub struct Player {
@@ -18,7 +19,7 @@ pub struct Player {
 }
 
 impl Player {
-    pub fn new(sink: &gst::Element) -> Self {
+    pub fn new(sample_sender: ComponentSender<App>) -> Self {
         // todo: set to lower resolution for preview. might save more memory (higher cpu?)
         let playbin = gst::ElementFactory::make("playbin")
             .name("playbin")
@@ -49,21 +50,13 @@ impl Player {
             .build();
 
         app_sink.set_callbacks(
-            (gst_app::AppSinkCallbacks::builder()
+            gst_app::AppSinkCallbacks::builder()
                 .new_sample(move |appsink| {
                     let sample = appsink.pull_sample().unwrap();
-                    let info = sample
-                        .caps()
-                        .and_then(|caps| gst_video::VideoInfo::from_caps(caps).ok())
-                        .unwrap();
-                    let mut buffer = sample.buffer().unwrap();
-
-                    // println!("got buffer size: {}, {}", buffer.size(), buffer.map_readable().unwrap().len());
-                    // println!("got info {}, {}x{} {}", info.size(), info.width(), info.height(), info.format_info().to_string());
-
-                    Ok(gst::FlowSuccess::Ok)
+                    sample_sender.input(AppMsg::NewFrame(sample));
+                    Ok(FlowSuccess::Ok)
                 })
-                .build()),
+                .build(),
         );
 
         // playbin.set_property("video-sink", &sink);

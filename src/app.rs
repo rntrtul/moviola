@@ -61,6 +61,7 @@ pub(super) enum AppMsg {
     ZoomTempReset,
     ZoomRestore,
     Quit,
+    NewFrame(gst::Sample),
 }
 
 #[derive(Debug)]
@@ -337,7 +338,7 @@ impl Component for App {
                     TimelineOutput::SeekToPercent(percent) => AppMsg::SeekToPercent(percent),
                 });
 
-        let player = Rc::new(RefCell::new(Player::new(video_player.model().sink())));
+        let player = Rc::new(RefCell::new(Player::new(sender.clone())));
 
         let model = Self {
             video_player,
@@ -439,7 +440,6 @@ impl Component for App {
                 // widgets.crop_box.reset_box();
             }
             AppMsg::Orient(orientation) => {
-                self.preview.temp_render();
                 self.preview.queue_draw();
                 self.player.borrow_mut().set_video_orientation(orientation)
             }
@@ -486,6 +486,9 @@ impl Component for App {
             AppMsg::ZoomRestore => {
                 widgets.preview_zoom.set_sensitive(true);
                 self.preview.show_zoom();
+            }
+            AppMsg::NewFrame(sample) => {
+                self.preview.render_sample(sample);
             }
         }
 

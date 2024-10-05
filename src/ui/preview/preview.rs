@@ -1,8 +1,8 @@
 use crate::ui::preview::bounding_box::{HandleType, BOX_HANDLE_WIDTH};
 use crate::ui::preview::effects_pipeline::renderer::Renderer;
 use crate::ui::preview::CropMode;
-use gst::glib;
 use gst::subclass::prelude::{ObjectImpl, ObjectSubclass};
+use gst::{glib, Sample};
 use gtk4::gdk::Paintable;
 use gtk4::prelude::{PaintableExt, SnapshotExt, WidgetExt};
 use gtk4::subclass::prelude::ObjectSubclassExt;
@@ -29,7 +29,7 @@ pub struct Preview {
     pub(crate) crop_mode: Cell<CropMode>,
     pub(crate) show_crop_box: Cell<bool>,
     pub(crate) show_zoom: Cell<bool>,
-    renderer: Renderer,
+    pub(crate) renderer: Renderer,
 }
 
 impl Default for Preview {
@@ -185,9 +185,9 @@ impl Preview {
         self.paintable.replace(paintable);
     }
 
-    pub(super) fn temp_render(&self) {
-        let cb = self.renderer.prepare_video_frame_render_pass();
-        pollster::block_on(self.renderer.render(cb)).expect("Could not render");
-        println!("APPSINK CALLBACK")
+    // todo: determine if taking sample and if memory not copied
+    pub(super) fn render_sample(&self, sample: Sample) {
+        // let cb = self.renderer.prepare_video_frame_render_pass();
+        // pollster::block_on(self.renderer.render(cb)).expect("Could not render");
     }
 }

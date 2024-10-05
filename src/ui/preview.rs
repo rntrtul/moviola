@@ -4,6 +4,7 @@ mod pan;
 mod preview;
 mod zoom;
 
+use gst::Sample;
 use gtk4::gdk::Paintable;
 use gtk4::glib;
 use gtk4::glib::clone;
@@ -84,8 +85,8 @@ impl Preview {
         self.queue_draw();
     }
 
-    pub fn temp_render(&self) {
-        self.imp().temp_render();
+    pub fn render_sample(&self, sample: Sample) {
+        self.imp().render_sample(sample);
     }
 
     pub fn export_settings(&self) -> BoundingBoxDimensions {
