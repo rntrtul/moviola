@@ -10,12 +10,12 @@ use crate::ui::IGNORE_OVERLAY_COLOUR;
 
 static FILL_RULE: gsk::FillRule = gsk::FillRule::Winding;
 pub static HANDLE_WIDTH: f32 = 10f32;
-static HANDLE_HEIGHT: f32 = 3f32;
+pub static HANDLE_HEIGHT: f32 = 3f32;
 static SEEK_BAR_WIDTH: f32 = 4f32;
 static SEEK_BAR_OFFSET: f32 = HANDLE_WIDTH - (SEEK_BAR_WIDTH / 2f32);
 
 lazy_static! {
-    static ref HANDLE_CURVE: graphene::Size = graphene::Size::new(6f32, 6f32);
+    static ref HANDLE_CURVE: graphene::Size = graphene::Size::new(3f32, 6f32);
     static ref ZERO_SIZE: graphene::Size = graphene::Size::zero();
 }
 
@@ -75,7 +75,7 @@ impl WidgetImpl for HandleWidget {
             self.start_left_x() + HANDLE_WIDTH,
             -HANDLE_HEIGHT,
             self.end_left_x() - self.start_left_x() - HANDLE_WIDTH,
-            widget.height() as f32 + HANDLE_HEIGHT,
+            widget.height() as f32 + (HANDLE_HEIGHT * 2f32),
         );
         snapshot.append_border(
             &gsk::RoundedRect::from_rect(border, 0f32),
@@ -88,6 +88,7 @@ impl WidgetImpl for HandleWidget {
             ],
         );
         // fixme: sometimes can see line on top of handle
+        // todo: add hit detection to overflow on height
 
         snapshot.append_fill(&self.seek_bar_path(), FILL_RULE, &gdk::RGBA::WHITE);
         snapshot.append_fill(&self.start_handle_path(), FILL_RULE, &gdk::RGBA::WHITE);
@@ -114,7 +115,7 @@ impl HandleWidget {
             left_x,
             -HANDLE_HEIGHT,
             HANDLE_WIDTH,
-            self.obj().height() as f32 + HANDLE_HEIGHT,
+            self.obj().height() as f32 + (2f32 * HANDLE_HEIGHT),
         );
 
         let handle_outline = gsk::RoundedRect::new(
@@ -135,7 +136,7 @@ impl HandleWidget {
             self.end_left_x(),
             -HANDLE_HEIGHT,
             HANDLE_WIDTH,
-            self.obj().height() as f32 + HANDLE_HEIGHT,
+            self.obj().height() as f32 + (2f32 * HANDLE_HEIGHT),
         );
         let handle_outline = gsk::RoundedRect::new(
             handle_rect,
