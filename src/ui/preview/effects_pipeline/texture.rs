@@ -83,22 +83,8 @@ impl Texture {
         self.write_from_buffer(queue, &rgba);
     }
     pub fn write_from_sample(&self, queue: &wgpu::Queue, sample: gst::Sample) {
-        // todo: find way to read from buffer directly
         let buffer = sample.buffer().unwrap();
-        let caps = sample.caps().expect("sample without caps");
-        let info = gst_video::VideoInfo::from_caps(caps).expect("Failed to parse caps");
-        let frame = gst_video::VideoFrameRef::from_buffer_ref_readable(buffer, &info)
-            .map_err(|_| gst::FlowError::Error)
-            .unwrap();
-
-        let image = image::ImageBuffer::<image::Rgba<u8>, _>::from_raw(
-            info.width(),
-            info.height(),
-            frame.plane_data(0).unwrap(),
-        )
-        .unwrap();
-
-        self.write_from_buffer(queue, &image);
+        self.write_from_buffer(queue, &buffer.map_readable().unwrap().as_slice());
     }
 
     pub fn write_from_buffer(&self, queue: &wgpu::Queue, buffer: &[u8]) {

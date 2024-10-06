@@ -302,7 +302,7 @@ impl Renderer {
 
             self.output_staging_buffer.unmap();
         }
-        println!("render in {:?}", self.frame_start.get().elapsed().unwrap());
+        println!("{:?}", self.frame_start.get().elapsed().unwrap());
 
         Ok(gdk_texture)
     }
