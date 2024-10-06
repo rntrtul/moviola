@@ -3,19 +3,18 @@ use crate::ui::preview::effects_pipeline::renderer::Renderer;
 use crate::ui::preview::CropMode;
 use gst::subclass::prelude::{ObjectImpl, ObjectSubclass};
 use gst::{glib, Sample};
-use gtk4::gdk::Paintable;
-use gtk4::graphene::Rect;
 use gtk4::prelude::{PaintableExt, SnapshotExt, WidgetExt};
 use gtk4::subclass::prelude::ObjectSubclassExt;
 use gtk4::subclass::widget::WidgetImpl;
 use gtk4::{gdk, graphene, Orientation};
-use std::cell::{Cell, RefCell};
+use std::cell::Cell;
 
 static DEFAULT_WIDTH: f64 = 640f64;
 static DEFAULT_HEIGHT: f64 = 360f64;
 
+// todo: use point for translate_offset, top_left, bottom_right
 pub struct Preview {
-    pub(crate) paintable: RefCell<Paintable>,
+    pub(crate) renderer: Renderer,
     pub(crate) left_x: Cell<f32>,
     pub(crate) top_y: Cell<f32>,
     pub(crate) right_x: Cell<f32>,
@@ -30,15 +29,18 @@ pub struct Preview {
     pub(crate) crop_mode: Cell<CropMode>,
     pub(crate) show_crop_box: Cell<bool>,
     pub(crate) show_zoom: Cell<bool>,
-    pub(crate) renderer: Renderer,
     pub(crate) texture: Cell<Option<gdk::Texture>>,
+    //todo: accept orignal dimensions as struct?
+    pub(crate) original_aspect_ratio: Cell<f32>,
+    pub(crate) native_frame_width: Cell<u32>,
+    pub(crate) native_frame_height: Cell<u32>,
 }
 
 impl Default for Preview {
     fn default() -> Self {
         let renderer = pollster::block_on(Renderer::new());
         Self {
-            paintable: RefCell::new(Paintable::new_empty(0, 0)),
+            renderer,
             left_x: Cell::new(0f32),
             top_y: Cell::new(0f32),
             right_x: Cell::new(1f32),
@@ -54,7 +56,9 @@ impl Default for Preview {
             show_crop_box: Cell::new(false),
             show_zoom: Cell::new(true),
             texture: Cell::new(None),
-            renderer,
+            original_aspect_ratio: Cell::new(1.77f32),
+            native_frame_width: Cell::new(0),
+            native_frame_height: Cell::new(0),
         }
     }
 }
@@ -76,33 +80,30 @@ impl ObjectImpl for Preview {
 impl WidgetImpl for Preview {
     fn measure(&self, orientation: Orientation, for_size: i32) -> (i32, i32, i32, i32) {
         if orientation == Orientation::Horizontal {
-            let concrete_size = self.paintable.borrow().compute_concrete_size(
-                0.,
-                0f64.max(for_size as f64),
-                DEFAULT_WIDTH,
-                DEFAULT_HEIGHT,
-            );
+            let width = if for_size <= 0 {
+                DEFAULT_WIDTH as i32
+            } else {
+                (for_size as f32 * self.original_aspect_ratio.get()) as i32
+            };
 
-            (0, concrete_size.0 as i32, 0, 0)
+            (0, width, 0, 0)
         } else {
-            let concrete_size = self.paintable.borrow().compute_concrete_size(
-                0f64.max(for_size as f64),
-                0.,
-                DEFAULT_WIDTH,
-                DEFAULT_HEIGHT,
-            );
+            let height = if for_size <= 0 {
+                DEFAULT_HEIGHT as i32
+            } else {
+                (for_size as f32 / self.original_aspect_ratio.get()) as i32
+            };
 
-            (0, concrete_size.1 as i32, 0, 0)
+            (0, height, 0, 0)
         }
     }
 
     fn snapshot(&self, snapshot: &gtk4::Snapshot) {
-        let paintable = self.paintable.borrow();
-
         let widget_width = self.widget_width() as f64;
         let widget_height = self.widget_height() as f64;
 
         let preview = self.preview_rect();
+        // println!("preview rect is:{:?}", preview);
         // todo: need to make glow smaller around video and remove black blending
         //          call centerd start with a rect slightly larger than preview
 
@@ -110,7 +111,7 @@ impl WidgetImpl for Preview {
         //  zoom in and out with scale
         //  flip with scale (set to -1 for flip direction)
         //  to crop just zoom in on cropped area and don't show other area add mask or set overflow to none?
-        // snapshot.save();
+        snapshot.save();
         //
         // snapshot.push_opacity(0.4);
         // snapshot.push_blur(100.);
@@ -120,26 +121,23 @@ impl WidgetImpl for Preview {
         //
         // snapshot.push_clip(&preview);
         //
-        // snapshot.translate(&graphene::Point::new(preview.x(), preview.y()));
-        //
-        // if self.show_zoom.get() {
-        //     snapshot.scale(self.zoom.get() as f32, self.zoom.get() as f32);
-        //     snapshot.translate(&graphene::Point::new(
-        //         self.translate_x.get(),
-        //         self.translate_y.get(),
-        //     ));
-        // }
-        //
-        // paintable.snapshot(snapshot, preview.width() as f64, preview.height() as f64);
-        //
-        // snapshot.pop();
-        // snapshot.restore();
+        snapshot.translate(&graphene::Point::new(preview.x(), preview.y()));
+
+        if self.show_zoom.get() {
+            snapshot.scale(self.zoom.get() as f32, self.zoom.get() as f32);
+            snapshot.translate(&graphene::Point::new(
+                self.translate_x.get(),
+                self.translate_y.get(),
+            ));
+        }
 
         if let Some(texture) = self.texture.take() {
-            // todo: update preview rect to take value
-            let rect = Rect::new(0f32, 0f32, widget_width as f32, widget_height as f32);
-            snapshot.append_texture(&texture, &rect);
+            texture.snapshot(snapshot, preview.width() as f64, preview.height() as f64);
+            // snapshot.append_texture(&texture, &preview);
         }
+
+        // snapshot.pop();
+        snapshot.restore();
 
         if self.show_crop_box.get() {
             self.draw_bounding_box(snapshot);
@@ -163,7 +161,9 @@ impl Preview {
         let widget_height = self.widget_height();
 
         let widget_aspect_ratio = widget_width / widget_height;
-        let video_aspect_ratio = self.paintable.borrow().intrinsic_aspect_ratio() as f32;
+        let video_aspect_ratio = self.original_aspect_ratio.get();
+
+        // println!("Preview Size: {widget_width}x{widget_height} {video_aspect_ratio}");
 
         if widget_aspect_ratio > video_aspect_ratio {
             // more width available then height, so change width to fit aspect ratio
@@ -188,10 +188,6 @@ impl Preview {
         let (x, y) = self.centered_start(preview_width, preview_height);
 
         graphene::Rect::new(x, y, preview_width, preview_height)
-    }
-
-    pub(super) fn set_paintable(&self, paintable: Paintable) {
-        self.paintable.replace(paintable);
     }
 
     // todo: determine if taking sample and if memory not copied

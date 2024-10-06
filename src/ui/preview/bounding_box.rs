@@ -4,7 +4,7 @@ use ges::subclass::prelude::ObjectSubclassExt;
 use gtk4::glib;
 use gtk4::glib::clone;
 use gtk4::graphene::Rect;
-use gtk4::prelude::{GestureDragExt, PaintableExt, SnapshotExt, SnapshotExtManual, WidgetExt};
+use gtk4::prelude::{GestureDragExt, SnapshotExt, SnapshotExtManual, WidgetExt};
 use gtk4::subclass::prelude::ObjectSubclassIsExt;
 use gtk4::{gdk, gsk};
 use gtk4::{graphene, Snapshot};
@@ -194,7 +194,7 @@ impl Preview {
         }
 
         let target_aspect_ratio = if self.crop_mode.get() == CropMode::Original {
-            self.paintable.borrow().intrinsic_aspect_ratio() as f32
+            self.original_aspect_ratio.get()
         } else {
             self.crop_mode.get().value()
         };
