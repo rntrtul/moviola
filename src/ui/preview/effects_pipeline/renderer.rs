@@ -2,10 +2,11 @@ use crate::ui::preview::effects_pipeline::vertex::{INDICES, VERTICES};
 use crate::ui::preview::effects_pipeline::{texture, vertex};
 use ges::glib;
 use gtk4::gdk;
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 use std::time::SystemTime;
 use wgpu::util::DeviceExt;
 
+// todo: accept user defined output size
 const OUTPUT_TEXTURE_DIMS: (usize, usize) = (512, 288);
 
 pub struct Renderer {
@@ -19,7 +20,9 @@ pub struct Renderer {
     output_texture_view: wgpu::TextureView,
     render_target: wgpu::Texture,
     output_staging_buffer: wgpu::Buffer,
+    video_frame_texture: RefCell<texture::Texture>,
     frame_count: Cell<u32>,
+    frame_start: Cell<SystemTime>,
 }
 
 impl Renderer {
@@ -43,7 +46,6 @@ impl Renderer {
             .await
             .unwrap();
 
-        // todo: will have to create texture and bind group every time? or just update bindgroup entries?
         let frame_bind_group_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
                 entries: &[
@@ -66,6 +68,9 @@ impl Renderer {
                 ],
                 label: Some("texture_binding group layout"),
             });
+
+        let texture =
+            texture::Texture::new_for_size(1, 1, &device, &frame_bind_group_layout, "").unwrap();
 
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("Main Shader"),
@@ -167,40 +172,36 @@ impl Renderer {
             frame_bind_group_layout,
             output_staging_buffer,
             output_texture_view,
+            video_frame_texture: RefCell::new(texture),
             frame_count: Cell::new(0),
+            frame_start: Cell::new(SystemTime::now()),
         }
     }
 
     // todo: accept effect paramters
     pub fn prepare_video_frame_render_pass(&self, sample: gst::Sample) -> wgpu::CommandBuffer {
-        // todo: determine format/type of video frame sent. meanwhile using this test img
-        let diffuse_bytes = include_bytes!("test_orb in field.jpg");
-        // let frame_texture =
-        //     texture::Texture::from_bytes(&self.device, &self.queue, diffuse_bytes, "orb jbpg")
-        //         .unwrap();
-        let frame_texture =
-            texture::Texture::from_sample(&self.device, &self.queue, sample, "orb jbpg").unwrap();
+        let caps = sample.caps().expect("sample without caps");
+        let info = gst_video::VideoInfo::from_caps(caps).expect("Failed to parse caps");
+        self.frame_start.replace(SystemTime::now());
+        if !self
+            .video_frame_texture
+            .borrow()
+            .is_same_size(info.width(), info.height())
+        {
+            self.video_frame_texture.replace(
+                texture::Texture::new_for_size(
+                    info.width(),
+                    info.height(),
+                    &self.device,
+                    &self.frame_bind_group_layout,
+                    "video frame texture",
+                )
+                .unwrap(),
+            );
+        }
 
-        println!(
-            "{}x{}",
-            frame_texture.texture.width(),
-            frame_texture.texture.height()
-        );
-
-        let frame_bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
-            layout: &self.frame_bind_group_layout,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: wgpu::BindingResource::TextureView(&frame_texture.view),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: wgpu::BindingResource::Sampler(&frame_texture.sampler),
-                },
-            ],
-            label: Some("diffuse bind group"),
-        });
+        let texture = self.video_frame_texture.borrow();
+        texture.write_from_sample(&self.queue, sample);
 
         let mut encoder = self
             .device
@@ -223,7 +224,7 @@ impl Renderer {
             });
 
             render_pass.set_pipeline(&self.render_pipeline);
-            render_pass.set_bind_group(0, &frame_bind_group, &[]);
+            render_pass.set_bind_group(0, &texture.bind_group, &[]);
             render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
             render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
             render_pass.draw_indexed(0..self.num_indices, 0, 0..1);
@@ -259,17 +260,15 @@ impl Renderer {
         &self,
         command_buffer: wgpu::CommandBuffer,
     ) -> Result<gdk::Texture, wgpu::SurfaceError> {
-        let now = SystemTime::now();
         self.queue.submit(Some(command_buffer));
-        println!("QUEUE DONE IN{:?}", now.elapsed());
         let gdk_texture: gdk::Texture;
+
         {
             let buffer_slice = self.output_staging_buffer.slice(..);
             let (sender, receiver) = flume::bounded(1);
             buffer_slice.map_async(wgpu::MapMode::Read, move |r| sender.send(r).unwrap());
             self.device.poll(wgpu::Maintain::wait()).panic_on_timeout();
             receiver.recv_async().await.unwrap().unwrap();
-            println!("DEVICE DONE BY{:?}", now.elapsed());
             {
                 let mut output_texture_data =
                     Vec::<u8>::with_capacity(OUTPUT_TEXTURE_DIMS.0 * OUTPUT_TEXTURE_DIMS.1 * 4);
@@ -287,7 +286,6 @@ impl Renderer {
                 );
 
                 gdk_texture = gdk::Texture::for_pixbuf(&pixbuf);
-                println!("TEXTURE BY{:?}", now.elapsed());
 
                 // if self.frame_count.get() % 48 == 0 {
                 //     println!("SAVING IMG");
@@ -304,7 +302,7 @@ impl Renderer {
 
             self.output_staging_buffer.unmap();
         }
-        println!("DONE all IN{:?}", now.elapsed());
+        println!("render in {:?}", self.frame_start.get().elapsed().unwrap());
 
         Ok(gdk_texture)
     }
