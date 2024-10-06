@@ -4,6 +4,7 @@ use crate::ui::preview::CropMode;
 use gst::subclass::prelude::{ObjectImpl, ObjectSubclass};
 use gst::{glib, Sample};
 use gtk4::gdk::Paintable;
+use gtk4::graphene::Rect;
 use gtk4::prelude::{PaintableExt, SnapshotExt, WidgetExt};
 use gtk4::subclass::prelude::ObjectSubclassExt;
 use gtk4::subclass::widget::WidgetImpl;
@@ -135,7 +136,9 @@ impl WidgetImpl for Preview {
         // snapshot.restore();
 
         if let Some(texture) = self.texture.take() {
-            snapshot.append_texture(&texture, &preview);
+            // todo: update preview rect to take value
+            let rect = Rect::new(0f32, 0f32, widget_width as f32, widget_height as f32);
+            snapshot.append_texture(&texture, &rect);
         }
 
         if self.show_crop_box.get() {

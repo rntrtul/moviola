@@ -2,6 +2,7 @@ use crate::ui::preview::effects_pipeline::vertex::{INDICES, VERTICES};
 use crate::ui::preview::effects_pipeline::{texture, vertex};
 use ges::glib;
 use gtk4::gdk;
+use gtk4::prelude::{Cast, TextureExt};
 use std::cell::{Cell, RefCell};
 use std::time::SystemTime;
 use wgpu::util::DeviceExt;
@@ -275,17 +276,14 @@ impl Renderer {
                 let view = buffer_slice.get_mapped_range();
                 output_texture_data.extend_from_slice(&view[..]);
 
-                let pixbuf = gdk::gdk_pixbuf::Pixbuf::from_bytes(
-                    &glib::Bytes::from(&output_texture_data),
-                    gdk::gdk_pixbuf::Colorspace::Rgb,
-                    true,
-                    8,
+                gdk_texture = gdk::MemoryTexture::new(
                     OUTPUT_TEXTURE_DIMS.0 as i32,
                     OUTPUT_TEXTURE_DIMS.1 as i32,
-                    OUTPUT_TEXTURE_DIMS.0 as i32 * 32,
-                );
-
-                gdk_texture = gdk::Texture::for_pixbuf(&pixbuf);
+                    gdk::MemoryFormat::R8g8b8a8,
+                    &glib::Bytes::from(&output_texture_data),
+                    (OUTPUT_TEXTURE_DIMS.0 as i32 * 4) as usize,
+                )
+                .upcast::<gdk::Texture>();
 
                 // if self.frame_count.get() % 48 == 0 {
                 //     println!("SAVING IMG");
@@ -296,13 +294,14 @@ impl Renderer {
                 //     )
                 //         .unwrap();
                 //     image_buffer.save("test_image.png").unwrap();
+                //     gdk_texture.save_to_png("test_texture.png").unwrap();
                 // }
                 self.frame_count.set(self.frame_count.get() + 1);
             }
 
             self.output_staging_buffer.unmap();
         }
-        println!("{:?}", self.frame_start.get().elapsed().unwrap());
+        // println!("{:?}", self.frame_start.get().elapsed().unwrap());
 
         Ok(gdk_texture)
     }

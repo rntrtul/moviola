@@ -88,7 +88,6 @@ impl Texture {
     }
 
     pub fn write_from_buffer(&self, queue: &wgpu::Queue, buffer: &[u8]) {
-        // todo: ImageCopyTexture and ImageDataLayout created at start
         queue.write_texture(
             wgpu::ImageCopyTexture {
                 texture: &self.texture,
