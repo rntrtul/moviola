@@ -7,7 +7,7 @@ use gtk4::prelude::{PaintableExt, SnapshotExt, WidgetExt};
 use gtk4::subclass::prelude::ObjectSubclassExt;
 use gtk4::subclass::widget::WidgetImpl;
 use gtk4::{gdk, graphene, Orientation};
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 
 static DEFAULT_WIDTH: f64 = 640f64;
 static DEFAULT_HEIGHT: f64 = 360f64;
@@ -29,7 +29,7 @@ pub struct Preview {
     pub(crate) crop_mode: Cell<CropMode>,
     pub(crate) show_crop_box: Cell<bool>,
     pub(crate) show_zoom: Cell<bool>,
-    pub(crate) texture: Cell<Option<gdk::Texture>>,
+    pub(crate) texture: RefCell<Option<gdk::Texture>>,
     //todo: accept orignal dimensions as struct?
     pub(crate) original_aspect_ratio: Cell<f32>,
     pub(crate) native_frame_width: Cell<u32>,
@@ -55,7 +55,7 @@ impl Default for Preview {
             crop_mode: Cell::new(CropMode::Free),
             show_crop_box: Cell::new(false),
             show_zoom: Cell::new(true),
-            texture: Cell::new(None),
+            texture: RefCell::new(None),
             original_aspect_ratio: Cell::new(1.77f32),
             native_frame_width: Cell::new(0),
             native_frame_height: Cell::new(0),
@@ -131,9 +131,8 @@ impl WidgetImpl for Preview {
             ));
         }
 
-        if let Some(texture) = self.texture.take() {
+        if let Some(ref texture) = *self.texture.borrow() {
             texture.snapshot(snapshot, preview.width() as f64, preview.height() as f64);
-            // snapshot.append_texture(&texture, &preview);
         }
 
         // snapshot.pop();
@@ -194,6 +193,6 @@ impl Preview {
     pub(super) fn render_sample(&self, sample: Sample) {
         let cb = self.renderer.prepare_video_frame_render_pass(sample);
         let texture = pollster::block_on(self.renderer.render(cb)).expect("Could not render");
-        self.texture.replace(Some(texture));
+        self.texture.borrow_mut().replace(texture);
     }
 }
