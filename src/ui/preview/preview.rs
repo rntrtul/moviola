@@ -14,7 +14,7 @@ static DEFAULT_HEIGHT: f64 = 360f64;
 
 // todo: use point for translate_offset, top_left, bottom_right
 pub struct Preview {
-    pub(crate) renderer: Renderer,
+    pub(crate) renderer: RefCell<Renderer>,
     pub(crate) left_x: Cell<f32>,
     pub(crate) top_y: Cell<f32>,
     pub(crate) right_x: Cell<f32>,
@@ -40,7 +40,7 @@ impl Default for Preview {
     fn default() -> Self {
         let renderer = pollster::block_on(Renderer::new());
         Self {
-            renderer,
+            renderer: RefCell::new(renderer),
             left_x: Cell::new(0f32),
             top_y: Cell::new(0f32),
             right_x: Cell::new(1f32),
@@ -191,8 +191,27 @@ impl Preview {
 
     // todo: determine if taking sample and if memory not copied
     pub(super) fn render_sample(&self, sample: Sample) {
-        let cb = self.renderer.prepare_video_frame_render_pass(sample);
-        let texture = pollster::block_on(self.renderer.render(cb)).expect("Could not render");
+        let mut renderer = self.renderer.borrow_mut();
+
+        let caps = sample.caps().expect("sample without caps");
+        let info = gst_video::VideoInfo::from_caps(caps).expect("Failed to parse caps");
+
+        if info.width() != self.native_frame_width.get()
+            && info.height() != self.native_frame_height.get()
+        {
+            self.native_frame_width.replace(info.width());
+            self.native_frame_height.replace(info.height());
+            self.original_aspect_ratio
+                .set(info.width() as f32 / info.height() as f32);
+
+            renderer.update_video_frame_texture_size(info.width(), info.height());
+            let output_width = 640usize;
+            let output_height = (640f32 / self.original_aspect_ratio.get()) as usize;
+            renderer.update_render_target_size(output_width, output_height);
+        }
+
+        let cb = renderer.prepare_video_frame_render_pass(sample);
+        let texture = pollster::block_on(renderer.render(cb)).expect("Could not render");
         self.texture.borrow_mut().replace(texture);
     }
 }

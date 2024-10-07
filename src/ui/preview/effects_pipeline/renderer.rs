@@ -7,9 +7,6 @@ use std::cell::{Cell, RefCell};
 use std::time::SystemTime;
 use wgpu::util::DeviceExt;
 
-// todo: accept user defined output size
-const OUTPUT_TEXTURE_DIMS: (usize, usize) = (512, 288);
-
 pub struct Renderer {
     device: wgpu::Device,
     queue: wgpu::Queue,
@@ -21,6 +18,7 @@ pub struct Renderer {
     output_texture_view: wgpu::TextureView,
     render_target: wgpu::Texture,
     output_staging_buffer: wgpu::Buffer,
+    output_dimensions: (usize, usize),
     video_frame_texture: RefCell<texture::Texture>,
     frame_count: Cell<u32>,
     frame_start: Cell<SystemTime>,
@@ -78,34 +76,9 @@ impl Renderer {
             source: wgpu::ShaderSource::Wgsl(include_str!("shader.wgsl").into()),
         });
 
-        let render_target = device.create_texture(&wgpu::TextureDescriptor {
-            label: Some("Output Texture Descriptor"),
-            size: wgpu::Extent3d {
-                width: OUTPUT_TEXTURE_DIMS.0 as u32,
-                height: OUTPUT_TEXTURE_DIMS.0 as u32,
-                depth_or_array_layers: 1,
-            },
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::Rgba8UnormSrgb,
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
-            view_formats: &[wgpu::TextureFormat::Rgba8UnormSrgb],
-        });
-
-        // todo: use size_of to calc size
-        let output_texture_data =
-            Vec::<u8>::with_capacity(OUTPUT_TEXTURE_DIMS.0 * OUTPUT_TEXTURE_DIMS.1 * 4);
-
-        let output_staging_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("Output staging Buffer"),
-            size: output_texture_data.capacity() as u64,
-            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
-            mapped_at_creation: false,
-        });
-
-        let output_texture_view =
-            render_target.create_view(&wgpu::TextureViewDescriptor::default());
+        let output_dimensions = (512, 288);
+        let (render_target, output_staging_buffer, output_texture_view) =
+            Self::create_render_target(output_dimensions.0, output_dimensions.1, &device);
 
         let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Vertex buffer"),
@@ -173,33 +146,75 @@ impl Renderer {
             frame_bind_group_layout,
             output_staging_buffer,
             output_texture_view,
+            output_dimensions,
             video_frame_texture: RefCell::new(texture),
             frame_count: Cell::new(0),
             frame_start: Cell::new(SystemTime::now()),
         }
     }
 
+    pub fn update_render_target_size(&mut self, width: usize, height: usize) {
+        let (render_target, output_staging_buffer, output_texture_view) =
+            Self::create_render_target(width, height, &self.device);
+
+        self.render_target = render_target;
+        self.output_staging_buffer = output_staging_buffer;
+        self.output_texture_view = output_texture_view;
+        self.output_dimensions = (width, height);
+    }
+
+    pub fn create_render_target(
+        width: usize,
+        height: usize,
+        device: &wgpu::Device,
+    ) -> (wgpu::Texture, wgpu::Buffer, wgpu::TextureView) {
+        let render_target = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("Output Texture Descriptor"),
+            size: wgpu::Extent3d {
+                width: width as u32,
+                height: height as u32,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Rgba8UnormSrgb,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
+            view_formats: &[wgpu::TextureFormat::Rgba8UnormSrgb],
+        });
+
+        // todo: use size_of to calc size
+        let output_texture_data = Vec::<u8>::with_capacity(width * height * 4);
+
+        let output_staging_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("Output staging Buffer"),
+            size: output_texture_data.capacity() as u64,
+            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+            mapped_at_creation: false,
+        });
+
+        let output_texture_view =
+            render_target.create_view(&wgpu::TextureViewDescriptor::default());
+
+        (render_target, output_staging_buffer, output_texture_view)
+    }
+
+    pub fn update_video_frame_texture_size(&self, width: u32, height: u32) {
+        self.video_frame_texture.replace(
+            texture::Texture::new_for_size(
+                width,
+                height,
+                &self.device,
+                &self.frame_bind_group_layout,
+                "video frame texture",
+            )
+            .unwrap(),
+        );
+    }
+
     // todo: accept effect paramters
     pub fn prepare_video_frame_render_pass(&self, sample: gst::Sample) -> wgpu::CommandBuffer {
-        let caps = sample.caps().expect("sample without caps");
-        let info = gst_video::VideoInfo::from_caps(caps).expect("Failed to parse caps");
         self.frame_start.replace(SystemTime::now());
-        if !self
-            .video_frame_texture
-            .borrow()
-            .is_same_size(info.width(), info.height())
-        {
-            self.video_frame_texture.replace(
-                texture::Texture::new_for_size(
-                    info.width(),
-                    info.height(),
-                    &self.device,
-                    &self.frame_bind_group_layout,
-                    "video frame texture",
-                )
-                .unwrap(),
-            );
-        }
 
         let texture = self.video_frame_texture.borrow();
         texture.write_from_sample(&self.queue, sample);
@@ -242,13 +257,13 @@ impl Renderer {
                 buffer: &self.output_staging_buffer,
                 layout: wgpu::ImageDataLayout {
                     offset: 0,
-                    bytes_per_row: Some((OUTPUT_TEXTURE_DIMS.0 * 4) as u32),
-                    rows_per_image: Some(OUTPUT_TEXTURE_DIMS.1 as u32),
+                    bytes_per_row: Some((self.output_dimensions.0 * 4) as u32),
+                    rows_per_image: Some(self.output_dimensions.1 as u32),
                 },
             },
             wgpu::Extent3d {
-                width: OUTPUT_TEXTURE_DIMS.0 as u32,
-                height: OUTPUT_TEXTURE_DIMS.1 as u32,
+                width: self.output_dimensions.0 as u32,
+                height: self.output_dimensions.1 as u32,
                 depth_or_array_layers: 1,
             },
         );
@@ -273,24 +288,23 @@ impl Renderer {
             {
                 let view = buffer_slice.get_mapped_range();
                 gdk_texture = gdk::MemoryTexture::new(
-                    OUTPUT_TEXTURE_DIMS.0 as i32,
-                    OUTPUT_TEXTURE_DIMS.1 as i32,
+                    self.output_dimensions.0 as i32,
+                    self.output_dimensions.1 as i32,
                     gdk::MemoryFormat::R8g8b8a8,
                     &glib::Bytes::from(&view.iter().as_slice()),
-                    (OUTPUT_TEXTURE_DIMS.0 as i32 * 4) as usize,
+                    (self.output_dimensions.0 as i32 * 4) as usize,
                 )
                 .upcast::<gdk::Texture>();
 
                 // if self.frame_count.get() % 48 == 0 {
                 //     println!("SAVING IMG");
                 //     let image_buffer = image::ImageBuffer::<image::Rgba<u8>, _>::from_raw(
-                //         OUTPUT_TEXTURE_DIMS.0 as u32,
-                //         OUTPUT_TEXTURE_DIMS.1 as u32,
+                //         self.output_dimensions.0 as u32,
+                //         self.output_dimensions.1 as u32,
                 //         view,
                 //     )
                 //         .unwrap();
                 //     image_buffer.save("test_image.png").unwrap();
-                //     gdk_texture.save_to_png("test_texture.png").unwrap();
                 // }
                 self.frame_count.set(self.frame_count.get() + 1);
             }
