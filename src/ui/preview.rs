@@ -6,7 +6,7 @@ mod zoom;
 
 use gst::Sample;
 use gtk4::glib;
-use gtk4::prelude::{PaintableExt, WidgetExt};
+use gtk4::prelude::WidgetExt;
 use gtk4::subclass::prelude::ObjectSubclassIsExt;
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]

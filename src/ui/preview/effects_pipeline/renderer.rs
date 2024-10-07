@@ -2,7 +2,7 @@ use crate::ui::preview::effects_pipeline::vertex::{INDICES, VERTICES};
 use crate::ui::preview::effects_pipeline::{texture, vertex};
 use ges::glib;
 use gtk4::gdk;
-use gtk4::prelude::{Cast, TextureExt};
+use gtk4::prelude::Cast;
 use std::cell::{Cell, RefCell};
 use std::time::SystemTime;
 use wgpu::util::DeviceExt;
@@ -271,16 +271,12 @@ impl Renderer {
             self.device.poll(wgpu::Maintain::wait()).panic_on_timeout();
             receiver.recv_async().await.unwrap().unwrap();
             {
-                let mut output_texture_data =
-                    Vec::<u8>::with_capacity(OUTPUT_TEXTURE_DIMS.0 * OUTPUT_TEXTURE_DIMS.1 * 4);
                 let view = buffer_slice.get_mapped_range();
-                output_texture_data.extend_from_slice(&view[..]);
-
                 gdk_texture = gdk::MemoryTexture::new(
                     OUTPUT_TEXTURE_DIMS.0 as i32,
                     OUTPUT_TEXTURE_DIMS.1 as i32,
                     gdk::MemoryFormat::R8g8b8a8,
-                    &glib::Bytes::from(&output_texture_data),
+                    &glib::Bytes::from(&view.iter().as_slice()),
                     (OUTPUT_TEXTURE_DIMS.0 as i32 * 4) as usize,
                 )
                 .upcast::<gdk::Texture>();
