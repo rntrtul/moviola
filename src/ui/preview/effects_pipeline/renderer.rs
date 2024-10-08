@@ -300,16 +300,16 @@ impl Renderer {
                 )
                 .upcast::<gdk::Texture>();
 
-                if self.frame_count.get() % 48 == 0 {
-                    println!("SAVING IMG");
-                    let image_buffer = image::ImageBuffer::<image::Rgba<u8>, _>::from_raw(
-                        self.output_dimensions.0,
-                        self.output_dimensions.1,
-                        view,
-                    )
-                    .unwrap();
-                    image_buffer.save("test_image.png").unwrap();
-                }
+                // if self.frame_count.get() % 48 == 0 {
+                //     println!("SAVING IMG");
+                //     let image_buffer = image::ImageBuffer::<image::Rgba<u8>, _>::from_raw(
+                //         self.output_dimensions.0,
+                //         self.output_dimensions.1,
+                //         view,
+                //     )
+                //     .unwrap();
+                //     image_buffer.save("test_image.png").unwrap();
+                // }
                 self.frame_count.set(self.frame_count.get() + 1);
             }
 

@@ -1,3 +1,4 @@
+use gtk4::graphene;
 use gtk4::prelude::WidgetExt;
 use gtk4::subclass::prelude::ObjectSubclassIsExt;
 
@@ -11,8 +12,7 @@ impl crate::ui::preview::Preview {
 
         // todo: clamp translate on zoom changes
         if zoom == 1f64 {
-            self.imp().translate_x.set(0f32);
-            self.imp().translate_y.set(0f32);
+            self.imp().translate.set(graphene::Point::zero());
         }
 
         self.queue_draw();

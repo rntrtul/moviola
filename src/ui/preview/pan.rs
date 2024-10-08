@@ -2,6 +2,7 @@ use crate::ui::preview::preview::Preview;
 use ges::glib;
 use ges::glib::clone;
 use ges::subclass::prelude::ObjectSubclassExt;
+use gtk4::graphene;
 use gtk4::prelude::{GestureDragExt, WidgetExt};
 use gtk4::subclass::prelude::ObjectSubclassIsExt;
 
@@ -18,36 +19,37 @@ impl Preview {
                     return;
                 }
 
+                let preview = obj.imp();
+                let mut prev_drag = preview.prev_drag.get();
+
                 let (start_x, start_y) = drag.start_point().unwrap();
 
                 let x = (start_x + x_offset) as f32;
                 let y = (start_y + y_offset) as f32;
 
-                if obj.imp().prev_drag_x.get() == 0. && obj.imp().prev_drag_y.get() == 0. {
-                    obj.imp().prev_drag_x.set(x);
-                    obj.imp().prev_drag_y.set(y);
+                if prev_drag.x() == 0. && prev_drag.y() == 0. {
+                    prev_drag = graphene::Point::new(x, y);
                 }
 
-                let offset_x = x - obj.imp().prev_drag_x.get();
-                let offset_y = y - obj.imp().prev_drag_y.get();
+                let offset_x = x - prev_drag.x();
+                let offset_y = y - prev_drag.y();
 
-                let preview = obj.imp().preview_rect();
+                let preview_rect = obj.imp().preview_rect();
                 // todo: maybe update preview rect on resize and store. stop recomputes on all drag events
                 let min_translate_x =
-                    -(preview.width() - (preview.width() / obj.imp().zoom.get() as f32));
+                    -(preview_rect.width() - (preview_rect.width() / preview.zoom.get() as f32));
                 let min_translate_y =
-                    -(preview.height() - (preview.height() / obj.imp().zoom.get() as f32));
+                    -(preview_rect.height() - (preview_rect.height() / preview.zoom.get() as f32));
 
                 let translate_x =
-                    (obj.imp().translate_x.get() + offset_x).clamp(min_translate_x, 0f32);
+                    (preview.translate.get().x() + offset_x).clamp(min_translate_x, 0f32);
                 let translate_y =
-                    (obj.imp().translate_y.get() + offset_y).clamp(min_translate_y, 0f32);
+                    (preview.translate.get().y() + offset_y).clamp(min_translate_y, 0f32);
 
-                obj.imp().translate_x.set(translate_x);
-                obj.imp().translate_y.set(translate_y);
-
-                obj.imp().prev_drag_x.set(x);
-                obj.imp().prev_drag_y.set(y);
+                preview
+                    .translate
+                    .set(graphene::Point::new(translate_x, translate_y));
+                preview.prev_drag.set(graphene::Point::new(x, y));
 
                 obj.queue_draw();
             }
@@ -58,8 +60,7 @@ impl Preview {
             obj,
             move |_, _, _| {
                 // todo: should this only be in one drag handle?
-                obj.imp().prev_drag_x.set(0f32);
-                obj.imp().prev_drag_y.set(0f32);
+                obj.imp().prev_drag.set(graphene::Point::zero());
             }
         ));
 

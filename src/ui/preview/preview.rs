@@ -3,6 +3,7 @@ use crate::ui::preview::effects_pipeline::renderer::Renderer;
 use crate::ui::preview::CropMode;
 use gst::subclass::prelude::{ObjectImpl, ObjectSubclass};
 use gst::{glib, Sample};
+use gtk4::graphene::Point;
 use gtk4::prelude::{PaintableExt, SnapshotExt, WidgetExt};
 use gtk4::subclass::prelude::ObjectSubclassExt;
 use gtk4::subclass::widget::WidgetImpl;
@@ -12,17 +13,14 @@ use std::cell::{Cell, RefCell};
 static DEFAULT_WIDTH: f64 = 640f64;
 static DEFAULT_HEIGHT: f64 = 360f64;
 
-// todo: use point for translate_offset, top_left, bottom_right
 pub struct Preview {
     pub(crate) renderer: RefCell<Renderer>,
     pub(crate) left_x: Cell<f32>,
     pub(crate) top_y: Cell<f32>,
     pub(crate) right_x: Cell<f32>,
     pub(crate) bottom_y: Cell<f32>,
-    pub(crate) prev_drag_x: Cell<f32>,
-    pub(crate) prev_drag_y: Cell<f32>,
-    pub(crate) translate_x: Cell<f32>,
-    pub(crate) translate_y: Cell<f32>,
+    pub(crate) prev_drag: Cell<Point>,
+    pub(crate) translate: Cell<Point>,
     pub(crate) active_handle: Cell<HandleType>,
     pub(crate) handle_drag_active: Cell<bool>,
     pub(crate) zoom: Cell<f64>,
@@ -41,14 +39,12 @@ impl Default for Preview {
         let renderer = pollster::block_on(Renderer::new());
         Self {
             renderer: RefCell::new(renderer),
+            translate: Cell::new(Point::zero()),
+            prev_drag: Cell::new(Point::zero()),
             left_x: Cell::new(0f32),
             top_y: Cell::new(0f32),
             right_x: Cell::new(1f32),
             bottom_y: Cell::new(1f32),
-            prev_drag_x: Cell::new(0f32),
-            prev_drag_y: Cell::new(0f32),
-            translate_x: Cell::new(0f32),
-            translate_y: Cell::new(0f32),
             active_handle: Cell::new(HandleType::None),
             handle_drag_active: Cell::new(false),
             zoom: Cell::new(1f64),
@@ -99,43 +95,20 @@ impl WidgetImpl for Preview {
     }
 
     fn snapshot(&self, snapshot: &gtk4::Snapshot) {
-        let widget_width = self.widget_width() as f64;
-        let widget_height = self.widget_height() as f64;
-
         let preview = self.preview_rect();
-        // println!("preview rect is:{:?}", preview);
-        // todo: need to make glow smaller around video and remove black blending
-        //          call centerd start with a rect slightly larger than preview
-
-        //  rotate will rotate
-        //  zoom in and out with scale
-        //  flip with scale (set to -1 for flip direction)
-        //  to crop just zoom in on cropped area and don't show other area add mask or set overflow to none?
         snapshot.save();
-        //
-        // snapshot.push_opacity(0.4);
-        // snapshot.push_blur(100.);
-        // paintable.snapshot(snapshot, widget_width, widget_height);
-        // snapshot.pop();
-        // snapshot.pop();
-        //
-        // snapshot.push_clip(&preview);
-        //
-        snapshot.translate(&graphene::Point::new(preview.x(), preview.y()));
+
+        snapshot.translate(&Point::new(preview.x(), preview.y()));
 
         if self.show_zoom.get() {
             snapshot.scale(self.zoom.get() as f32, self.zoom.get() as f32);
-            snapshot.translate(&graphene::Point::new(
-                self.translate_x.get(),
-                self.translate_y.get(),
-            ));
+            snapshot.translate(&self.translate.get());
         }
 
         if let Some(ref texture) = *self.texture.borrow() {
             texture.snapshot(snapshot, preview.width() as f64, preview.height() as f64);
         }
 
-        // snapshot.pop();
         snapshot.restore();
 
         if self.show_crop_box.get() {
@@ -204,6 +177,7 @@ impl Preview {
             self.original_aspect_ratio
                 .set(info.width() as f32 / info.height() as f32);
 
+            // todo: add blur on edge of target, so make size slightly larger
             renderer.update_video_frame_texture_size(info.width(), info.height());
             let output_width = 640u32;
             let output_height = (640f32 / self.original_aspect_ratio.get()) as u32;
