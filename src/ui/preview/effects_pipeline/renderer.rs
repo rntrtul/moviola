@@ -158,16 +158,6 @@ impl Renderer {
         }
     }
 
-    pub fn update_render_target_size(&mut self, width: u32, height: u32) {
-        let (render_target, output_staging_buffer, output_texture_view) =
-            Self::create_render_target(width, height, &self.device);
-
-        self.render_target = render_target;
-        self.output_staging_buffer = output_staging_buffer;
-        self.output_texture_view = output_texture_view;
-        self.output_dimensions = (width, height);
-    }
-
     pub fn create_render_target(
         width: u32,
         height: u32,
@@ -202,11 +192,25 @@ impl Renderer {
         (render_target, output_staging_buffer, output_texture_view)
     }
 
-    pub fn update_video_frame_texture_size(&self, width: u32, height: u32) {
+    pub fn update_input_texture_output_texture_size(
+        &mut self,
+        frame_width: u32,
+        frame_height: u32,
+        render_width: u32,
+        render_height: u32,
+    ) {
+        let (render_target, output_staging_buffer, output_texture_view) =
+            Self::create_render_target(render_width, render_height, &self.device);
+
+        self.render_target = render_target;
+        self.output_staging_buffer = output_staging_buffer;
+        self.output_texture_view = output_texture_view;
+        self.output_dimensions = (render_width, render_height);
+
         self.video_frame_texture.replace(
             texture::Texture::new_for_size(
-                width,
-                height,
+                frame_width,
+                frame_height,
                 &self.device,
                 &self.frame_bind_group_layout,
                 "video frame texture",

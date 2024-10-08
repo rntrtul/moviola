@@ -178,10 +178,14 @@ impl Preview {
                 .set(info.width() as f32 / info.height() as f32);
 
             // todo: add blur on edge of target, so make size slightly larger
-            renderer.update_video_frame_texture_size(info.width(), info.height());
             let output_width = 640u32;
             let output_height = (640f32 / self.original_aspect_ratio.get()) as u32;
-            renderer.update_render_target_size(output_width, output_height);
+            renderer.update_input_texture_output_texture_size(
+                info.width(),
+                info.height(),
+                output_width,
+                output_height,
+            );
         }
 
         let cb = renderer.prepare_video_frame_render_pass(sample);
