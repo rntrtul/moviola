@@ -183,8 +183,10 @@ impl Preview {
             renderer.update_input_texture_output_texture_size(
                 info.width(),
                 info.height(),
-                output_width,
-                output_height,
+                // output_width,
+                // output_height,
+                info.width(),
+                info.height(),
             );
         }
 

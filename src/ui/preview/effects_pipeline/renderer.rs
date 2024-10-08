@@ -158,6 +158,12 @@ impl Renderer {
         }
     }
 
+    fn padded_bytes_per_row(row_width: u32) -> u32 {
+        wgpu::COPY_BYTES_PER_ROW_ALIGNMENT
+            * (((row_width * *U32_SIZE) as f32 / wgpu::COPY_BYTES_PER_ROW_ALIGNMENT as f32).ceil()
+                as u32)
+    }
+
     pub fn create_render_target(
         width: u32,
         height: u32,
@@ -178,7 +184,9 @@ impl Renderer {
             view_formats: &[wgpu::TextureFormat::Rgba8UnormSrgb],
         });
 
-        let output_texture_size = (*U32_SIZE * width * height) as wgpu::BufferAddress;
+        let padded_bytes_per_row = Self::padded_bytes_per_row(width);
+        let output_texture_size = (padded_bytes_per_row * height) as wgpu::BufferAddress;
+
         let output_staging_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("Output staging Buffer"),
             size: output_texture_size,
@@ -254,6 +262,7 @@ impl Renderer {
         }
 
         // fixme: don't use 4 bytes per pixel as hardcoded
+        let padded_bytes_per_row = Self::padded_bytes_per_row(self.output_dimensions.0);
         encoder.copy_texture_to_buffer(
             wgpu::ImageCopyTexture {
                 texture: &self.render_target,
@@ -265,7 +274,7 @@ impl Renderer {
                 buffer: &self.output_staging_buffer,
                 layout: wgpu::ImageDataLayout {
                     offset: 0,
-                    bytes_per_row: Some(self.output_dimensions.0 * 4),
+                    bytes_per_row: Some(padded_bytes_per_row),
                     rows_per_image: Some(self.output_dimensions.1),
                 },
             },
@@ -294,12 +303,24 @@ impl Renderer {
             self.device.poll(wgpu::Maintain::wait()).panic_on_timeout();
             receiver.recv_async().await.unwrap().unwrap();
             {
-                let view = buffer_slice.get_mapped_range();
+                let padded_data = buffer_slice.get_mapped_range();
+                let padded_bytes_per_row =
+                    Self::padded_bytes_per_row(self.output_dimensions.0) as usize;
+                let bytes_per_row = (self.output_dimensions.0 * *U32_SIZE) as usize;
+
+                // todo: find way to skip copying data (takes ~3ms for 4k frame)
+                let mut output: Vec<u8> =
+                    Vec::with_capacity(bytes_per_row * self.output_dimensions.1 as usize);
+
+                for padded in padded_data.chunks_exact(padded_bytes_per_row) {
+                    output.extend_from_slice(&padded[..bytes_per_row]);
+                }
+
                 gdk_texture = gdk::MemoryTexture::new(
                     self.output_dimensions.0 as i32,
                     self.output_dimensions.1 as i32,
                     gdk::MemoryFormat::R8g8b8a8,
-                    &glib::Bytes::from(&view.iter().as_slice()),
+                    &glib::Bytes::from(&output.as_slice()),
                     (self.output_dimensions.0 as i32 * 4) as usize,
                 )
                 .upcast::<gdk::Texture>();
