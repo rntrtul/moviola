@@ -3,9 +3,14 @@ use crate::ui::preview::effects_pipeline::{texture, vertex};
 use ges::glib;
 use gtk4::gdk;
 use gtk4::prelude::Cast;
+use lazy_static::lazy_static;
 use std::cell::{Cell, RefCell};
 use std::time::SystemTime;
 use wgpu::util::DeviceExt;
+
+lazy_static! {
+    static ref U32_SIZE: u32 = std::mem::size_of::<u32>() as u32;
+}
 
 pub struct Renderer {
     device: wgpu::Device,
@@ -18,7 +23,7 @@ pub struct Renderer {
     output_texture_view: wgpu::TextureView,
     render_target: wgpu::Texture,
     output_staging_buffer: wgpu::Buffer,
-    output_dimensions: (usize, usize),
+    output_dimensions: (u32, u32),
     video_frame_texture: RefCell<texture::Texture>,
     frame_count: Cell<u32>,
     frame_start: Cell<SystemTime>,
@@ -129,7 +134,7 @@ impl Renderer {
             multisample: wgpu::MultisampleState {
                 count: 1,
                 mask: !0,
-                alpha_to_coverage_enabled: false, // anti-aliasing related. probably needed for crop box
+                alpha_to_coverage_enabled: false, // antialiasing related. probably needed for crop box
             },
             multiview: None,
             cache: None,
@@ -153,7 +158,7 @@ impl Renderer {
         }
     }
 
-    pub fn update_render_target_size(&mut self, width: usize, height: usize) {
+    pub fn update_render_target_size(&mut self, width: u32, height: u32) {
         let (render_target, output_staging_buffer, output_texture_view) =
             Self::create_render_target(width, height, &self.device);
 
@@ -164,15 +169,15 @@ impl Renderer {
     }
 
     pub fn create_render_target(
-        width: usize,
-        height: usize,
+        width: u32,
+        height: u32,
         device: &wgpu::Device,
     ) -> (wgpu::Texture, wgpu::Buffer, wgpu::TextureView) {
         let render_target = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("Output Texture Descriptor"),
             size: wgpu::Extent3d {
-                width: width as u32,
-                height: height as u32,
+                width,
+                height,
                 depth_or_array_layers: 1,
             },
             mip_level_count: 1,
@@ -183,12 +188,10 @@ impl Renderer {
             view_formats: &[wgpu::TextureFormat::Rgba8UnormSrgb],
         });
 
-        // todo: use size_of to calc size
-        let output_texture_data = Vec::<u8>::with_capacity(width * height * 4);
-
+        let output_texture_size = (*U32_SIZE * width * height) as wgpu::BufferAddress;
         let output_staging_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("Output staging Buffer"),
-            size: output_texture_data.capacity() as u64,
+            size: output_texture_size,
             usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
             mapped_at_creation: false,
         });
@@ -246,6 +249,7 @@ impl Renderer {
             render_pass.draw_indexed(0..self.num_indices, 0, 0..1);
         }
 
+        // fixme: don't use 4 bytes per pixel as hardcoded
         encoder.copy_texture_to_buffer(
             wgpu::ImageCopyTexture {
                 texture: &self.render_target,
@@ -257,13 +261,13 @@ impl Renderer {
                 buffer: &self.output_staging_buffer,
                 layout: wgpu::ImageDataLayout {
                     offset: 0,
-                    bytes_per_row: Some((self.output_dimensions.0 * 4) as u32),
-                    rows_per_image: Some(self.output_dimensions.1 as u32),
+                    bytes_per_row: Some(self.output_dimensions.0 * 4),
+                    rows_per_image: Some(self.output_dimensions.1),
                 },
             },
             wgpu::Extent3d {
-                width: self.output_dimensions.0 as u32,
-                height: self.output_dimensions.1 as u32,
+                width: self.output_dimensions.0,
+                height: self.output_dimensions.1,
                 depth_or_array_layers: 1,
             },
         );
@@ -296,16 +300,16 @@ impl Renderer {
                 )
                 .upcast::<gdk::Texture>();
 
-                // if self.frame_count.get() % 48 == 0 {
-                //     println!("SAVING IMG");
-                //     let image_buffer = image::ImageBuffer::<image::Rgba<u8>, _>::from_raw(
-                //         self.output_dimensions.0 as u32,
-                //         self.output_dimensions.1 as u32,
-                //         view,
-                //     )
-                //         .unwrap();
-                //     image_buffer.save("test_image.png").unwrap();
-                // }
+                if self.frame_count.get() % 48 == 0 {
+                    println!("SAVING IMG");
+                    let image_buffer = image::ImageBuffer::<image::Rgba<u8>, _>::from_raw(
+                        self.output_dimensions.0,
+                        self.output_dimensions.1,
+                        view,
+                    )
+                    .unwrap();
+                    image_buffer.save("test_image.png").unwrap();
+                }
                 self.frame_count.set(self.frame_count.get() + 1);
             }
 

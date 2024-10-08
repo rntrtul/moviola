@@ -205,8 +205,8 @@ impl Preview {
                 .set(info.width() as f32 / info.height() as f32);
 
             renderer.update_video_frame_texture_size(info.width(), info.height());
-            let output_width = 640usize;
-            let output_height = (640f32 / self.original_aspect_ratio.get()) as usize;
+            let output_width = 640u32;
+            let output_height = (640f32 / self.original_aspect_ratio.get()) as u32;
             renderer.update_render_target_size(output_width, output_height);
         }
 
