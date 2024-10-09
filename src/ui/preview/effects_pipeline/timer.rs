@@ -1,7 +1,39 @@
+use std::collections::VecDeque;
+use std::io::Write;
+
+struct RollingAverage {
+    total: f64,
+    samples: VecDeque<f64>,
+    max_samples: u32,
+}
+
+impl RollingAverage {
+    pub fn new(max_samples: u32) -> Self {
+        Self {
+            total: 0f64,
+            samples: VecDeque::with_capacity(max_samples as usize),
+            max_samples,
+        }
+    }
+
+    pub fn add_sample(&mut self, sample: f64) {
+        self.total += sample;
+        self.samples.push_back(sample);
+        if self.samples.len() as u32 > self.max_samples {
+            self.total -= self.samples.pop_front().unwrap();
+        }
+    }
+
+    pub fn avg(&self) -> f64 {
+        self.total / self.samples.len() as f64
+    }
+}
+
 pub(crate) struct Timer {
     pub(crate) query_set: wgpu::QuerySet,
     pub(crate) resolve_buffer: wgpu::Buffer,
     pub(crate) destination_buffer: wgpu::Buffer,
+    frame_times: RollingAverage,
 }
 
 impl Timer {
@@ -30,10 +62,11 @@ impl Timer {
             query_set,
             resolve_buffer,
             destination_buffer: result_buffer,
+            frame_times: RollingAverage::new(30),
         }
     }
 
-    pub fn collect_results(&self, device: &wgpu::Device, queue: &wgpu::Queue) {
+    pub fn collect_results(&mut self, device: &wgpu::Device, queue: &wgpu::Queue) {
         self.destination_buffer
             .slice(..)
             .map_async(wgpu::MapMode::Read, |_| ());
@@ -50,9 +83,9 @@ impl Timer {
         let elapsed_micro_seconds =
             |start, end: u64| end.wrapping_sub(start) as f64 * (period as f64) / 1000.0;
 
-        println!(
-            "render pass done in {:.2} μs",
-            elapsed_micro_seconds(timestamps[0], timestamps[1])
-        );
+        self.frame_times
+            .add_sample(elapsed_micro_seconds(timestamps[0], timestamps[1]));
+        // print!("\ravg gpu frame time: {:.2} μs", self.frame_times.avg());
+        std::io::stdout().flush().unwrap();
     }
 }

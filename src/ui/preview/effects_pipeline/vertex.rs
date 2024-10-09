@@ -5,7 +5,7 @@ pub struct Vertex {
     tex_coords: [f32; 2],
 }
 
-// todo: change tex coords based on texture aspect ratio
+// todo: maybe use 1 large triangle
 pub const VERTICES: &[Vertex] = &[
     Vertex {
         position: [-1.0, 1.0, 0.0],

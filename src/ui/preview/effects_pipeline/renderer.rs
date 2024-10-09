@@ -314,7 +314,7 @@ impl Renderer {
 
     // todo: accept multiple command buffers
     pub async fn render(
-        &self,
+        &mut self,
         command_buffer: wgpu::CommandBuffer,
     ) -> Result<gdk::Texture, wgpu::SurfaceError> {
         self.queue.submit(Some(command_buffer));
