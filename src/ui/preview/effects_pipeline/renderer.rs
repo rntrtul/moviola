@@ -1,3 +1,4 @@
+use crate::ui::preview::effects_pipeline::timer::Timer;
 use crate::ui::preview::effects_pipeline::vertex::{INDICES, VERTICES};
 use crate::ui::preview::effects_pipeline::{texture, vertex};
 use ges::glib;
@@ -5,7 +6,7 @@ use gtk4::gdk;
 use gtk4::prelude::Cast;
 use lazy_static::lazy_static;
 use std::cell::{Cell, RefCell};
-use std::time::SystemTime;
+use std::default::Default;
 use wgpu::util::DeviceExt;
 
 lazy_static! {
@@ -25,8 +26,8 @@ pub struct Renderer {
     output_staging_buffer: wgpu::Buffer,
     output_dimensions: (u32, u32),
     video_frame_texture: RefCell<texture::Texture>,
+    timer: Timer,
     frame_count: Cell<u32>,
-    frame_start: Cell<SystemTime>,
 }
 
 impl Renderer {
@@ -46,9 +47,20 @@ impl Renderer {
             .unwrap();
 
         let (device, queue) = adapter
-            .request_device(&Default::default(), None)
+            .request_device(
+                &wgpu::DeviceDescriptor {
+                    required_features: wgpu::Features::TIMESTAMP_QUERY,
+                    required_limits: wgpu::Limits::default(),
+                    label: None,
+                    memory_hints: wgpu::MemoryHints::Performance,
+                },
+                None,
+            )
             .await
             .unwrap();
+
+        // assuming timestamp feature available always
+        let timer = Timer::new(&device);
 
         let frame_bind_group_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -152,9 +164,9 @@ impl Renderer {
             output_staging_buffer,
             output_texture_view,
             output_dimensions,
+            timer,
             video_frame_texture: RefCell::new(texture),
             frame_count: Cell::new(0),
-            frame_start: Cell::new(SystemTime::now()),
         }
     }
 
@@ -229,8 +241,6 @@ impl Renderer {
 
     // todo: accept effect paramters
     pub fn prepare_video_frame_render_pass(&self, sample: gst::Sample) -> wgpu::CommandBuffer {
-        self.frame_start.replace(SystemTime::now());
-
         let texture = self.video_frame_texture.borrow();
         texture.write_from_sample(&self.queue, sample);
 
@@ -251,7 +261,11 @@ impl Renderer {
                 })],
                 depth_stencil_attachment: None,
                 occlusion_query_set: None,
-                timestamp_writes: None,
+                timestamp_writes: Some(wgpu::RenderPassTimestampWrites {
+                    query_set: &self.timer.query_set,
+                    beginning_of_pass_write_index: Some(0),
+                    end_of_pass_write_index: Some(1),
+                }),
             });
 
             render_pass.set_pipeline(&self.render_pipeline);
@@ -285,6 +299,16 @@ impl Renderer {
             },
         );
 
+        encoder.resolve_query_set(&self.timer.query_set, 0..2, &self.timer.resolve_buffer, 0);
+        // todo: maybe only need to call once?
+        encoder.copy_buffer_to_buffer(
+            &self.timer.resolve_buffer,
+            0,
+            &self.timer.destination_buffer,
+            0,
+            self.timer.destination_buffer.size(),
+        );
+
         encoder.finish()
     }
 
@@ -302,6 +326,9 @@ impl Renderer {
             buffer_slice.map_async(wgpu::MapMode::Read, move |r| sender.send(r).unwrap());
             self.device.poll(wgpu::Maintain::wait()).panic_on_timeout();
             receiver.recv_async().await.unwrap().unwrap();
+
+            self.timer.collect_results(&self.device, &self.queue);
+
             {
                 let mut view = buffer_slice.get_mapped_range_mut();
                 let padded_bytes_per_row =
@@ -309,6 +336,7 @@ impl Renderer {
                 let bytes_per_row = (self.output_dimensions.0 * *U32_SIZE) as usize;
 
                 // todo: find way to skip copying data (takes ~2ms for 4k frame)
+                //          maybe do copy in compute shader to unpad?
                 let mut padded_row_start = padded_bytes_per_row;
                 let mut un_padded_row_start = bytes_per_row;
                 for _ in 1..self.output_dimensions.1 {
@@ -344,7 +372,6 @@ impl Renderer {
 
             self.output_staging_buffer.unmap();
         }
-        // println!("{:?}", self.frame_start.get().elapsed().unwrap());
 
         Ok(gdk_texture)
     }
