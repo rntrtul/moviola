@@ -1,4 +1,3 @@
-use std::path::PathBuf;
 use std::thread;
 use std::time::SystemTime;
 
@@ -18,7 +17,6 @@ use crate::app::{App, AppMsg};
 use crate::ui::preview::BoundingBoxDimensions;
 use crate::ui::sidebar::{ControlsExportSettings, OutputContainerSettings};
 use crate::video::player::Player;
-use crate::video::thumbnail::Thumbnail;
 
 #[derive(Debug)]
 pub struct TimelineExportSettings {
@@ -47,28 +45,6 @@ impl Player {
             .property::<gst::Element>("video-sink")
             .property::<gdk::Paintable>("paintable")
             .set_property("orientation", orientation);
-    }
-
-    pub fn set_video_crop(&mut self, left: i32, top: i32, right: i32, bottom: i32) {
-        let crop = self.playbin.property::<gst::Element>("video-filter");
-
-        crop.set_property("top", top);
-        crop.set_property("left", left);
-        crop.set_property("right", right);
-        crop.set_property("bottom", bottom);
-    }
-
-    pub fn remove_crop(&mut self) {
-        self.set_video_crop(0, 0, 0, 0);
-    }
-
-    pub fn export_frame(&self) {
-        // todo: ask for file location and name
-        // todo: get sample height caps.structure(0).get(height)
-        let sample = self.playbin.property::<gst::Sample>("sample");
-        let mut output = PathBuf::new();
-        output.push("/home/fareed/Videos/export.jpg");
-        Thumbnail::save_sample_as_image(&sample, self.info.height, output);
     }
 
     fn build_container_profile(

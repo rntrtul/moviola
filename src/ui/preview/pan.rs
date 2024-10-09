@@ -67,17 +67,3 @@ impl Preview {
         obj.add_controller(drag_gesture);
     }
 }
-
-impl Preview {
-    fn get_cordinate_percent_from_drag_zoom(&self, x: f64, y: f64) -> (f64, f64) {
-        let preview = self.preview_rect();
-
-        let x_adj = (x - preview.x() as f64).clamp(0., preview.width() as f64);
-        let y_adj = (y - preview.y() as f64).clamp(0., preview.height() as f64);
-
-        (
-            x_adj / preview.width() as f64,
-            y_adj / preview.height() as f64,
-        )
-    }
-}

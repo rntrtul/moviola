@@ -1,9 +1,6 @@
 use std::fmt::Debug;
 
-use gst::prelude::*;
-use gst::Element;
 use gtk4::prelude::{BoxExt, OrientableExt, WidgetExt};
-use relm4::adw::gdk;
 use relm4::*;
 
 use crate::ui::preview::Preview;
@@ -11,7 +8,6 @@ use crate::ui::preview::Preview;
 pub struct VideoPlayerModel {
     video_is_loaded: bool,
     is_playing: bool,
-    gtk_sink: Element,
 }
 
 #[derive(Debug)]
@@ -23,12 +19,6 @@ pub enum VideoPlayerMsg {
 #[derive(Debug)]
 pub enum VideoPlayerOutput {
     ToggleVideoPlay,
-}
-
-impl VideoPlayerModel {
-    pub fn sink(&self) -> &Element {
-        &self.gtk_sink
-    }
 }
 
 #[relm4::component(pub)]
@@ -52,14 +42,6 @@ impl Component for VideoPlayerModel {
         root: Self::Root,
         _sender: ComponentSender<Self>,
     ) -> ComponentParts<Self> {
-        let gtk_sink = gst::ElementFactory::make("gtk4paintablesink")
-            .build()
-            .unwrap();
-
-        let paintable = gtk_sink.property::<gdk::Paintable>("paintable");
-
-        // preview.set_paintable(paintable);
-
         let offload = gtk4::GraphicsOffload::new(Some(&preview));
         offload.set_enabled(gtk::GraphicsOffloadEnabled::Enabled);
         offload.set_visible(false);
@@ -67,7 +49,6 @@ impl Component for VideoPlayerModel {
         let model = VideoPlayerModel {
             video_is_loaded: false,
             is_playing: false,
-            gtk_sink,
         };
 
         let widgets = view_output!();
@@ -96,13 +77,5 @@ impl Component for VideoPlayerModel {
         }
 
         self.update_view(widgets, sender);
-    }
-}
-
-impl VideoPlayerModel {
-    // todo: hookup with ui/keyboard. add support for stepping backwards
-    fn _step_next_frame(&mut self) {
-        let step = gst::event::Step::new(gst::format::Buffers::ONE, 1.0, true, false);
-        self.gtk_sink.send_event(step);
     }
 }

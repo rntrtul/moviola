@@ -6,7 +6,6 @@ use crate::video::metadata::{
 use gst::glib::FlagsClass;
 use gst::prelude::{ElementExt, ElementExtManual, ObjectExt, PadExt};
 use gst::{Bus, ClockTime, FlowSuccess, SeekFlags, State};
-use gst_video::VideoFrameExt;
 use relm4::ComponentSender;
 use std::fmt::Debug;
 
@@ -59,7 +58,6 @@ impl Player {
                 .build(),
         );
 
-        // playbin.set_property("video-sink", &sink);
         playbin.set_property("video-sink", &app_sink);
 
         playbin.set_state(State::Ready).unwrap();

@@ -406,9 +406,7 @@ impl Component for App {
                     AppCommandMsg::VideoLoaded
                 });
             }
-            AppMsg::ExportFrame => {
-                self.player.borrow_mut().export_frame();
-            }
+            AppMsg::ExportFrame => {}
             AppMsg::SaveFile => {
                 Self::launch_file_save(&sender);
             }

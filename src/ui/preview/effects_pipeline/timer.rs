@@ -50,6 +50,9 @@ impl Timer {
         let elapsed_micro_seconds =
             |start, end: u64| end.wrapping_sub(start) as f64 * (period as f64) / 1000.0;
 
-        // println!("render pass done in {:.2} μs", elapsed_micro_seconds(timestamps[0], timestamps[1]));
+        println!(
+            "render pass done in {:.2} μs",
+            elapsed_micro_seconds(timestamps[0], timestamps[1])
+        );
     }
 }

@@ -60,7 +60,7 @@ impl Thumbnail {
 
         scaled_img
             .save(&save_path)
-            .map_err(|err| gst::FlowError::Error)
+            .map_err(|_| gst::FlowError::Error)
             .unwrap();
     }
 
@@ -106,8 +106,7 @@ impl Thumbnail {
     ) -> Result<gst::Pipeline, Error> {
         let pipeline = gst::parse::launch(&format!(
             "uridecodebin uri={video_uri} ! videoconvert ! appsink name=sink"
-        ))
-        .unwrap()
+        ))?
         .downcast::<gst::Pipeline>()
         .expect("Expected a gst::pipeline");
 
@@ -183,7 +182,7 @@ impl Thumbnail {
             *started = false;
         }
 
-        return pipeline;
+        pipeline
     }
 
     fn thumbnail_save_path(thumnail_num: u64) -> PathBuf {

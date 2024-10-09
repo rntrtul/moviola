@@ -178,13 +178,9 @@ impl Preview {
                 .set(info.width() as f32 / info.height() as f32);
 
             // todo: add blur on edge of target, so make size slightly larger
-            let output_width = 640u32;
-            let output_height = (640f32 / self.original_aspect_ratio.get()) as u32;
             renderer.update_input_texture_output_texture_size(
                 info.width(),
                 info.height(),
-                // output_width,
-                // output_height,
                 info.width(),
                 info.height(),
             );

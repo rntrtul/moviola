@@ -69,10 +69,6 @@ impl Texture {
         })
     }
 
-    pub fn is_same_size(&self, width: u32, height: u32) -> bool {
-        self.texture.width() == width && self.texture.height() == height
-    }
-
     pub fn write_from_bytes(&self, queue: &wgpu::Queue, bytes: &[u8]) {
         let img = image::load_from_memory(bytes).unwrap();
         self.write_from_image(queue, &img);
