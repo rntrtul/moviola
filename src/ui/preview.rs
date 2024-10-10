@@ -1,9 +1,11 @@
 mod bounding_box;
 mod effects_pipeline;
+mod orient;
 mod pan;
 mod preview;
 mod zoom;
 
+use crate::ui::sidebar::CropExportSettings;
 use gst::Sample;
 use gtk4::glib;
 use gtk4::prelude::WidgetExt;
@@ -45,6 +47,12 @@ pub struct BoundingBoxDimensions {
     pub(crate) bottom_y: f32,
 }
 
+#[derive(Debug, Clone, Copy)]
+pub struct Orientation {
+    pub(crate) angle: f32,
+    pub(crate) mirrored: bool,
+}
+
 glib::wrapper! {
     pub struct Preview(ObjectSubclass<preview::Preview>)
         @extends gtk4::Widget;
@@ -76,12 +84,15 @@ impl Preview {
         self.queue_draw();
     }
 
-    pub fn export_settings(&self) -> BoundingBoxDimensions {
-        BoundingBoxDimensions {
-            left_x: self.imp().left_x.get(),
-            top_y: self.imp().top_y.get(),
-            right_x: self.imp().right_x.get(),
-            bottom_y: self.imp().bottom_y.get(),
+    pub fn export_settings(&self) -> CropExportSettings {
+        CropExportSettings {
+            bounding_box: BoundingBoxDimensions {
+                left_x: self.imp().left_x.get(),
+                top_y: self.imp().top_y.get(),
+                right_x: self.imp().right_x.get(),
+                bottom_y: self.imp().bottom_y.get(),
+            },
+            orientation: self.imp().orientation.get(),
         }
     }
 }

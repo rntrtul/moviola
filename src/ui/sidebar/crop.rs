@@ -1,16 +1,13 @@
-use gst_plugin_gtk4::Orientation;
 use gtk4::prelude::WidgetExt;
 use relm4::adw::prelude::{ComboRowExt, PreferencesRowExt};
 use relm4::{adw, gtk, ComponentParts, ComponentSender, SimpleComponent};
 
-use crate::ui::preview::CropMode;
+use crate::ui::preview::{CropMode, Orientation};
 
 pub struct CropPageModel {
     crop_mode: CropMode,
     orientation: Orientation,
-    rotation_angle: i32,
     show_crop_box: bool,
-    is_flip: bool,
 }
 
 #[derive(Debug)]
@@ -85,10 +82,11 @@ impl SimpleComponent for CropPageModel {
         let widgets = view_output!();
         let model = CropPageModel {
             crop_mode: CropMode::Free,
-            orientation: Orientation::Rotate0,
-            rotation_angle: 0,
+            orientation: Orientation {
+                angle: 0.0,
+                mirrored: false,
+            },
             show_crop_box: false,
-            is_flip: false,
         };
 
         ComponentParts { model, widgets }
@@ -102,48 +100,25 @@ impl SimpleComponent for CropPageModel {
                 sender.output(CropPageOutput::SetCropMode(mode)).unwrap();
             }
             CropPageMsg::RotateRight90 => {
-                self.rotation_angle = (self.rotation_angle + 90) % 360;
-                self.update_video_orientation();
+                self.orientation.angle = (self.orientation.angle + 90.0) % 360.0;
                 sender
                     .output(CropPageOutput::OrientVideo(self.orientation))
                     .unwrap()
             }
             CropPageMsg::FlipHorizontally => {
-                self.is_flip = !self.is_flip;
-                self.update_video_orientation();
+                self.orientation.mirrored = !self.orientation.mirrored;
                 sender
                     .output(CropPageOutput::OrientVideo(self.orientation))
                     .unwrap()
             }
             CropPageMsg::FlipVertically => {
-                self.rotation_angle = (self.rotation_angle + 180) % 360;
-                self.is_flip = !self.is_flip;
+                self.orientation.angle = (self.orientation.angle + 180.0) % 360.0;
+                self.orientation.mirrored = !self.orientation.mirrored;
 
-                self.update_video_orientation();
                 sender
                     .output(CropPageOutput::OrientVideo(self.orientation))
                     .unwrap()
             }
         }
-    }
-}
-
-impl CropPageModel {
-    fn update_video_orientation(&mut self) {
-        self.orientation = if self.is_flip {
-            match self.rotation_angle {
-                90 => Orientation::FlipRotate90,
-                180 => Orientation::FlipRotate180,
-                270 => Orientation::FlipRotate270,
-                _ => Orientation::FlipRotate0,
-            }
-        } else {
-            match self.rotation_angle {
-                90 => Orientation::Rotate90,
-                180 => Orientation::Rotate180,
-                270 => Orientation::Rotate270,
-                _ => Orientation::Rotate0,
-            }
-        };
     }
 }

@@ -1,11 +1,10 @@
-use gst_plugin_gtk4::Orientation;
 use gtk4::prelude::ButtonExt;
 use relm4::{
     adw, gtk, Component, ComponentController, ComponentParts, ComponentSender, Controller,
     SimpleComponent,
 };
 
-use crate::ui::preview::CropMode;
+use crate::ui::preview::{CropMode, Orientation};
 use crate::ui::sidebar::crop::{CropPageModel, CropPageMsg, CropPageOutput};
 use crate::ui::sidebar::output::{OutputPageModel, OutputPageMsg, OutputPageOutput};
 use crate::ui::sidebar::ControlsExportSettings;

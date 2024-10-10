@@ -5,17 +5,13 @@ use ges::gst_pbutils::EncodingContainerProfile;
 use ges::prelude::{EncodingProfileBuilder, GESTrackExt, LayerExt};
 use ges::prelude::{GESPipelineExt, TimelineElementExt, TimelineExt};
 use ges::{gst_pbutils, PipelineFlags};
-use gst::prelude::{ElementExt, GstObjectExt, ObjectExt};
+use gst::prelude::{ElementExt, GstObjectExt};
 use gst::{ClockTime, State};
-use gst_plugin_gtk4::Orientation;
-use gst_video::VideoOrientationMethod;
-use gtk4::gdk;
 use gtk4::prelude::ToValue;
 use relm4::ComponentSender;
 
 use crate::app::{App, AppMsg};
-use crate::ui::preview::BoundingBoxDimensions;
-use crate::ui::sidebar::{ControlsExportSettings, OutputContainerSettings};
+use crate::ui::sidebar::{ControlsExportSettings, CropExportSettings, OutputContainerSettings};
 use crate::video::player::Player;
 
 #[derive(Debug)]
@@ -24,29 +20,8 @@ pub struct TimelineExportSettings {
     pub duration: ClockTime,
 }
 
-fn sink_orientation_to_effect(method: Orientation) -> VideoOrientationMethod {
-    match method {
-        Orientation::Auto => VideoOrientationMethod::Auto,
-        Orientation::Rotate0 => VideoOrientationMethod::Identity,
-        Orientation::Rotate90 => VideoOrientationMethod::_90r,
-        Orientation::Rotate180 => VideoOrientationMethod::_180,
-        Orientation::Rotate270 => VideoOrientationMethod::_90l,
-        Orientation::FlipRotate0 => VideoOrientationMethod::Horiz,
-        Orientation::FlipRotate90 => VideoOrientationMethod::UrLl,
-        Orientation::FlipRotate180 => VideoOrientationMethod::Vert,
-        Orientation::FlipRotate270 => VideoOrientationMethod::UlLr,
-    }
-}
-
 // todo: move export out of player. set effects to be preview_crop etc.
 impl Player {
-    pub fn set_video_orientation(&mut self, orientation: Orientation) {
-        self.playbin
-            .property::<gst::Element>("video-sink")
-            .property::<gdk::Paintable>("paintable")
-            .set_property("orientation", orientation);
-    }
-
     fn build_container_profile(
         &self,
         container: OutputContainerSettings,
@@ -83,7 +58,7 @@ impl Player {
         save_uri: String,
         timeline_export_settings: TimelineExportSettings,
         controls_export_settings: ControlsExportSettings,
-        bounding_box: BoundingBoxDimensions,
+        crop_export_settings: CropExportSettings,
         app_sender: ComponentSender<App>,
     ) {
         let now = SystemTime::now();
@@ -93,21 +68,15 @@ impl Player {
         self.playbin.set_state(State::Null).unwrap();
 
         let container_profile = self.build_container_profile(controls_export_settings.container);
+        let orientation = crop_export_settings.orientation;
+        let bounding_box = crop_export_settings.bounding_box;
 
-        let orientation = self
-            .playbin
-            .property::<gst::Element>("video-sink")
-            .property::<gdk::Paintable>("paintable")
-            .property::<Orientation>("orientation");
+        let video_direction = orientation.to_direction();
 
-        let video_direction = sink_orientation_to_effect(orientation);
-
-        let (source_width, source_height) = match orientation {
-            Orientation::Rotate90
-            | Orientation::Rotate270
-            | Orientation::FlipRotate270
-            | Orientation::FlipRotate90 => (self.info.height as i32, self.info.width as i32),
-            _ => (self.info.width as i32, self.info.height as i32),
+        let (source_width, source_height) = if orientation.is_vertical() {
+            (self.info.height as i32, self.info.width as i32)
+        } else {
+            (self.info.width as i32, self.info.height as i32)
         };
 
         // offset is to place coordinate at 0,0. So use negative values

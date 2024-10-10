@@ -19,6 +19,8 @@ static NUM_THUMBNAILS: u64 = 8;
 pub struct Thumbnail;
 
 impl Thumbnail {
+    // todo: maybe don't save thumbnails and just pass the img out as struct and use that to populate picture.
+    //      wont have to write to disk or do downsample.
     pub fn save_sample_as_image(sample: &gst::Sample, target_height: u32, save_path: PathBuf) {
         let buffer = sample
             .buffer()
@@ -222,6 +224,7 @@ mod tests {
     fn thumb_create() {
         gst::init().unwrap();
 
+        // todo: read from env/config
         let uri = "file:///home/fareed/Videos/mp3e1.mkv";
         let barrier = Arc::new(Barrier::new((NUM_THUMBNAILS + 1) as usize));
         Thumbnail::launch_thumbnail_threads(uri.parse().unwrap(), Arc::clone(&barrier));

@@ -3,7 +3,6 @@ use std::rc::Rc;
 use std::time::Duration;
 
 use gst::ClockTime;
-use gst_plugin_gtk4::Orientation;
 use gtk::glib;
 use gtk::prelude::{ApplicationExt, GtkWindowExt, OrientableExt, WidgetExt};
 use gtk4::gio;
@@ -13,7 +12,7 @@ use relm4::{
     Controller, RelmWidgetExt,
 };
 
-use crate::ui::preview::{CropMode, Preview};
+use crate::ui::preview::{CropMode, Orientation, Preview};
 use crate::ui::sidebar::sidebar::{ControlsModel, ControlsMsg, ControlsOutput};
 use crate::ui::timeline::{TimelineModel, TimelineMsg, TimelineOutput};
 use crate::video::metadata::VideoInfo;
@@ -438,10 +437,7 @@ impl Component for App {
                 self.timeline.emit(TimelineMsg::Reset);
                 // widgets.crop_box.reset_box();
             }
-            AppMsg::Orient(orientation) => {
-                self.preview.queue_draw();
-                self.player.borrow_mut().set_video_orientation(orientation)
-            }
+            AppMsg::Orient(orientation) => self.preview.set_orientation(orientation),
             AppMsg::ShowCropBox => {
                 self.preview.show_crop_box();
             }

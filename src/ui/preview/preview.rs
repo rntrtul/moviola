@@ -27,6 +27,8 @@ pub struct Preview {
     pub(crate) crop_mode: Cell<CropMode>,
     pub(crate) show_crop_box: Cell<bool>,
     pub(crate) show_zoom: Cell<bool>,
+    pub(crate) orientation: Cell<crate::ui::preview::Orientation>,
+    // todo: store sample as well. for paused video and effects changing.
     pub(crate) texture: RefCell<Option<gdk::Texture>>,
     //todo: accept orignal dimensions as struct?
     pub(crate) original_aspect_ratio: Cell<f32>,
@@ -51,6 +53,10 @@ impl Default for Preview {
             crop_mode: Cell::new(CropMode::Free),
             show_crop_box: Cell::new(false),
             show_zoom: Cell::new(true),
+            orientation: Cell::new(crate::ui::preview::Orientation {
+                angle: 0f32,
+                mirrored: false,
+            }),
             texture: RefCell::new(None),
             original_aspect_ratio: Cell::new(1.77f32),
             native_frame_width: Cell::new(0),
@@ -79,7 +85,7 @@ impl WidgetImpl for Preview {
             let width = if for_size <= 0 {
                 DEFAULT_WIDTH as i32
             } else {
-                (for_size as f32 * self.original_aspect_ratio.get()) as i32
+                (for_size as f32 * self.current_aspect_ratio()) as i32
             };
 
             (0, width, 0, 0)
@@ -87,7 +93,7 @@ impl WidgetImpl for Preview {
             let height = if for_size <= 0 {
                 DEFAULT_HEIGHT as i32
             } else {
-                (for_size as f32 / self.original_aspect_ratio.get()) as i32
+                (for_size as f32 / self.current_aspect_ratio()) as i32
             };
 
             (0, height, 0, 0)
@@ -98,7 +104,12 @@ impl WidgetImpl for Preview {
         let preview = self.preview_rect();
         snapshot.save();
 
-        snapshot.translate(&Point::new(preview.x(), preview.y()));
+        self.orient_snapshot(&snapshot);
+        if self.orientation.get().is_vertical() {
+            snapshot.translate(&Point::new(preview.y(), preview.x()));
+        } else {
+            snapshot.translate(&Point::new(preview.x(), preview.y()));
+        };
 
         if self.show_zoom.get() {
             snapshot.scale(self.zoom.get() as f32, self.zoom.get() as f32);
@@ -106,7 +117,12 @@ impl WidgetImpl for Preview {
         }
 
         if let Some(ref texture) = *self.texture.borrow() {
-            texture.snapshot(snapshot, preview.width() as f64, preview.height() as f64);
+            let (width, height) = if self.orientation.get().is_vertical() {
+                (preview.height() as f64, preview.width() as f64)
+            } else {
+                (preview.width() as f64, preview.height() as f64)
+            };
+            texture.snapshot(snapshot, width, height);
         }
 
         snapshot.restore();
@@ -119,12 +135,20 @@ impl WidgetImpl for Preview {
 
 impl Preview {
     // widths + height accounting for space needed for bounding box handles
-    fn widget_width(&self) -> f32 {
+    pub(crate) fn widget_width(&self) -> f32 {
         self.obj().width() as f32 - (BOX_HANDLE_WIDTH * 2f32)
     }
 
     fn widget_height(&self) -> f32 {
         self.obj().height() as f32 - (BOX_HANDLE_WIDTH * 2f32)
+    }
+
+    fn current_aspect_ratio(&self) -> f32 {
+        if self.orientation.get().is_vertical() {
+            self.native_frame_height.get() as f32 / self.native_frame_width.get() as f32
+        } else {
+            self.original_aspect_ratio.get()
+        }
     }
 
     // returns (width, height)
@@ -133,9 +157,7 @@ impl Preview {
         let widget_height = self.widget_height();
 
         let widget_aspect_ratio = widget_width / widget_height;
-        let video_aspect_ratio = self.original_aspect_ratio.get();
-
-        // println!("Preview Size: {widget_width}x{widget_height} {video_aspect_ratio}");
+        let video_aspect_ratio = self.current_aspect_ratio();
 
         if widget_aspect_ratio > video_aspect_ratio {
             // more width available then height, so change width to fit aspect ratio
