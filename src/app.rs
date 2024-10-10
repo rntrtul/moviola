@@ -375,6 +375,7 @@ impl Component for App {
         match message {
             AppMsg::Quit => {
                 println!("QUIT");
+                self.player.borrow_mut().reset_pipeline();
                 main_application().quit()
             }
             AppMsg::OpenFile => {
