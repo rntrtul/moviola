@@ -48,11 +48,17 @@ impl Player {
             )
             .build();
 
+        let preroll_sender = sample_sender.clone();
         app_sink.set_callbacks(
             gst_app::AppSinkCallbacks::builder()
                 .new_sample(move |appsink| {
                     let sample = appsink.pull_sample().unwrap();
                     sample_sender.input(AppMsg::NewFrame(sample));
+                    Ok(FlowSuccess::Ok)
+                })
+                .new_preroll(move |appsink| {
+                    let sample = appsink.pull_preroll().unwrap();
+                    preroll_sender.input(AppMsg::NewFrame(sample));
                     Ok(FlowSuccess::Ok)
                 })
                 .build(),
