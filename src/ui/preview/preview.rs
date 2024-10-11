@@ -28,7 +28,6 @@ pub struct Preview {
     pub(crate) show_crop_box: Cell<bool>,
     pub(crate) show_zoom: Cell<bool>,
     pub(crate) orientation: Cell<crate::ui::preview::Orientation>,
-    // todo: store sample as well. for paused video and effects changing.
     pub(crate) texture: RefCell<Option<gdk::Texture>>,
     //todo: accept orignal dimensions as struct?
     pub(crate) original_aspect_ratio: Cell<f32>,
@@ -113,7 +112,12 @@ impl WidgetImpl for Preview {
 
         if self.show_zoom.get() {
             snapshot.scale(self.zoom.get() as f32, self.zoom.get() as f32);
-            snapshot.translate(&self.translate.get());
+            let translate = self.translate.get();
+            if self.orientation.get().is_vertical() {
+                snapshot.translate(&Point::new(translate.y(), translate.x()));
+            } else {
+                snapshot.translate(&translate);
+            };
         }
 
         if let Some(ref texture) = *self.texture.borrow() {
@@ -185,7 +189,7 @@ impl Preview {
     }
 
     // todo: determine if taking sample and if memory not copied
-    pub(super) fn render_sample(&self, sample: Sample) {
+    pub(super) fn render_new_sample(&self, sample: Sample) {
         let mut renderer = self.renderer.borrow_mut();
 
         let caps = sample.caps().expect("sample without caps");

@@ -80,7 +80,7 @@ impl Preview {
     }
 
     pub fn render_sample(&self, sample: Sample) {
-        self.imp().render_sample(sample);
+        self.imp().render_new_sample(sample);
         self.queue_draw();
     }
 
