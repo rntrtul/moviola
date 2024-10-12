@@ -89,6 +89,23 @@ impl Preview {
             #[weak]
             obj,
             move |_, _, _| {
+                // should only be one scale factor to not stretch image. (take larger of two)
+                // translate is
+                let x_scale = 1.0 / (obj.imp().right_x.get() - obj.imp().left_x.get());
+                let y_scale = 1.0 / (obj.imp().bottom_y.get() - obj.imp().top_y.get());
+
+                let preview_rect = obj.imp().preview_rect();
+
+                let translate_x = -(preview_rect.width() * obj.imp().left_x.get());
+                let translate_y = -(preview_rect.height() * obj.imp().top_y.get());
+
+                println!("translate: {translate_x} x {translate_y}, scale: {x_scale}x{y_scale}");
+
+                obj.imp().crop_scale.set(x_scale.max(y_scale));
+                obj.imp()
+                    .crop_translate
+                    .set(graphene::Point::new(translate_x, translate_y));
+
                 obj.imp().handle_drag_active.set(false);
                 obj.queue_draw();
             }
@@ -99,7 +116,7 @@ impl Preview {
 }
 
 impl Preview {
-    fn bounding_box_rect(&self) -> Rect {
+    pub fn bounding_box_rect(&self) -> Rect {
         let preview = self.preview_rect();
 
         let left_x = (preview.width() * self.left_x.get()) + preview.x();

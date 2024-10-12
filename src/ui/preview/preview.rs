@@ -29,6 +29,8 @@ pub struct Preview {
     pub(crate) show_zoom: Cell<bool>,
     pub(crate) orientation: Cell<crate::ui::preview::Orientation>,
     pub(crate) texture: RefCell<Option<gdk::Texture>>,
+    pub(crate) crop_scale: Cell<f32>,
+    pub(crate) crop_translate: Cell<Point>,
     //todo: accept orignal dimensions as struct?
     pub(crate) original_aspect_ratio: Cell<f32>,
     pub(crate) native_frame_width: Cell<u32>,
@@ -57,6 +59,8 @@ impl Default for Preview {
                 mirrored: false,
             }),
             texture: RefCell::new(None),
+            crop_scale: Cell::new(1.0),
+            crop_translate: Cell::new(Point::zero()),
             original_aspect_ratio: Cell::new(1.77f32),
             native_frame_width: Cell::new(0),
             native_frame_height: Cell::new(0),
@@ -104,10 +108,23 @@ impl WidgetImpl for Preview {
         snapshot.save();
 
         self.orient_snapshot(&snapshot);
+
+        let (translate_x, translate_y) =
+            if !self.handle_drag_active.get() && self.crop_scale.get() != 1.0 {
+                let cropped_area = self.cropped_region_clip();
+                let x = cropped_area.x() - (preview.width() - cropped_area.width());
+                let y = cropped_area.y() - (preview.height() - cropped_area.height());
+
+                snapshot.push_clip(&cropped_area);
+                (x, y)
+            } else {
+                (preview.x(), preview.y())
+            };
+
         if self.orientation.get().is_vertical() {
-            snapshot.translate(&Point::new(preview.y(), preview.x()));
+            snapshot.translate(&Point::new(translate_y, translate_x));
         } else {
-            snapshot.translate(&Point::new(preview.x(), preview.y()));
+            snapshot.translate(&Point::new(translate_x, translate_y));
         };
 
         if self.show_zoom.get() {
@@ -127,6 +144,10 @@ impl WidgetImpl for Preview {
                 (preview.width() as f64, preview.height() as f64)
             };
             texture.snapshot(snapshot, width, height);
+        }
+
+        if !self.handle_drag_active.get() && self.crop_scale.get() != 1.0 {
+            snapshot.pop();
         }
 
         snapshot.restore();
@@ -156,12 +177,11 @@ impl Preview {
     }
 
     // returns (width, height)
-    fn preview_size(&self) -> (f32, f32) {
+    fn preview_size(&self, video_aspect_ratio: f32) -> (f32, f32) {
         let widget_width = self.widget_width();
         let widget_height = self.widget_height();
 
         let widget_aspect_ratio = widget_width / widget_height;
-        let video_aspect_ratio = self.current_aspect_ratio();
 
         if widget_aspect_ratio > video_aspect_ratio {
             // more width available then height, so change width to fit aspect ratio
@@ -182,10 +202,18 @@ impl Preview {
     }
 
     pub(crate) fn preview_rect(&self) -> graphene::Rect {
-        let (preview_width, preview_height) = self.preview_size();
+        let (preview_width, preview_height) = self.preview_size(self.current_aspect_ratio());
         let (x, y) = self.centered_start(preview_width, preview_height);
 
         graphene::Rect::new(x, y, preview_width, preview_height)
+    }
+
+    fn cropped_region_clip(&self) -> graphene::Rect {
+        let bounding_box = self.bounding_box_rect();
+        let (width, height) = (bounding_box.width(), bounding_box.height());
+        let (x, y) = self.centered_start(width, height);
+
+        graphene::Rect::new(x, y, width, height)
     }
 
     // todo: determine if taking sample and if memory not copied
