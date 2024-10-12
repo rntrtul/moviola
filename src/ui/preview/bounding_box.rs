@@ -106,7 +106,7 @@ impl Preview {
 }
 
 impl Preview {
-    pub fn bounding_box_rect(&self) -> Rect {
+    fn bounding_box_rect(&self) -> Rect {
         let preview = self.preview_rect();
 
         let left_x = (preview.width() * self.left_x.get()) + preview.x();

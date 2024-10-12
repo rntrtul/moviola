@@ -113,8 +113,11 @@ impl WidgetImpl for Preview {
         {
             let cropped_area = self.cropped_region_clip();
 
-            let x = cropped_area.x() - (preview.width() - cropped_area.width());
-            let y = cropped_area.y() - (preview.height() - cropped_area.height());
+            let left = preview.width() * self.left_x.get();
+            let top = preview.height() * self.top_y.get();
+
+            let x = cropped_area.x() - left;
+            let y = cropped_area.y() - top;
             snapshot.push_clip(&cropped_area);
 
             (x, y)
@@ -210,8 +213,9 @@ impl Preview {
     }
 
     fn cropped_region_clip(&self) -> graphene::Rect {
-        let bounding_box = self.bounding_box_rect();
-        let (width, height) = (bounding_box.width(), bounding_box.height());
+        let preview = self.preview_rect();
+        let width = preview.width() * (self.right_x.get() - self.left_x.get());
+        let height = preview.height() * (self.bottom_y.get() - self.top_y.get());
         let (x, y) = self.centered_start(width, height);
 
         graphene::Rect::new(x, y, width, height)
