@@ -109,8 +109,7 @@ impl WidgetImpl for Preview {
 
         self.orient_snapshot(&snapshot);
 
-        let (translate_x, translate_y) = if !self.handle_drag_active.get() && self.is_cropped.get()
-        {
+        let (translate_x, translate_y) = if !self.show_crop_box.get() && self.is_cropped.get() {
             let cropped_area = self.cropped_region_clip();
 
             let left = preview.width() * self.left_x.get();
@@ -150,7 +149,7 @@ impl WidgetImpl for Preview {
             texture.snapshot(snapshot, width, height);
         }
 
-        if !self.handle_drag_active.get() && self.is_cropped.get() {
+        if !self.show_crop_box.get() && self.is_cropped.get() {
             snapshot.pop();
         }
 
