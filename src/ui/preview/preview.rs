@@ -30,7 +30,7 @@ pub struct Preview {
     pub(crate) orientation: Cell<crate::ui::preview::Orientation>,
     pub(crate) texture: RefCell<Option<gdk::Texture>>,
     pub(crate) crop_scale: Cell<f32>,
-    pub(crate) crop_translate: Cell<Point>,
+    pub(crate) is_cropped: Cell<bool>,
     //todo: accept orignal dimensions as struct?
     pub(crate) original_aspect_ratio: Cell<f32>,
     pub(crate) native_frame_width: Cell<u32>,
@@ -60,7 +60,7 @@ impl Default for Preview {
             }),
             texture: RefCell::new(None),
             crop_scale: Cell::new(1.0),
-            crop_translate: Cell::new(Point::zero()),
+            is_cropped: Cell::new(false),
             original_aspect_ratio: Cell::new(1.77f32),
             native_frame_width: Cell::new(0),
             native_frame_height: Cell::new(0),
@@ -109,17 +109,18 @@ impl WidgetImpl for Preview {
 
         self.orient_snapshot(&snapshot);
 
-        let (translate_x, translate_y) =
-            if !self.handle_drag_active.get() && self.crop_scale.get() != 1.0 {
-                let cropped_area = self.cropped_region_clip();
-                let x = cropped_area.x() - (preview.width() - cropped_area.width());
-                let y = cropped_area.y() - (preview.height() - cropped_area.height());
+        let (translate_x, translate_y) = if !self.handle_drag_active.get() && self.is_cropped.get()
+        {
+            let cropped_area = self.cropped_region_clip();
 
-                snapshot.push_clip(&cropped_area);
-                (x, y)
-            } else {
-                (preview.x(), preview.y())
-            };
+            let x = cropped_area.x() - (preview.width() - cropped_area.width());
+            let y = cropped_area.y() - (preview.height() - cropped_area.height());
+            snapshot.push_clip(&cropped_area);
+
+            (x, y)
+        } else {
+            (preview.x(), preview.y())
+        };
 
         if self.orientation.get().is_vertical() {
             snapshot.translate(&Point::new(translate_y, translate_x));
@@ -146,7 +147,7 @@ impl WidgetImpl for Preview {
             texture.snapshot(snapshot, width, height);
         }
 
-        if !self.handle_drag_active.get() && self.crop_scale.get() != 1.0 {
+        if !self.handle_drag_active.get() && self.is_cropped.get() {
             snapshot.pop();
         }
 
