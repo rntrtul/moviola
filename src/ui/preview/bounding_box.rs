@@ -89,15 +89,18 @@ impl Preview {
             #[weak]
             obj,
             move |_, _, _| {
-                obj.imp().is_cropped.set(
-                    obj.imp().right_x.get() != 1.0
-                        || obj.imp().left_x.get() != 0.0
-                        || obj.imp().bottom_y.get() != 1.0
-                        || obj.imp().top_y.get() != 0.0,
-                );
+                if obj.imp().handle_drag_active.get() {
+                    obj.imp().is_cropped.set(
+                        obj.imp().right_x.get() != 1.0
+                            || obj.imp().left_x.get() != 0.0
+                            || obj.imp().bottom_y.get() != 1.0
+                            || obj.imp().top_y.get() != 0.0,
+                    );
+
+                    obj.queue_draw();
+                }
 
                 obj.imp().handle_drag_active.set(false);
-                obj.queue_draw();
             }
         ));
 
