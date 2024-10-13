@@ -12,26 +12,21 @@ pub struct VideoPlayerModel {
 
 #[derive(Debug)]
 pub enum VideoPlayerMsg {
-    TogglePlayPause,
     VideoLoaded,
-}
-
-#[derive(Debug)]
-pub enum VideoPlayerOutput {
-    ToggleVideoPlay,
 }
 
 #[relm4::component(pub)]
 impl Component for VideoPlayerModel {
     type CommandOutput = ();
     type Input = VideoPlayerMsg;
-    type Output = VideoPlayerOutput;
+    type Output = ();
     type Init = Preview;
 
     view! {
         #[name = "vid_container"]
         gtk::Box {
             set_orientation: gtk::Orientation::Vertical,
+            set_hexpand: true,
             set_width_request: 426,
             set_height_request: 240,
         }
@@ -70,9 +65,6 @@ impl Component for VideoPlayerModel {
                 self.is_playing = true;
                 self.video_is_loaded = true;
                 root.last_child().unwrap().set_visible(true);
-            }
-            VideoPlayerMsg::TogglePlayPause => {
-                sender.output(VideoPlayerOutput::ToggleVideoPlay).unwrap();
             }
         }
 

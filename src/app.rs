@@ -15,16 +15,17 @@ use relm4::{
 use crate::ui::preview::{CropMode, Orientation, Preview};
 use crate::ui::sidebar::sidebar::{ControlsModel, ControlsMsg, ControlsOutput};
 use crate::ui::timeline::{TimelineModel, TimelineMsg, TimelineOutput};
-use crate::video::metadata::VideoInfo;
 use crate::video::player::Player;
 
-use super::ui::video_player::{VideoPlayerModel, VideoPlayerMsg, VideoPlayerOutput};
+use super::ui::video_player::{VideoPlayerModel, VideoPlayerMsg};
 
 pub(super) struct App {
     video_player: Controller<VideoPlayerModel>,
     controls_panel: Controller<ControlsModel>,
     timeline: Controller<TimelineModel>,
     preview: Preview,
+    show_video: bool,
+    show_spinner: bool,
     video_selected: bool,
     video_is_loaded: bool,
     video_is_playing: bool,
@@ -32,13 +33,10 @@ pub(super) struct App {
     video_is_mute: bool,
     player: Rc<RefCell<Player>>,
     uri: Option<String>,
-    frame_info: Option<VideoInfo>,
 }
 
 #[derive(Debug)]
 pub(super) enum AppMsg {
-    AudioMute,
-    AudioPlaying,
     ExportFrame,
     ExportVideo(String),
     ExportDone,
@@ -48,14 +46,10 @@ pub(super) enum AppMsg {
     Orient(Orientation),
     ShowCropBox,
     HideCropBox,
-    Rotate,
     SetCropMode(CropMode),
     SeekToPercent(f64),
     TogglePlayPause,
     ToggleMute,
-    VideoLoaded,
-    VideoPaused,
-    VideoPlaying,
     Zoom(f64),
     ZoomTempReset,
     ZoomRestore,
@@ -225,30 +219,28 @@ impl Component for App {
                             },
                         },
 
+                        // todo: switch to adw::spinner when relm4 targets gnome 47
                         gtk::Spinner {
+                            #[watch]
+                            set_spinning: model.show_spinner,
+                            #[watch]
+                            set_visible: model.show_spinner,
                             set_height_request: 360,
                             set_halign: gtk::Align::Fill,
                             set_valign: gtk::Align::Fill,
                             set_hexpand: true,
-                            // todo: switch to single, show_spinner variable
-                            #[watch]
-                            set_spinning: (model.video_selected && !model.video_is_loaded) || model.video_is_exporting,
-                            #[watch]
-                            set_visible: (model.video_selected && !model.video_is_loaded) || model.video_is_exporting,
-                        },
-
-                        // todo: remove overlay
-                        gtk::Overlay{
-                            #[watch]
-                            set_visible: model.video_is_loaded,
-                            #[wrap(Some)]
-                            set_child = model.video_player.widget(),
                         },
 
                         gtk::Box{
-                            set_orientation: gtk::Orientation::Vertical,
                             #[watch]
-                            set_visible: model.video_is_loaded && !model.video_is_exporting,
+                            set_visible: model.show_video,
+                            model.video_player.widget() {},
+                        },
+
+                        gtk::Box{
+                            #[watch]
+                            set_visible: model.show_video,
+                            set_orientation: gtk::Orientation::Vertical,
 
                             gtk::Box{
                                 #[watch]
@@ -312,11 +304,8 @@ impl Component for App {
     ) -> ComponentParts<Self> {
         let preview = Preview::new();
 
-        let video_player: Controller<VideoPlayerModel> = VideoPlayerModel::builder()
-            .launch(preview.clone())
-            .forward(sender.input_sender(), |msg| match msg {
-                VideoPlayerOutput::ToggleVideoPlay => AppMsg::TogglePlayPause,
-            });
+        let video_player: Controller<VideoPlayerModel> =
+            VideoPlayerModel::builder().launch(preview.clone()).detach();
 
         let controls_panel: Controller<ControlsModel> = ControlsModel::builder()
             .launch(())
@@ -344,6 +333,8 @@ impl Component for App {
             controls_panel,
             timeline,
             preview,
+            show_video: false,
+            show_spinner: false,
             video_selected: false,
             video_is_loaded: false,
             video_is_playing: false,
@@ -351,7 +342,6 @@ impl Component for App {
             video_is_mute: false,
             player,
             uri: None,
-            frame_info: None,
         };
 
         let widgets = view_output!();
@@ -373,7 +363,6 @@ impl Component for App {
     ) {
         match message {
             AppMsg::Quit => {
-                println!("QUIT");
                 self.player.borrow_mut().reset_pipeline();
                 main_application().quit()
             }
@@ -383,15 +372,16 @@ impl Component for App {
             }
             AppMsg::SetVideo(uri) => {
                 self.video_selected = true;
+                self.show_video = false;
+                self.show_spinner = true;
 
                 self.video_player.widget().set_visible(false);
 
                 self.video_is_playing = false;
-                if self.player.borrow_mut().is_playing() {
-                    self.player.borrow_mut().set_is_playing(false);
-                }
+                self.player.borrow_mut().set_is_playing(false);
+                self.timeline.emit(TimelineMsg::Reset);
+                self.preview.reset_preview();
                 self.uri.replace(uri.clone());
-                // widgets.crop_box.reset_box();
 
                 self.timeline
                     .emit(TimelineMsg::GenerateThumbnails(uri.clone()));
@@ -412,6 +402,8 @@ impl Component for App {
             }
             AppMsg::ExportVideo(save_uri) => {
                 self.video_player.widget().set_visible(false);
+                self.show_video = false;
+                self.show_spinner = true;
 
                 self.video_is_exporting = true;
                 let timeline_export_settings = self
@@ -432,6 +424,8 @@ impl Component for App {
                 self.video_is_exporting = false;
                 self.video_selected = false;
                 self.video_is_loaded = false;
+                self.show_spinner = false;
+                self.show_video = false;
 
                 self.player.borrow_mut().reset_pipeline();
                 self.timeline.emit(TimelineMsg::Reset);
@@ -464,15 +458,6 @@ impl Component for App {
                 player.toggle_mute();
                 self.video_is_mute = player.is_mute();
             }
-            AppMsg::VideoLoaded => {
-                self.timeline
-                    .emit(TimelineMsg::GenerateThumbnails(self.uri.clone().unwrap()));
-            }
-            AppMsg::VideoPaused => self.video_is_playing = false,
-            AppMsg::VideoPlaying => self.video_is_playing = true,
-            AppMsg::AudioMute => self.video_is_mute = true,
-            AppMsg::AudioPlaying => self.video_is_mute = false,
-            AppMsg::Rotate => self.controls_panel.emit(ControlsMsg::Rotate),
             AppMsg::Zoom(level) => self.preview.set_zoom(level),
             AppMsg::ZoomTempReset => {
                 widgets.preview_zoom.set_sensitive(false);
@@ -516,6 +501,8 @@ impl Component for App {
                 self.timeline.emit(TimelineMsg::UpdateSeekBarPos(percent));
             }
             AppCommandMsg::VideoLoaded => {
+                self.show_spinner = false;
+                self.show_video = true;
                 self.video_is_loaded = true;
                 self.video_is_playing = true;
 
@@ -523,11 +510,6 @@ impl Component for App {
 
                 player.discover_metadata();
 
-                // todo: probably don't need this in self?
-                self.frame_info = Some(player.info());
-                // widgets
-                //     .crop_box
-                //     .set_asepct_ratio(player.info().aspect_ratio);
                 self.controls_panel.emit(ControlsMsg::DefaultCodec(
                     player.info.container_info.clone(),
                 ));

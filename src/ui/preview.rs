@@ -95,4 +95,17 @@ impl Preview {
             orientation: self.imp().orientation.get(),
         }
     }
+
+    pub fn reset_preview(&self) {
+        self.imp().left_x.set(0.0);
+        self.imp().top_y.set(0.0);
+        self.imp().right_x.set(1.0);
+        self.imp().bottom_y.set(1.0);
+
+        self.imp().zoom.set(1.0);
+        self.imp().orientation.set(Orientation {
+            angle: 0.0,
+            mirrored: false,
+        });
+    }
 }

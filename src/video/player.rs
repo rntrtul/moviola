@@ -11,6 +11,7 @@ use std::fmt::Debug;
 
 #[derive(Debug)]
 pub struct Player {
+    pub(crate) pipeline_ready: bool,
     pub(crate) is_mute: bool,
     pub(crate) is_playing: bool,
     pub(crate) playbin: gst::Element,
@@ -69,6 +70,7 @@ impl Player {
         playbin.set_state(State::Ready).unwrap();
 
         Self {
+            pipeline_ready: false,
             is_mute: false,
             is_playing: false,
             playbin,
@@ -98,6 +100,7 @@ impl Player {
         self.playbin.set_state(State::Null).unwrap();
         self.is_playing = false;
         self.is_mute = false;
+        self.pipeline_ready = false;
     }
 
     pub fn set_is_mute(&mut self, is_mute: bool) {
@@ -105,6 +108,10 @@ impl Player {
         self.playbin.set_property("mute", is_mute);
     }
     pub fn set_is_playing(&mut self, play: bool) {
+        if !self.pipeline_ready {
+            return;
+        }
+
         self.is_playing = play;
 
         let state = if play { State::Playing } else { State::Paused };
@@ -135,8 +142,10 @@ impl Player {
     pub fn play_uri(&mut self, uri: String) {
         // fixme: why does this take 2 seconds
         self.playbin.set_state(State::Null).unwrap();
+        self.pipeline_ready = false;
         self.playbin.set_property("uri", uri.as_str());
-        self.playbin.set_state(State::Playing).unwrap();
+        self.pipeline_ready = true;
+        self.set_is_playing(true);
         self.is_mute = false;
     }
 
