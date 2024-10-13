@@ -6,7 +6,7 @@ use gtk4::prelude::{BoxExt, EventControllerExt, GestureDragExt, WidgetExt};
 use gtk4::{gio, ContentFit};
 use relm4::{gtk, Component, ComponentParts, ComponentSender};
 
-use crate::ui::handle::HANDLE_WIDTH;
+use crate::ui::handle::{HANDLE_HEIGHT, HANDLE_WIDTH};
 use crate::video::export::TimelineExportSettings;
 use crate::video::player::Player;
 use crate::video::thumbnail::Thumbnail;
@@ -55,6 +55,8 @@ impl Component for TimelineModel {
                 set_hexpand: true,
                 set_margin_start: HANDLE_WIDTH as i32,
                 set_margin_end: HANDLE_WIDTH as i32,
+                set_margin_top: HANDLE_HEIGHT as i32,
+                set_margin_bottom: HANDLE_HEIGHT as i32,
             },
 
             add_overlay: seek_bar = &super::HandleWidget::default() {
@@ -131,7 +133,6 @@ impl Component for TimelineModel {
                     .unwrap();
             }
             TimelineMsg::UpdateSeekBarPos(percent) => {
-                // todo: make smoother update. increase poll rate or use animation
                 widgets.seek_bar.set_seek_x(percent as f32);
                 widgets.seek_bar.queue_draw();
             }
@@ -198,9 +199,6 @@ impl TimelineModel {
     }
 
     fn populate_timeline(timeline: &gtk::Box) {
-        // todo: see if can reuse picture widget instead of discarding. without storing ref to all of them
-        // Self::remove_timeline_thumbnails(timeline);
-
         for path in Thumbnail::thumbnail_paths() {
             let file = gio::File::for_path(path.as_path());
             let image = gtk::Picture::for_file(&file);
