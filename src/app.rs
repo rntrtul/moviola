@@ -245,9 +245,9 @@ impl Component for App {
                             gtk::Box{
                                 #[watch]
                                 set_spacing: 10,
-                                add_css_class: "toolbar",
 
                                 gtk::Button {
+                                    add_css_class: "raised",
                                     #[watch]
                                     set_icon_name: if model.video_is_playing {
                                         "pause"
@@ -263,6 +263,7 @@ impl Component for App {
                                 model.timeline.widget() {},
 
                                 gtk::Button {
+                                    add_css_class: "raised",
                                     #[watch]
                                      set_icon_name: if model.video_is_mute {
                                         "audio-volume-muted"

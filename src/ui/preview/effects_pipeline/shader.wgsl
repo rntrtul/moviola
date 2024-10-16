@@ -20,11 +20,13 @@ fn vs_main(model: VertexInput) -> VertexOutput {
 
 // Fragment shader
 @group(0) @binding(0)
-var t_diffuse: texture_2d<f32>;
+var t_diffuse: texture_storage_2d<rgba8unorm, read_write>;
 @group(0) @binding(1)
 var s_diffuse: sampler;
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
-    return textureSample(t_diffuse, s_diffuse, in.tex_coords);
+
+    var coords = vec2<u32>(in.tex_coords * vec2<f32>(textureDimensions(t_diffuse)));
+    return textureLoad(t_diffuse, coords);
 }
