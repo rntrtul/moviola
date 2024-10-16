@@ -7,15 +7,20 @@ use gtk4::{gdk, glib, graphene, gsk, Snapshot};
 use lazy_static::lazy_static;
 use relm4::gtk;
 
+pub static HANDLE_WIDTH: f32 = 20f32;
+pub static HANDLE_HEIGHT: f32 = 5f32;
 static FILL_RULE: gsk::FillRule = gsk::FillRule::Winding;
-pub static HANDLE_WIDTH: f32 = 10f32;
-pub static HANDLE_HEIGHT: f32 = 3f32;
 static SEEK_BAR_WIDTH: f32 = 4f32;
 static SEEK_BAR_OFFSET: f32 = HANDLE_WIDTH - (SEEK_BAR_WIDTH / 2f32);
+static ARROW_WIDTH: f32 = 6f32;
+static ARROW_INSET: f32 = (HANDLE_WIDTH - ARROW_WIDTH) / 2.0;
 
 lazy_static! {
     static ref HANDLE_CURVE: graphene::Size = graphene::Size::new(3f32, 6f32);
     static ref ZERO_SIZE: graphene::Size = graphene::Size::zero();
+    static ref BORDER_COLOUR: gdk::RGBA = gdk::RGBA::parse("#565656").unwrap();
+    static ref SEEK_COLOUR: gdk::RGBA = gdk::RGBA::WHITE;
+    static ref ARROW_HEIGHT_OFFSET: f32 = 1.0f32.tan() * ARROW_WIDTH;
 }
 
 #[derive(glib::Properties, Default, Debug)]
@@ -79,17 +84,18 @@ impl WidgetImpl for HandleWidget {
         snapshot.append_border(
             &gsk::RoundedRect::from_rect(border, 0f32),
             &[HANDLE_HEIGHT, 0f32, HANDLE_HEIGHT, 0f32],
-            &[
-                gdk::RGBA::WHITE,
-                gdk::RGBA::WHITE,
-                gdk::RGBA::WHITE,
-                gdk::RGBA::WHITE,
-            ],
+            &[*BORDER_COLOUR; 4],
         );
 
-        snapshot.append_fill(&self.seek_bar_path(), FILL_RULE, &gdk::RGBA::WHITE);
-        snapshot.append_fill(&self.start_handle_path(), FILL_RULE, &gdk::RGBA::WHITE);
-        snapshot.append_fill(&self.end_handle_path(), FILL_RULE, &gdk::RGBA::WHITE);
+        snapshot.append_fill(&self.seek_bar_path(), FILL_RULE, &*SEEK_COLOUR);
+        snapshot.append_fill(&self.start_handle_path(), FILL_RULE, &*BORDER_COLOUR);
+        snapshot.append_fill(&self.end_handle_path(), FILL_RULE, &*BORDER_COLOUR);
+
+        let arrow_stroke = gsk::Stroke::builder(4f32)
+            .line_cap(gsk::LineCap::Round)
+            .build();
+        snapshot.append_stroke(&self.left_arrow_path(), &arrow_stroke, &*SEEK_COLOUR);
+        snapshot.append_stroke(&self.right_arrow_path(), &arrow_stroke, &*SEEK_COLOUR);
     }
 }
 
@@ -142,6 +148,32 @@ impl HandleWidget {
         let path_builder = gsk::PathBuilder::new();
         path_builder.add_rounded_rect(&handle_outline);
         path_builder.to_path()
+    }
+
+    fn left_arrow_path(&self) -> gsk::Path {
+        let path = gsk::PathBuilder::new();
+
+        let x = self.start_left_x();
+        let y = self.obj().height() as f32 / 2.0;
+
+        path.move_to(x + ARROW_WIDTH + ARROW_INSET, y - *ARROW_HEIGHT_OFFSET);
+        path.line_to(x + ARROW_INSET, y);
+        path.line_to(x + ARROW_WIDTH + ARROW_INSET, y + *ARROW_HEIGHT_OFFSET);
+
+        path.to_path()
+    }
+
+    fn right_arrow_path(&self) -> gsk::Path {
+        let path = gsk::PathBuilder::new();
+
+        let x = self.end_left_x();
+        let y = self.obj().height() as f32 / 2.0;
+
+        path.move_to(x + ARROW_INSET, y - *ARROW_HEIGHT_OFFSET);
+        path.line_to(x + ARROW_WIDTH + ARROW_INSET, y);
+        path.line_to(x + ARROW_INSET, y + *ARROW_HEIGHT_OFFSET);
+
+        path.to_path()
     }
 
     fn seek_bar_path(&self) -> gsk::Path {
