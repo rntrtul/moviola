@@ -14,7 +14,7 @@ use relm4::{
 
 use crate::ui::preview::{CropMode, Orientation, Preview};
 use crate::ui::sidebar::sidebar::{ControlsModel, ControlsMsg, ControlsOutput};
-use crate::ui::timeline::{TimelineModel, TimelineMsg, TimelineOutput};
+use crate::ui::video_controls::{TimelineModel, TimelineMsg, TimelineOutput};
 use crate::video::player::Player;
 
 use super::ui::video_player::{VideoPlayerModel, VideoPlayerMsg};
@@ -524,8 +524,9 @@ impl Component for App {
                 sender.command(|out, shutdown| {
                     shutdown
                         .register(async move {
+                            // todo: set update rate based on video length or move to new frame callback?
                             loop {
-                                tokio::time::sleep(Duration::from_millis(125)).await;
+                                tokio::time::sleep(Duration::from_millis(60)).await;
                                 out.send(AppCommandMsg::AnimateSeekBar).unwrap();
                             }
                         })

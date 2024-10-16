@@ -1,8 +1,8 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use crate::ui::timeline::handle::{HANDLE_HEIGHT, HANDLE_WIDTH};
-use crate::ui::timeline::{TimelineModel, TimelineMsg, TimelineOutput};
+use crate::ui::video_controls::handle::{HANDLE_HEIGHT, HANDLE_WIDTH};
+use crate::ui::video_controls::{TimelineModel, TimelineMsg, TimelineOutput};
 use crate::video::export::TimelineExportSettings;
 use crate::video::player::Player;
 use crate::video::thumbnail::Thumbnail;
@@ -117,7 +117,7 @@ impl Component for TimelineModel {
             TimelineMsg::DragUpdate(target_x) => {
                 widgets.seek_bar.drag_update(target_x as f32);
                 widgets.seek_bar.queue_draw();
-                //
+
                 if target_x != self.prev_drag_target {
                     sender.input(TimelineMsg::SeekToPercent(widgets.seek_bar.seek_x() as f64));
                     self.prev_drag_target = target_x;
@@ -178,7 +178,6 @@ impl TimelineModel {
             let file = gio::File::for_path(path.as_path());
             let image = gtk::Picture::for_file(&file);
 
-            // fixme: better handling of resizing.
             image.set_content_fit(ContentFit::Cover);
             image.set_hexpand(true);
             image.set_valign(gtk::Align::Fill);

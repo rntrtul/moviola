@@ -86,7 +86,7 @@ impl WidgetImpl for HandleWidget {
                 gdk::RGBA::WHITE,
             ],
         );
-        // fixme: sometimes can see line on top of handle
+
         snapshot.append_fill(&self.seek_bar_path(), FILL_RULE, &gdk::RGBA::WHITE);
         snapshot.append_fill(&self.start_handle_path(), FILL_RULE, &gdk::RGBA::WHITE);
         snapshot.append_fill(&self.end_handle_path(), FILL_RULE, &gdk::RGBA::WHITE);
