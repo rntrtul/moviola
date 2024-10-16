@@ -1,12 +1,11 @@
 use std::cell::Cell;
 
+use crate::ui::IGNORE_OVERLAY_COLOUR;
 use gtk4::prelude::{ObjectExt, SnapshotExt, SnapshotExtManual, WidgetExt};
 use gtk4::subclass::prelude::*;
 use gtk4::{gdk, glib, graphene, gsk, Snapshot};
 use lazy_static::lazy_static;
 use relm4::gtk;
-
-use crate::ui::IGNORE_OVERLAY_COLOUR;
 
 static FILL_RULE: gsk::FillRule = gsk::FillRule::Winding;
 pub static HANDLE_WIDTH: f32 = 10f32;
@@ -160,7 +159,7 @@ impl HandleWidget {
     }
 }
 
-impl crate::ui::HandleWidget {
+impl super::HandleWidget {
     pub fn drag_start(&self, x: f64, y: f64) {
         let point = graphene::Point::new(x as f32, y as f32);
 
@@ -198,7 +197,7 @@ impl crate::ui::HandleWidget {
     }
 }
 
-impl Default for crate::ui::HandleWidget {
+impl Default for super::HandleWidget {
     fn default() -> Self {
         glib::Object::builder()
             .property("start_x", 0f32)
