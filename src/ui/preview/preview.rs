@@ -221,6 +221,7 @@ impl Preview {
     }
 
     // todo: determine if taking sample and if memory not copied
+    // todo: try to make this async
     pub(super) fn render_new_sample(&self, sample: Sample) {
         let mut renderer = self.renderer.borrow_mut();
 

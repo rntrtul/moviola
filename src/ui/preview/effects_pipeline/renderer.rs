@@ -62,6 +62,7 @@ impl Renderer {
         // assuming timestamp feature available always
         let timer = Timer::new(&device);
 
+        // use bind groups for effects paramters?
         let frame_bind_group_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
                 entries: &[
@@ -275,7 +276,6 @@ impl Renderer {
             render_pass.draw_indexed(0..self.num_indices, 0, 0..1);
         }
 
-        // fixme: don't use 4 bytes per pixel as hardcoded
         let padded_bytes_per_row = Self::padded_bytes_per_row(self.output_dimensions.0);
         encoder.copy_texture_to_buffer(
             wgpu::ImageCopyTexture {
@@ -300,7 +300,6 @@ impl Renderer {
         );
 
         encoder.resolve_query_set(&self.timer.query_set, 0..2, &self.timer.resolve_buffer, 0);
-        // todo: maybe only need to call once?
         encoder.copy_buffer_to_buffer(
             &self.timer.resolve_buffer,
             0,

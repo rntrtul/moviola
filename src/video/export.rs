@@ -20,13 +20,11 @@ pub struct TimelineExportSettings {
     pub duration: ClockTime,
 }
 
-// todo: move export out of player. set effects to be preview_crop etc.
 impl Player {
     fn build_container_profile(
         &self,
         container: OutputContainerSettings,
     ) -> EncodingContainerProfile {
-        // todo: pass in resolution/aspect ratio target + bitrate to keep file size in check
         let container_caps = container.container.caps_builder().build();
         let video_caps = container.video_codec.caps_builder().build();
 
@@ -62,8 +60,6 @@ impl Player {
         app_sender: ComponentSender<App>,
     ) {
         let now = SystemTime::now();
-        // todo: use toggle_play_pause for setting state to keep ui insync
-        // todo: go back to original resolution.
         // todo: set bitrate to original video, to keep file size smaller at min
         self.playbin.set_state(State::Null).unwrap();
 
@@ -95,7 +91,7 @@ impl Player {
             pipeline.set_timeline(&timeline).unwrap();
 
             // clip needs to be aquired in seperate thread from playbin
-            // todo: select audio stream (ges does not support selection)
+            // ges does not support selection
             let clip = ges::UriClip::new(source_uri.as_str()).expect("Failed to create clip");
             layer.add_clip(&clip).unwrap();
 
@@ -110,6 +106,7 @@ impl Player {
             track.set_restriction_caps(&caps);
 
             track.elements().into_iter().for_each(|track_element| {
+                // fixme: squished video when direction is changed. auto frame positioner kicks in.
                 track_element
                     .set_child_property("video-direction", &(video_direction.to_value()))
                     .unwrap();
@@ -140,15 +137,6 @@ impl Player {
 
             clip.set_inpoint(timeline_export_settings.start);
             clip.set_duration(timeline_export_settings.duration);
-            // todo: add crop + rotate effects now.
-            // todo: should resolution be set in encoding profile or clip caps?
-            // fixme: squished video, use gesVideoUriSource properties (video-direction)
-            // let rotate = format!(
-            //     "autovideoflip video-direction={}",
-            //     sink_orientation_to_effect(orientation)
-            // );
-            // let rotate_effect = ges::Effect::new(&*rotate).unwrap();
-            // clip.add(&rotate_effect).unwrap();
 
             pipeline.set_state(State::Playing).unwrap();
 

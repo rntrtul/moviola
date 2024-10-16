@@ -20,7 +20,6 @@ pub struct Player {
 
 impl Player {
     pub fn new(sample_sender: ComponentSender<App>) -> Self {
-        // todo: set to lower resolution for preview. might save more memory (higher cpu?)
         let playbin = gst::ElementFactory::make("playbin")
             .name("playbin")
             .build()
