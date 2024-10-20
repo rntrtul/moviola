@@ -1,5 +1,4 @@
 use std::collections::VecDeque;
-use std::io::Write;
 
 struct RollingAverage {
     total: f64,
@@ -33,20 +32,21 @@ pub(crate) struct Timer {
     pub(crate) query_set: wgpu::QuerySet,
     pub(crate) resolve_buffer: wgpu::Buffer,
     pub(crate) destination_buffer: wgpu::Buffer,
-    frame_times: RollingAverage,
+    render_times: RollingAverage,
+    compute_times: RollingAverage,
 }
 
 impl Timer {
     pub fn new(device: &wgpu::Device) -> Self {
         let query_set = device.create_query_set(&wgpu::QuerySetDescriptor {
             label: Some("timestamp query set"),
-            count: 2,
+            count: 4,
             ty: wgpu::QueryType::Timestamp,
         });
 
         let resolve_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("timestamp resolve buffer"),
-            size: 2 * 8,
+            size: 4 * 8,
             usage: wgpu::BufferUsages::QUERY_RESOLVE | wgpu::BufferUsages::COPY_SRC,
             mapped_at_creation: false,
         });
@@ -62,7 +62,8 @@ impl Timer {
             query_set,
             resolve_buffer,
             destination_buffer: result_buffer,
-            frame_times: RollingAverage::new(30),
+            render_times: RollingAverage::new(30),
+            compute_times: RollingAverage::new(30),
         }
     }
 
@@ -83,9 +84,18 @@ impl Timer {
         let elapsed_micro_seconds =
             |start, end: u64| end.wrapping_sub(start) as f64 * (period as f64) / 1000.0;
 
-        self.frame_times
+        self.render_times
             .add_sample(elapsed_micro_seconds(timestamps[0], timestamps[1]));
-        // print!("\ravg gpu frame time: {:.2} μs", self.frame_times.avg());
-        std::io::stdout().flush().unwrap();
+        self.compute_times
+            .add_sample(elapsed_micro_seconds(timestamps[2], timestamps[3]));
+
+        // let render_time = self.render_times.avg();
+        // let compute_time = self.compute_times.avg();
+        // let total_time = render_time + compute_time;
+        // print!(
+        //     "\ravg gpu frame_time: {:.2} μs ( {:.2} + {:.2} )",
+        //     total_time, render_time, compute_time
+        // );
+        // std::io::stdout().flush().unwrap();
     }
 }

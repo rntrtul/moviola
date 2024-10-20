@@ -26,7 +26,6 @@ var s_diffuse: sampler;
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
-
     var coords = vec2<u32>(in.tex_coords * vec2<f32>(textureDimensions(t_diffuse)));
     return textureLoad(t_diffuse, coords);
 }

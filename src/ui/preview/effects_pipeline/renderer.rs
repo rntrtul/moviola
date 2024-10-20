@@ -16,14 +16,17 @@ lazy_static! {
 pub struct Renderer {
     device: wgpu::Device,
     queue: wgpu::Queue,
+    compute_pipeline: wgpu::ComputePipeline,
     render_pipeline: wgpu::RenderPipeline,
     vertex_buffer: wgpu::Buffer,
     index_buffer: wgpu::Buffer,
     num_indices: u32,
     frame_bind_group_layout: wgpu::BindGroupLayout,
+    compute_bind_group_layout: wgpu::BindGroupLayout,
     output_texture_view: wgpu::TextureView,
     render_target: wgpu::Texture,
     output_staging_buffer: wgpu::Buffer,
+    compute_buffer: wgpu::Buffer,
     output_dimensions: (u32, u32),
     video_frame_texture: RefCell<texture::Texture>,
     timer: Timer,
@@ -90,13 +93,13 @@ impl Renderer {
         let texture =
             texture::Texture::new_for_size(1, 1, &device, &frame_bind_group_layout, "").unwrap();
 
-        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+        let draw_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("Main Shader"),
-            source: wgpu::ShaderSource::Wgsl(include_str!("shader.wgsl").into()),
+            source: wgpu::ShaderSource::Wgsl(include_str!("draw.wgsl").into()),
         });
 
         let output_dimensions = (512, 288);
-        let (render_target, output_staging_buffer, output_texture_view) =
+        let (render_target, output_staging_buffer, output_texture_view, compute_buffer) =
             Self::create_render_target(output_dimensions.0, output_dimensions.1, &device);
 
         let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -124,13 +127,13 @@ impl Renderer {
             label: Some("Render Pipeline"),
             layout: Some(&render_pipeline_layout),
             vertex: wgpu::VertexState {
-                module: &shader,
+                module: &draw_shader,
                 entry_point: "vs_main",
                 buffers: &[vertex::Vertex::layout()],
                 compilation_options: wgpu::PipelineCompilationOptions::default(),
             },
             fragment: Some(wgpu::FragmentState {
-                module: &shader,
+                module: &draw_shader,
                 entry_point: "fs_main",
                 targets: &[Some(wgpu::TextureFormat::Rgba8Unorm.into())],
                 compilation_options: wgpu::PipelineCompilationOptions::default(),
@@ -154,16 +157,67 @@ impl Renderer {
             cache: None,
         });
 
+        let compute_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("Compute Shader"),
+            source: wgpu::ShaderSource::Wgsl(include_str!("compute.wgsl").into()),
+        });
+
+        let compute_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("Compute bind group layout"),
+                entries: &[
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::StorageTexture {
+                            format: wgpu::TextureFormat::Rgba8Unorm,
+                            access: wgpu::StorageTextureAccess::ReadOnly,
+                            view_dimension: wgpu::TextureViewDimension::D2,
+                        },
+                        count: None,
+                    },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 1,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Storage { read_only: false },
+                            has_dynamic_offset: false,
+                            min_binding_size: wgpu::BufferSize::new(256),
+                        },
+                        count: None,
+                    },
+                ],
+            });
+
+        let compute_pipeline_layout =
+            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("compute pipeline"),
+                bind_group_layouts: &[&compute_bind_group_layout],
+                push_constant_ranges: &[],
+            });
+
+        let compute_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+            label: Some("compute pipeline"),
+            layout: Some(&compute_pipeline_layout),
+            module: &compute_shader,
+            entry_point: "main",
+            compilation_options: Default::default(),
+            cache: None,
+        });
+
         Self {
             device,
             queue,
             render_target,
+            compute_pipeline,
             render_pipeline,
             vertex_buffer,
             index_buffer,
             num_indices,
             frame_bind_group_layout,
+            compute_bind_group_layout,
             output_staging_buffer,
+            compute_buffer,
             output_texture_view,
             output_dimensions,
             timer,
@@ -172,17 +226,11 @@ impl Renderer {
         }
     }
 
-    fn padded_bytes_per_row(row_width: u32) -> u32 {
-        wgpu::COPY_BYTES_PER_ROW_ALIGNMENT
-            * (((row_width * *U32_SIZE) as f32 / wgpu::COPY_BYTES_PER_ROW_ALIGNMENT as f32).ceil()
-                as u32)
-    }
-
     pub fn create_render_target(
         width: u32,
         height: u32,
         device: &wgpu::Device,
-    ) -> (wgpu::Texture, wgpu::Buffer, wgpu::TextureView) {
+    ) -> (wgpu::Texture, wgpu::Buffer, wgpu::TextureView, wgpu::Buffer) {
         let render_target = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("Output Texture Descriptor"),
             size: wgpu::Extent3d {
@@ -198,8 +246,7 @@ impl Renderer {
             view_formats: &[wgpu::TextureFormat::Rgba8Unorm],
         });
 
-        let padded_bytes_per_row = Self::padded_bytes_per_row(width);
-        let output_texture_size = (padded_bytes_per_row * height) as wgpu::BufferAddress;
+        let output_texture_size = (width * height * *U32_SIZE) as u64;
 
         let output_staging_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("Output staging Buffer"),
@@ -208,10 +255,22 @@ impl Renderer {
             mapped_at_creation: false,
         });
 
+        let compute_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("compute buffer"),
+            size: output_texture_size,
+            usage: wgpu::BufferUsages::COPY_SRC | wgpu::BufferUsages::STORAGE,
+            mapped_at_creation: false,
+        });
+
         let output_texture_view =
             render_target.create_view(&wgpu::TextureViewDescriptor::default());
 
-        (render_target, output_staging_buffer, output_texture_view)
+        (
+            render_target,
+            output_staging_buffer,
+            output_texture_view,
+            compute_buffer,
+        )
     }
 
     pub fn update_input_texture_output_texture_size(
@@ -221,11 +280,12 @@ impl Renderer {
         render_width: u32,
         render_height: u32,
     ) {
-        let (render_target, output_staging_buffer, output_texture_view) =
+        let (render_target, output_staging_buffer, output_texture_view, compute_buffer) =
             Self::create_render_target(render_width, render_height, &self.device);
 
         self.render_target = render_target;
         self.output_staging_buffer = output_staging_buffer;
+        self.compute_buffer = compute_buffer;
         self.output_texture_view = output_texture_view;
         self.output_dimensions = (render_width, render_height);
 
@@ -277,36 +337,51 @@ impl Renderer {
             render_pass.draw_indexed(0..self.num_indices, 0, 0..1);
         }
 
-        let padded_bytes_per_row = Self::padded_bytes_per_row(self.output_dimensions.0);
-        encoder.copy_texture_to_buffer(
-            wgpu::ImageCopyTexture {
-                texture: &self.render_target,
-                mip_level: 0,
-                origin: wgpu::Origin3d::ZERO,
-                aspect: wgpu::TextureAspect::All,
-            },
-            wgpu::ImageCopyBuffer {
-                buffer: &self.output_staging_buffer,
-                layout: wgpu::ImageDataLayout {
-                    offset: 0,
-                    bytes_per_row: Some(padded_bytes_per_row),
-                    rows_per_image: Some(self.output_dimensions.1),
-                },
-            },
-            wgpu::Extent3d {
-                width: self.output_dimensions.0,
-                height: self.output_dimensions.1,
-                depth_or_array_layers: 1,
-            },
-        );
+        {
+            let mut compute_pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: Some("Compute Pass"),
+                timestamp_writes: Some(wgpu::ComputePassTimestampWrites {
+                    query_set: &self.timer.query_set,
+                    beginning_of_pass_write_index: Some(2),
+                    end_of_pass_write_index: Some(3),
+                }),
+            });
 
-        encoder.resolve_query_set(&self.timer.query_set, 0..2, &self.timer.resolve_buffer, 0);
+            let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("Compute Bind Group"),
+                layout: &self.compute_bind_group_layout,
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: wgpu::BindingResource::TextureView(&texture.view),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: self.compute_buffer.as_entire_binding(),
+                    },
+                ],
+            });
+
+            compute_pass.set_pipeline(&self.compute_pipeline);
+            compute_pass.set_bind_group(0, &bind_group, &[]);
+            compute_pass.dispatch_workgroups(self.output_dimensions.0, self.output_dimensions.1, 1);
+        }
+
+        encoder.resolve_query_set(&self.timer.query_set, 0..4, &self.timer.resolve_buffer, 0);
         encoder.copy_buffer_to_buffer(
             &self.timer.resolve_buffer,
             0,
             &self.timer.destination_buffer,
             0,
             self.timer.destination_buffer.size(),
+        );
+
+        encoder.copy_buffer_to_buffer(
+            &self.compute_buffer,
+            0,
+            &self.output_staging_buffer,
+            0,
+            self.output_staging_buffer.size(),
         );
 
         encoder.finish()
@@ -330,23 +405,7 @@ impl Renderer {
             self.timer.collect_results(&self.device, &self.queue);
 
             {
-                let mut view = buffer_slice.get_mapped_range_mut();
-                let padded_bytes_per_row =
-                    Self::padded_bytes_per_row(self.output_dimensions.0) as usize;
-                let bytes_per_row = (self.output_dimensions.0 * *U32_SIZE) as usize;
-
-                // todo: find way to skip copying data (takes ~2ms for 4k frame)
-                //          maybe do copy in compute shader to unpad?
-                let mut padded_row_start = padded_bytes_per_row;
-                let mut un_padded_row_start = bytes_per_row;
-                for _ in 1..self.output_dimensions.1 {
-                    view.copy_within(
-                        padded_row_start..(padded_row_start + bytes_per_row),
-                        un_padded_row_start,
-                    );
-                    padded_row_start += padded_bytes_per_row;
-                    un_padded_row_start += bytes_per_row;
-                }
+                let view = buffer_slice.get_mapped_range_mut();
 
                 gdk_texture = gdk::MemoryTexture::new(
                     self.output_dimensions.0 as i32,
