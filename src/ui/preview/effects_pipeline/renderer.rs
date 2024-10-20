@@ -364,7 +364,11 @@ impl Renderer {
 
             compute_pass.set_pipeline(&self.compute_pipeline);
             compute_pass.set_bind_group(0, &bind_group, &[]);
-            compute_pass.dispatch_workgroups(self.output_dimensions.0, self.output_dimensions.1, 1);
+            compute_pass.dispatch_workgroups(
+                self.output_dimensions.0.div_ceil(256),
+                self.output_dimensions.1,
+                1,
+            );
         }
 
         encoder.resolve_query_set(&self.timer.query_set, 0..4, &self.timer.resolve_buffer, 0);
