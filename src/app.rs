@@ -14,7 +14,7 @@ use relm4::{
 
 use crate::ui::preview::{CropMode, Orientation, Preview};
 use crate::ui::sidebar::sidebar::{ControlsModel, ControlsMsg, ControlsOutput};
-use crate::ui::video_controls::{TimelineModel, TimelineMsg, TimelineOutput};
+use crate::ui::video_controls::{VideoControlModel, VideoControlMsg, VideoControlOutput};
 use crate::video::player::Player;
 
 use super::ui::video_player::{VideoPlayerModel, VideoPlayerMsg};
@@ -22,15 +22,13 @@ use super::ui::video_player::{VideoPlayerModel, VideoPlayerMsg};
 pub(super) struct App {
     video_player: Controller<VideoPlayerModel>,
     controls_panel: Controller<ControlsModel>,
-    timeline: Controller<TimelineModel>,
+    timeline: Controller<VideoControlModel>,
     preview: Preview,
     show_video: bool,
     show_spinner: bool,
     video_selected: bool,
     video_is_loaded: bool,
-    video_is_playing: bool,
     video_is_exporting: bool,
-    video_is_mute: bool,
     player: Rc<RefCell<Player>>,
     uri: Option<String>,
 }
@@ -243,39 +241,7 @@ impl Component for App {
                             set_visible: model.show_video,
                             set_orientation: gtk::Orientation::Vertical,
 
-                            gtk::Box{
-                                #[watch]
-                                set_spacing: 10,
-
-                                gtk::Button {
-                                    add_css_class: "raised",
-                                    #[watch]
-                                    set_icon_name: if model.video_is_playing {
-                                        "pause"
-                                    } else {
-                                        "play"
-                                    },
-
-                                    connect_clicked[sender] => move |_| {
-                                        sender.input(AppMsg::TogglePlayPause)
-                                    }
-                                },
-
-                                model.timeline.widget() {},
-
-                                gtk::Button {
-                                    add_css_class: "raised",
-                                    #[watch]
-                                     set_icon_name: if model.video_is_mute {
-                                        "audio-volume-muted"
-                                    } else {
-                                        "audio-volume-high"
-                                    },
-                                    connect_clicked[sender] => move |_| {
-                                            sender.input(AppMsg::ToggleMute)
-                                    }
-                                },
-                            },
+                           model.timeline.widget() {},
 
                             gtk::Box{
                                 set_halign: gtk::Align::Center,
@@ -321,12 +287,13 @@ impl Component for App {
                 ControlsOutput::RestoreZoom => AppMsg::ZoomRestore,
             });
 
-        let timeline: Controller<TimelineModel> =
-            TimelineModel::builder()
-                .launch(())
-                .forward(sender.input_sender(), |msg| match msg {
-                    TimelineOutput::SeekToPercent(percent) => AppMsg::SeekToPercent(percent),
-                });
+        let timeline: Controller<VideoControlModel> = VideoControlModel::builder()
+            .launch(())
+            .forward(sender.input_sender(), |msg| match msg {
+                VideoControlOutput::SeekToPercent(percent) => AppMsg::SeekToPercent(percent),
+                VideoControlOutput::TogglePlayPause => AppMsg::TogglePlayPause,
+                VideoControlOutput::ToggleMute => AppMsg::ToggleMute,
+            });
 
         let player = Rc::new(RefCell::new(Player::new(sender.clone())));
 
@@ -339,9 +306,7 @@ impl Component for App {
             show_spinner: false,
             video_selected: false,
             video_is_loaded: false,
-            video_is_playing: false,
             video_is_exporting: false,
-            video_is_mute: false,
             player,
             uri: None,
         };
@@ -379,14 +344,13 @@ impl Component for App {
 
                 self.video_player.widget().set_visible(false);
 
-                self.video_is_playing = false;
                 self.player.borrow_mut().set_is_playing(false);
-                self.timeline.emit(TimelineMsg::Reset);
+                self.timeline.emit(VideoControlMsg::Reset);
                 self.preview.reset_preview();
                 self.uri.replace(uri.clone());
 
                 self.timeline
-                    .emit(TimelineMsg::GenerateThumbnails(uri.clone()));
+                    .emit(VideoControlMsg::GenerateThumbnails(uri.clone()));
 
                 self.player
                     .borrow_mut()
@@ -430,7 +394,7 @@ impl Component for App {
                 self.show_video = false;
 
                 self.player.borrow_mut().reset_pipeline();
-                self.timeline.emit(TimelineMsg::Reset);
+                self.timeline.emit(VideoControlMsg::Reset);
                 // widgets.crop_box.reset_box();
             }
             AppMsg::Orient(orientation) => self.preview.set_orientation(orientation),
@@ -450,16 +414,8 @@ impl Component for App {
                 Self::update_label_timestamp(timestamp, &widgets.position_label);
                 self.player.borrow_mut().seek(timestamp);
             }
-            AppMsg::TogglePlayPause => {
-                let mut player = self.player.borrow_mut();
-                player.toggle_play_plause();
-                self.video_is_playing = player.is_playing();
-            }
-            AppMsg::ToggleMute => {
-                let mut player = self.player.borrow_mut();
-                player.toggle_mute();
-                self.video_is_mute = player.is_mute();
-            }
+            AppMsg::TogglePlayPause => self.player.borrow_mut().toggle_play_plause(),
+            AppMsg::ToggleMute => self.player.borrow_mut().toggle_mute(),
             AppMsg::Zoom(level) => self.preview.set_zoom(level),
             AppMsg::ZoomTempReset => {
                 widgets.preview_zoom.set_sensitive(false);
@@ -469,13 +425,8 @@ impl Component for App {
                 widgets.preview_zoom.set_sensitive(true);
                 self.preview.show_zoom();
             }
-            AppMsg::NewFrame(sample) => {
-                self.preview.render_sample(sample);
-            }
-            AppMsg::VideoFinished => {
-                self.video_is_playing = false;
-                self.player.borrow_mut().set_is_finished();
-            }
+            AppMsg::NewFrame(sample) => self.preview.render_sample(sample),
+            AppMsg::VideoFinished => self.player.borrow_mut().set_is_finished(),
         }
 
         self.update_view(widgets, sender);
@@ -490,13 +441,11 @@ impl Component for App {
     ) {
         match message {
             AppCommandMsg::AnimateSeekBar => {
+                // todo: move seekbar animation into video control with labels
                 let player = self.player.borrow();
                 let curr_position = player.position();
 
-                if !self.video_is_playing
-                    || !player.is_playing()
-                    || curr_position == ClockTime::ZERO
-                {
+                if !player.is_playing() || curr_position == ClockTime::ZERO {
                     return;
                 }
 
@@ -504,13 +453,13 @@ impl Component for App {
 
                 let percent =
                     curr_position.mseconds() as f64 / player.info().duration.mseconds() as f64;
-                self.timeline.emit(TimelineMsg::UpdateSeekBarPos(percent));
+                self.timeline
+                    .emit(VideoControlMsg::UpdateSeekBarPos(percent));
             }
             AppCommandMsg::VideoLoaded => {
                 self.show_spinner = false;
                 self.show_video = true;
                 self.video_is_loaded = true;
-                self.video_is_playing = true;
 
                 let mut player = self.player.borrow_mut();
 
