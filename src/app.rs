@@ -55,6 +55,7 @@ pub(super) enum AppMsg {
     ZoomRestore,
     Quit,
     NewFrame(gst::Sample),
+    VideoFinished,
 }
 
 #[derive(Debug)]
@@ -470,6 +471,10 @@ impl Component for App {
             }
             AppMsg::NewFrame(sample) => {
                 self.preview.render_sample(sample);
+            }
+            AppMsg::VideoFinished => {
+                self.video_is_playing = false;
+                self.player.borrow_mut().set_is_finished();
             }
         }
 

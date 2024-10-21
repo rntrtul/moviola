@@ -14,6 +14,7 @@ pub struct Player {
     pub(crate) pipeline_ready: bool,
     pub(crate) is_mute: bool,
     pub(crate) is_playing: bool,
+    is_finished: bool,
     pub(crate) playbin: gst::Element,
     pub(crate) info: VideoInfo,
 }
@@ -49,6 +50,7 @@ impl Player {
             .build();
 
         let preroll_sender = sample_sender.clone();
+        let eos_sender = sample_sender.clone();
         app_sink.set_callbacks(
             gst_app::AppSinkCallbacks::builder()
                 .new_sample(move |appsink| {
@@ -61,6 +63,9 @@ impl Player {
                     preroll_sender.input(AppMsg::NewFrame(sample));
                     Ok(FlowSuccess::Ok)
                 })
+                .eos(move |_| {
+                    eos_sender.input(AppMsg::VideoFinished);
+                })
                 .build(),
         );
 
@@ -72,6 +77,7 @@ impl Player {
             pipeline_ready: false,
             is_mute: false,
             is_playing: false,
+            is_finished: false,
             playbin,
             info: Default::default(),
         }
@@ -113,8 +119,23 @@ impl Player {
 
         self.is_playing = play;
 
+        if play && self.is_finished {
+            self.seek(ClockTime::ZERO);
+            self.is_finished = false;
+        }
+
         let state = if play { State::Playing } else { State::Paused };
         self.playbin.set_state(state).unwrap();
+    }
+
+    pub fn set_is_finished(&mut self) {
+        if !self.pipeline_ready {
+            return;
+        }
+
+        self.set_is_playing(false);
+
+        self.is_finished = true;
     }
 
     pub fn toggle_mute(&mut self) {
