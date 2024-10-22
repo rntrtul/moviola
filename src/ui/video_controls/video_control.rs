@@ -1,6 +1,3 @@
-use std::cell::RefCell;
-use std::rc::Rc;
-
 use crate::ui::video_controls::handle::{HANDLE_HEIGHT, HANDLE_WIDTH};
 use crate::video::export::TimelineExportSettings;
 use crate::video::player::Player;
@@ -9,6 +6,9 @@ use gst::ClockTime;
 use gtk4::prelude::{BoxExt, ButtonExt, EventControllerExt, GestureDragExt, WidgetExt};
 use gtk4::{gio, ContentFit};
 use relm4::{adw, gtk, Component, ComponentParts, ComponentSender};
+use std::cell::RefCell;
+use std::rc::Rc;
+use std::time::Duration;
 
 #[derive(Debug)]
 pub struct VideoControlModel {
@@ -18,10 +18,12 @@ pub struct VideoControlModel {
     start: f32,
     end: f32,
     prev_drag_target: f64,
+    player: Rc<RefCell<Player>>,
 }
 
 #[derive(Debug)]
 pub enum VideoControlMsg {
+    VideoLoaded,
     GenerateThumbnails(String),
     PopulateTimeline,
     DragBegin(f64, f64),
@@ -44,6 +46,7 @@ pub enum VideoControlOutput {
 #[derive(Debug)]
 pub enum VideoControlCmdMsg {
     ThumbnailsGenerated,
+    AnimateSeekBar,
 }
 
 #[relm4::component(pub)]
@@ -51,7 +54,7 @@ impl Component for VideoControlModel {
     type CommandOutput = VideoControlCmdMsg;
     type Input = VideoControlMsg;
     type Output = VideoControlOutput;
-    type Init = ();
+    type Init = Rc<RefCell<Player>>;
 
     view! {
         adw::Clamp {
@@ -59,6 +62,11 @@ impl Component for VideoControlModel {
 
             gtk::Box{
                 set_spacing: 10,
+
+                #[name = "position_label"]
+                gtk::Label {
+                    add_css_class: "monospace"
+                },
 
                 gtk::Button {
                     add_css_class: "raised",
@@ -117,14 +125,18 @@ impl Component for VideoControlModel {
                         "audio-volume-high"
                     },
                     connect_clicked => VideoControlMsg::ToggleMute,
+                },
 
+                #[name = "duration_label"]
+                gtk::Label {
+                    set_css_classes: &["monospace", "dim-label"]
                 },
             }
         }
     }
 
     fn init(
-        _: Self::Init,
+        player: Self::Init,
         root: Self::Root,
         sender: ComponentSender<Self>,
     ) -> ComponentParts<Self> {
@@ -135,6 +147,7 @@ impl Component for VideoControlModel {
             start: 0.,
             end: 1.,
             prev_drag_target: -1.,
+            player,
         };
 
         let widgets = view_output!();
@@ -173,6 +186,12 @@ impl Component for VideoControlModel {
             }
             VideoControlMsg::SeekToPercent(percent) => {
                 widgets.seek_bar.set_seek_x(percent as f32);
+
+                let timestamp = ClockTime::from_nseconds(
+                    (self.player.borrow().info.duration.nseconds() as f64 * percent) as u64,
+                );
+                Self::update_label_timestamp(timestamp, &widgets.position_label);
+
                 widgets.seek_bar.queue_draw();
                 sender
                     .output(VideoControlOutput::SeekToPercent(percent))
@@ -202,6 +221,26 @@ impl Component for VideoControlModel {
                 self.end = widgets.seek_bar.end_x();
                 self.prev_drag_target = -1.;
             }
+            VideoControlMsg::VideoLoaded => {
+                self.video_is_playing = true;
+                Self::update_label_timestamp(
+                    self.player.borrow().info.duration,
+                    &widgets.duration_label,
+                );
+
+                sender.command(|out, shutdown| {
+                    shutdown
+                        .register(async move {
+                            // todo: set update rate based on video length,
+                            //     have different callback for label update?
+                            loop {
+                                tokio::time::sleep(Duration::from_millis(60)).await;
+                                out.send(VideoControlCmdMsg::AnimateSeekBar).unwrap();
+                            }
+                        })
+                        .drop_on_shutdown()
+                });
+            }
             VideoControlMsg::Reset => {
                 self.start = 0f32;
                 self.end = 1f32;
@@ -212,8 +251,9 @@ impl Component for VideoControlModel {
         self.update_view(widgets, sender);
     }
 
-    fn update_cmd(
+    fn update_cmd_with_view(
         &mut self,
+        widgets: &mut Self::Widgets,
         message: Self::CommandOutput,
         sender: ComponentSender<Self>,
         _root: &Self::Root,
@@ -223,7 +263,22 @@ impl Component for VideoControlModel {
                 self.thumbnails_available = true;
                 sender.input(VideoControlMsg::PopulateTimeline);
             }
+            VideoControlCmdMsg::AnimateSeekBar => {
+                let player = self.player.borrow();
+                let curr_position = player.position();
+
+                if !player.is_playing() || curr_position == ClockTime::ZERO {
+                    return;
+                }
+
+                Self::update_label_timestamp(curr_position, &widgets.position_label);
+
+                let percent =
+                    curr_position.mseconds() as f64 / player.info().duration.mseconds() as f64;
+                sender.input(VideoControlMsg::UpdateSeekBarPos(percent));
+            }
         }
+        self.update_view(widgets, sender);
     }
 }
 
@@ -258,5 +313,22 @@ impl VideoControlModel {
             image.set_halign(gtk::Align::Fill);
             timeline.append(&image);
         }
+    }
+
+    fn display_text(time: ClockTime) -> String {
+        let seconds = time.seconds() % 60;
+        let minutes = time.minutes() % 60;
+        let hours = time.hours();
+
+        if hours > 0 {
+            format!("{:0>2}:{:0>2}:{:0>2}", hours, minutes, seconds)
+        } else {
+            format!("{:0>2}:{:0>2}", minutes, seconds)
+        }
+    }
+
+    fn update_label_timestamp(timestamp: ClockTime, label: &gtk::Label) {
+        let display_time = Self::display_text(timestamp);
+        label.set_label(&*display_time);
     }
 }

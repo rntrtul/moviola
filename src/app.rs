@@ -1,12 +1,11 @@
 use std::cell::RefCell;
 use std::rc::Rc;
-use std::time::Duration;
 
 use gst::ClockTime;
 use gtk::glib;
 use gtk::prelude::{ApplicationExt, GtkWindowExt, OrientableExt, WidgetExt};
 use gtk4::gio;
-use gtk4::prelude::{BoxExt, ButtonExt, FileExt, GtkApplicationExt, RangeExt};
+use gtk4::prelude::{ButtonExt, FileExt, GtkApplicationExt, RangeExt};
 use relm4::{
     adw, gtk, main_application, Component, ComponentController, ComponentParts, ComponentSender,
     Controller, RelmWidgetExt,
@@ -59,7 +58,6 @@ pub(super) enum AppMsg {
 #[derive(Debug)]
 pub enum AppCommandMsg {
     VideoLoaded,
-    AnimateSeekBar,
 }
 
 impl App {
@@ -111,23 +109,6 @@ impl App {
             };
             sender.input(AppMsg::ExportVideo(file.uri().to_string()));
         });
-    }
-
-    fn display_text(time: ClockTime) -> String {
-        let seconds = time.seconds() % 60;
-        let minutes = time.minutes() % 60;
-        let hours = time.hours();
-
-        if hours > 0 {
-            format!("{:0>2}:{:0>2}:{:0>2}", hours, minutes, seconds)
-        } else {
-            format!("{:0>2}:{:0>2}", minutes, seconds)
-        }
-    }
-
-    fn update_label_timestamp(timestamp: ClockTime, label: &gtk::Label) {
-        let display_time = Self::display_text(timestamp);
-        label.set_label(&*display_time);
     }
 }
 
@@ -239,25 +220,8 @@ impl Component for App {
                         gtk::Box{
                             #[watch]
                             set_visible: model.show_video,
-                            set_orientation: gtk::Orientation::Vertical,
 
-                           model.timeline.widget() {},
-
-                            gtk::Box{
-                                set_halign: gtk::Align::Center,
-                                #[name = "position_label"]
-                                gtk::Label {
-                                    add_css_class: "monospace"
-                                },
-                                gtk::Label {
-                                    add_css_class: "dim-label",
-                                    set_label: " / "
-                                },
-                                #[name = "duration_label"]
-                                gtk::Label {
-                                    set_css_classes: &["monospace", "dim-label"]
-                                },
-                            },
+                            model.timeline.widget() {},
                         },
                     },
                 },
@@ -271,6 +235,7 @@ impl Component for App {
         sender: ComponentSender<Self>,
     ) -> ComponentParts<Self> {
         let preview = Preview::new();
+        let player = Rc::new(RefCell::new(Player::new(sender.clone())));
 
         let video_player: Controller<VideoPlayerModel> =
             VideoPlayerModel::builder().launch(preview.clone()).detach();
@@ -288,14 +253,12 @@ impl Component for App {
             });
 
         let timeline: Controller<VideoControlModel> = VideoControlModel::builder()
-            .launch(())
+            .launch(player.clone())
             .forward(sender.input_sender(), |msg| match msg {
                 VideoControlOutput::SeekToPercent(percent) => AppMsg::SeekToPercent(percent),
                 VideoControlOutput::TogglePlayPause => AppMsg::TogglePlayPause,
                 VideoControlOutput::ToggleMute => AppMsg::ToggleMute,
             });
-
-        let player = Rc::new(RefCell::new(Player::new(sender.clone())));
 
         let model = Self {
             video_player,
@@ -408,10 +371,10 @@ impl Component for App {
                 self.preview.set_crop_mode(mode);
             }
             AppMsg::SeekToPercent(percent) => {
+                // todo: Msg should accept clocktime
                 let timestamp = ClockTime::from_nseconds(
                     (self.player.borrow().info.duration.nseconds() as f64 * percent) as u64,
                 );
-                Self::update_label_timestamp(timestamp, &widgets.position_label);
                 self.player.borrow_mut().seek(timestamp);
             }
             AppMsg::TogglePlayPause => self.player.borrow_mut().toggle_play_plause(),
@@ -440,22 +403,6 @@ impl Component for App {
         _root: &Self::Root,
     ) {
         match message {
-            AppCommandMsg::AnimateSeekBar => {
-                // todo: move seekbar animation into video control with labels
-                let player = self.player.borrow();
-                let curr_position = player.position();
-
-                if !player.is_playing() || curr_position == ClockTime::ZERO {
-                    return;
-                }
-
-                Self::update_label_timestamp(curr_position, &widgets.position_label);
-
-                let percent =
-                    curr_position.mseconds() as f64 / player.info().duration.mseconds() as f64;
-                self.timeline
-                    .emit(VideoControlMsg::UpdateSeekBarPos(percent));
-            }
             AppCommandMsg::VideoLoaded => {
                 self.show_spinner = false;
                 self.show_video = true;
@@ -469,24 +416,12 @@ impl Component for App {
                     player.info.container_info.clone(),
                 ));
 
-                Self::update_label_timestamp(player.info.duration, &widgets.duration_label);
-
-                self.video_player.widget().set_visible(true);
                 player.set_is_playing(true);
 
+                self.timeline.emit(VideoControlMsg::VideoLoaded);
                 self.video_player.emit(VideoPlayerMsg::VideoLoaded);
 
-                sender.command(|out, shutdown| {
-                    shutdown
-                        .register(async move {
-                            // todo: set update rate based on video length or move to new frame callback?
-                            loop {
-                                tokio::time::sleep(Duration::from_millis(60)).await;
-                                out.send(AppCommandMsg::AnimateSeekBar).unwrap();
-                            }
-                        })
-                        .drop_on_shutdown()
-                });
+                self.video_player.widget().set_visible(true);
             }
         }
 
