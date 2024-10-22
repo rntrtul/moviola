@@ -38,7 +38,7 @@ pub enum VideoControlMsg {
 
 #[derive(Debug)]
 pub enum VideoControlOutput {
-    SeekToPercent(f64),
+    Seek(ClockTime),
     TogglePlayPause,
     ToggleMute,
 }
@@ -193,9 +193,7 @@ impl Component for VideoControlModel {
                 Self::update_label_timestamp(timestamp, &widgets.position_label);
 
                 widgets.seek_bar.queue_draw();
-                sender
-                    .output(VideoControlOutput::SeekToPercent(percent))
-                    .unwrap();
+                sender.output(VideoControlOutput::Seek(timestamp)).unwrap();
             }
             VideoControlMsg::UpdateSeekBarPos(percent) => {
                 widgets.seek_bar.set_seek_x(percent as f32);
@@ -315,7 +313,7 @@ impl VideoControlModel {
         }
     }
 
-    fn display_text(time: ClockTime) -> String {
+    fn clock_time_display_text(time: ClockTime) -> String {
         let seconds = time.seconds() % 60;
         let minutes = time.minutes() % 60;
         let hours = time.hours();
@@ -328,7 +326,7 @@ impl VideoControlModel {
     }
 
     fn update_label_timestamp(timestamp: ClockTime, label: &gtk::Label) {
-        let display_time = Self::display_text(timestamp);
+        let display_time = Self::clock_time_display_text(timestamp);
         label.set_label(&*display_time);
     }
 }

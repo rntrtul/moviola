@@ -20,8 +20,8 @@ use super::ui::video_player::{VideoPlayerModel, VideoPlayerMsg};
 
 pub(super) struct App {
     video_player: Controller<VideoPlayerModel>,
-    controls_panel: Controller<ControlsModel>,
-    timeline: Controller<VideoControlModel>,
+    sidebar_panel: Controller<ControlsModel>,
+    video_controls: Controller<VideoControlModel>,
     preview: Preview,
     show_video: bool,
     show_spinner: bool,
@@ -44,7 +44,7 @@ pub(super) enum AppMsg {
     ShowCropBox,
     HideCropBox,
     SetCropMode(CropMode),
-    SeekToPercent(f64),
+    Seek(ClockTime),
     TogglePlayPause,
     ToggleMute,
     Zoom(f64),
@@ -136,7 +136,7 @@ impl Component for App {
                 set_min_sidebar_width: 280.,
 
                 #[wrap(Some)]
-                set_sidebar = model.controls_panel.widget(),
+                set_sidebar = model.sidebar_panel.widget(),
 
                 #[wrap(Some)]
                 set_content = &adw::ToolbarView{
@@ -221,7 +221,7 @@ impl Component for App {
                             #[watch]
                             set_visible: model.show_video,
 
-                            model.timeline.widget() {},
+                            model.video_controls.widget() {},
                         },
                     },
                 },
@@ -255,15 +255,15 @@ impl Component for App {
         let timeline: Controller<VideoControlModel> = VideoControlModel::builder()
             .launch(player.clone())
             .forward(sender.input_sender(), |msg| match msg {
-                VideoControlOutput::SeekToPercent(percent) => AppMsg::SeekToPercent(percent),
+                VideoControlOutput::Seek(timestamp) => AppMsg::Seek(timestamp),
                 VideoControlOutput::TogglePlayPause => AppMsg::TogglePlayPause,
                 VideoControlOutput::ToggleMute => AppMsg::ToggleMute,
             });
 
         let model = Self {
             video_player,
-            controls_panel,
-            timeline,
+            sidebar_panel: controls_panel,
+            video_controls: timeline,
             preview,
             show_video: false,
             show_spinner: false,
@@ -277,7 +277,7 @@ impl Component for App {
         let widgets = view_output!();
 
         model
-            .controls_panel
+            .sidebar_panel
             .model()
             .connect_switcher_to_stack(&widgets.page_switcher);
 
@@ -308,11 +308,11 @@ impl Component for App {
                 self.video_player.widget().set_visible(false);
 
                 self.player.borrow_mut().set_is_playing(false);
-                self.timeline.emit(VideoControlMsg::Reset);
+                self.video_controls.emit(VideoControlMsg::Reset);
                 self.preview.reset_preview();
                 self.uri.replace(uri.clone());
 
-                self.timeline
+                self.video_controls
                     .emit(VideoControlMsg::GenerateThumbnails(uri.clone()));
 
                 self.player
@@ -326,9 +326,7 @@ impl Component for App {
                 });
             }
             AppMsg::ExportFrame => {}
-            AppMsg::SaveFile => {
-                Self::launch_file_save(&sender);
-            }
+            AppMsg::SaveFile => Self::launch_file_save(&sender),
             AppMsg::ExportVideo(save_uri) => {
                 self.video_player.widget().set_visible(false);
                 self.show_video = false;
@@ -336,7 +334,7 @@ impl Component for App {
 
                 self.video_is_exporting = true;
                 let timeline_export_settings = self
-                    .timeline
+                    .video_controls
                     .model()
                     .get_export_settings(self.player.clone());
 
@@ -344,7 +342,7 @@ impl Component for App {
                     self.uri.as_ref().unwrap().clone(),
                     save_uri,
                     timeline_export_settings,
-                    self.controls_panel.model().export_settings(),
+                    self.sidebar_panel.model().export_settings(),
                     self.preview.export_settings(),
                     sender.clone(),
                 );
@@ -357,26 +355,14 @@ impl Component for App {
                 self.show_video = false;
 
                 self.player.borrow_mut().reset_pipeline();
-                self.timeline.emit(VideoControlMsg::Reset);
+                self.video_controls.emit(VideoControlMsg::Reset);
                 // widgets.crop_box.reset_box();
             }
             AppMsg::Orient(orientation) => self.preview.set_orientation(orientation),
-            AppMsg::ShowCropBox => {
-                self.preview.show_crop_box();
-            }
-            AppMsg::HideCropBox => {
-                self.preview.hide_crop_box();
-            }
-            AppMsg::SetCropMode(mode) => {
-                self.preview.set_crop_mode(mode);
-            }
-            AppMsg::SeekToPercent(percent) => {
-                // todo: Msg should accept clocktime
-                let timestamp = ClockTime::from_nseconds(
-                    (self.player.borrow().info.duration.nseconds() as f64 * percent) as u64,
-                );
-                self.player.borrow_mut().seek(timestamp);
-            }
+            AppMsg::ShowCropBox => self.preview.show_crop_box(),
+            AppMsg::HideCropBox => self.preview.hide_crop_box(),
+            AppMsg::SetCropMode(mode) => self.preview.set_crop_mode(mode),
+            AppMsg::Seek(timestamp) => self.player.borrow().seek(timestamp),
             AppMsg::TogglePlayPause => self.player.borrow_mut().toggle_play_plause(),
             AppMsg::ToggleMute => self.player.borrow_mut().toggle_mute(),
             AppMsg::Zoom(level) => self.preview.set_zoom(level),
@@ -412,13 +398,13 @@ impl Component for App {
 
                 player.discover_metadata();
 
-                self.controls_panel.emit(ControlsMsg::DefaultCodec(
+                self.sidebar_panel.emit(ControlsMsg::DefaultCodec(
                     player.info.container_info.clone(),
                 ));
 
                 player.set_is_playing(true);
 
-                self.timeline.emit(VideoControlMsg::VideoLoaded);
+                self.video_controls.emit(VideoControlMsg::VideoLoaded);
                 self.video_player.emit(VideoPlayerMsg::VideoLoaded);
 
                 self.video_player.widget().set_visible(true);
