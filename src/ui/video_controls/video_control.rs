@@ -47,6 +47,7 @@ pub enum VideoControlOutput {
 pub enum VideoControlCmdMsg {
     ThumbnailsGenerated,
     AnimateSeekBar,
+    UpdateCurrentTime,
 }
 
 #[relm4::component(pub)]
@@ -152,6 +153,28 @@ impl Component for VideoControlModel {
 
         let widgets = view_output!();
 
+        sender.command(|out, shutdown| {
+            shutdown
+                .register(async move {
+                    loop {
+                        tokio::time::sleep(Duration::from_millis(60)).await;
+                        out.send(VideoControlCmdMsg::AnimateSeekBar).unwrap();
+                    }
+                })
+                .drop_on_shutdown()
+        });
+
+        sender.command(|out, shutdown| {
+            shutdown
+                .register(async move {
+                    loop {
+                        tokio::time::sleep(Duration::from_millis(1000)).await;
+                        out.send(VideoControlCmdMsg::UpdateCurrentTime).unwrap();
+                    }
+                })
+                .drop_on_shutdown()
+        });
+
         ComponentParts { model, widgets }
     }
 
@@ -225,19 +248,6 @@ impl Component for VideoControlModel {
                     self.player.borrow().info.duration,
                     &widgets.duration_label,
                 );
-
-                sender.command(|out, shutdown| {
-                    shutdown
-                        .register(async move {
-                            // todo: set update rate based on video length,
-                            //     have different callback for label update?
-                            loop {
-                                tokio::time::sleep(Duration::from_millis(60)).await;
-                                out.send(VideoControlCmdMsg::AnimateSeekBar).unwrap();
-                            }
-                        })
-                        .drop_on_shutdown()
-                });
             }
             VideoControlMsg::Reset => {
                 self.start = 0f32;
@@ -263,17 +273,20 @@ impl Component for VideoControlModel {
             }
             VideoControlCmdMsg::AnimateSeekBar => {
                 let player = self.player.borrow();
-                let curr_position = player.position();
-
-                if !player.is_playing() || curr_position == ClockTime::ZERO {
+                let Ok(curr_position) = player.position() else {
                     return;
-                }
-
-                Self::update_label_timestamp(curr_position, &widgets.position_label);
+                };
 
                 let percent =
                     curr_position.mseconds() as f64 / player.info().duration.mseconds() as f64;
                 sender.input(VideoControlMsg::UpdateSeekBarPos(percent));
+            }
+            VideoControlCmdMsg::UpdateCurrentTime => {
+                let Ok(curr_position) = self.player.borrow().position() else {
+                    return;
+                };
+
+                Self::update_label_timestamp(curr_position, &widgets.position_label);
             }
         }
         self.update_view(widgets, sender);

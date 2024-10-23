@@ -10,6 +10,11 @@ use relm4::ComponentSender;
 use std::fmt::Debug;
 
 #[derive(Debug)]
+pub enum PlayerError {
+    NoVideoLoaded,
+}
+
+#[derive(Debug)]
 pub struct Player {
     pub(crate) pipeline_ready: bool,
     pub(crate) is_mute: bool,
@@ -95,10 +100,18 @@ impl Player {
         self.info.clone()
     }
 
-    pub fn position(&self) -> ClockTime {
+    pub fn position(&self) -> Result<ClockTime, PlayerError> {
+        if !self.pipeline_ready || !self.is_playing {
+            return Err(PlayerError::NoVideoLoaded);
+        }
+
         let result = self.playbin.query_position::<ClockTime>();
 
-        result.unwrap_or_else(|| ClockTime::ZERO)
+        if result.is_none() {
+            Err(PlayerError::NoVideoLoaded)
+        } else {
+            Ok(result.unwrap())
+        }
     }
 
     pub fn reset_pipeline(&mut self) {
