@@ -3,8 +3,9 @@ use crate::video::export::TimelineExportSettings;
 use crate::video::player::Player;
 use crate::video::thumbnail::Thumbnail;
 use gst::ClockTime;
+use gtk4::gdk::MemoryTexture;
 use gtk4::prelude::{BoxExt, ButtonExt, EventControllerExt, GestureDragExt, WidgetExt};
-use gtk4::{gio, ContentFit};
+use gtk4::{gdk, ContentFit};
 use relm4::{adw, gtk, Component, ComponentParts, ComponentSender};
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -25,7 +26,6 @@ pub struct VideoControlModel {
 pub enum VideoControlMsg {
     VideoLoaded,
     GenerateThumbnails(String),
-    PopulateTimeline,
     DragBegin(f64, f64),
     DragUpdate(f64),
     DragEnd,
@@ -45,7 +45,7 @@ pub enum VideoControlOutput {
 
 #[derive(Debug)]
 pub enum VideoControlCmdMsg {
-    ThumbnailsGenerated,
+    ThumbnailsGenerated(Vec<MemoryTexture>),
     AnimateSeekBar,
     UpdateCurrentTime,
 }
@@ -199,13 +199,9 @@ impl Component for VideoControlModel {
                 self.thumbnails_available = false;
 
                 sender.oneshot_command(async move {
-                    Thumbnail::generate_thumbnails(uri).await;
-                    VideoControlCmdMsg::ThumbnailsGenerated
+                    let thumbnails = Thumbnail::generate_thumbnails(uri).await;
+                    VideoControlCmdMsg::ThumbnailsGenerated(thumbnails)
                 });
-            }
-            VideoControlMsg::PopulateTimeline => {
-                let timeline = &widgets.timeline;
-                VideoControlModel::populate_timeline(timeline);
             }
             VideoControlMsg::SeekToPercent(percent) => {
                 widgets.seek_bar.set_seek_x(percent as f32);
@@ -267,9 +263,9 @@ impl Component for VideoControlModel {
         _root: &Self::Root,
     ) {
         match message {
-            VideoControlCmdMsg::ThumbnailsGenerated => {
+            VideoControlCmdMsg::ThumbnailsGenerated(thumbnails) => {
                 self.thumbnails_available = true;
-                sender.input(VideoControlMsg::PopulateTimeline);
+                VideoControlModel::populate_timeline(&widgets.timeline, thumbnails);
             }
             VideoControlCmdMsg::AnimateSeekBar => {
                 let player = self.player.borrow();
@@ -313,10 +309,9 @@ impl VideoControlModel {
         }
     }
 
-    fn populate_timeline(timeline: &gtk::Box) {
-        for path in Thumbnail::thumbnail_paths() {
-            let file = gio::File::for_path(path.as_path());
-            let image = gtk::Picture::for_file(&file);
+    fn populate_timeline(timeline: &gtk::Box, thumbnails: Vec<MemoryTexture>) {
+        for thumbnail in thumbnails {
+            let image = gtk::Picture::for_paintable(&gdk::Paintable::from(thumbnail));
 
             image.set_content_fit(ContentFit::Cover);
             image.set_hexpand(true);

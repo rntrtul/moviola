@@ -1,76 +1,28 @@
-use std::path::PathBuf;
 use std::sync::{Arc, Barrier, Condvar, Mutex};
 use std::thread;
-use std::time::SystemTime;
 
 use anyhow::Error;
+use ges::glib;
 use gst::prelude::{Cast, ElementExt, ElementExtManual, GstBinExt, ObjectExt};
 use gst::{ClockTime, SeekFlags, State};
 use gst_app::AppSink;
 use gst_video::VideoFrameExt;
-use relm4::gtk;
+use gtk4::gdk;
+use gtk4::gdk::MemoryTexture;
 
 use crate::video;
 
-// todo: maybe make thumbnails fixed aspect ratio?
-static THUMBNAIL_HEIGHT: u32 = 180;
+static THUMBNAIL_WIDTH: u32 = 180;
 static NUM_THUMBNAILS: u64 = 8;
 
 pub struct Thumbnail;
 
 impl Thumbnail {
-    // todo: maybe don't save thumbnails and just pass the img out as struct and use that to populate picture.
-    //      wont have to write to disk or do downsample.
-    pub fn save_sample_as_image(sample: &gst::Sample, target_height: u32, save_path: PathBuf) {
-        let buffer = sample
-            .buffer()
-            .ok_or_else(|| gst::FlowError::Error)
-            .unwrap();
-
-        let caps = sample.caps().expect("sample without caps");
-        let info = gst_video::VideoInfo::from_caps(caps).expect("Failed to parse caps");
-
-        let frame = gst_video::VideoFrameRef::from_buffer_ref_readable(buffer, &info)
-            .map_err(|_| gst::FlowError::Error)
-            .unwrap();
-
-        let aspect_ratio = (frame.width() as f64 * info.par().numer() as f64)
-            / (frame.height() as f64 * info.par().denom() as f64);
-        let target_width = target_height as f64 * aspect_ratio;
-
-        let width_stride = *info.format_info().pixel_stride().first().unwrap() as usize;
-
-        let img = image::FlatSamples::<&[u8]> {
-            samples: frame.plane_data(0).unwrap(),
-            layout: image::flat::SampleLayout {
-                channels: 3,
-                channel_stride: 1,
-                width: frame.width(),
-                width_stride,
-                height: frame.height(),
-                height_stride: frame.plane_stride()[0] as usize,
-            },
-            color_hint: Some(image::ColorType::Rgb8),
-        };
-
-        let scaled_img = image::imageops::thumbnail(
-            &img.as_view::<image::Rgb<u8>>()
-                .expect("could not create image view"),
-            target_width as u32,
-            target_height,
-        );
-
-        scaled_img
-            .save(&save_path)
-            .map_err(|_| gst::FlowError::Error)
-            .unwrap();
-    }
-
     fn new_sample_callback(
         appsink: &AppSink,
         barrier: Arc<Barrier>,
         current_thumbnail_started: Arc<(Mutex<bool>, Condvar)>,
-        num_started: Arc<Mutex<u64>>,
+        thumbnail: Arc<Mutex<Vec<MemoryTexture>>>,
     ) -> Result<gst::FlowSuccess, gst::FlowError> {
         let (lock, cvar) = &*Arc::clone(&current_thumbnail_started);
         let mut got_current = lock.lock().unwrap();
@@ -80,22 +32,63 @@ impl Thumbnail {
         }
         *got_current = true;
 
-        let mut thumbnails_started = num_started.lock().unwrap();
-
-        let curr_thumbnail = *thumbnails_started;
-        let appsink = appsink.clone();
+        let sample = appsink.pull_sample().map_err(|_| gst::FlowError::Error)?;
 
         thread::spawn(move || {
-            let sample = appsink
-                .pull_sample()
+            let buffer = sample
+                .buffer()
+                .ok_or_else(|| gst::FlowError::Error)
+                .unwrap();
+
+            let caps = sample.caps().expect("sample without caps");
+            let info = gst_video::VideoInfo::from_caps(caps).expect("Failed to parse caps");
+
+            let frame = gst_video::VideoFrameRef::from_buffer_ref_readable(buffer, &info)
                 .map_err(|_| gst::FlowError::Error)
                 .unwrap();
-            let thumbnail_save_path = Self::thumbnail_save_path(curr_thumbnail);
-            Self::save_sample_as_image(&sample, THUMBNAIL_HEIGHT, thumbnail_save_path);
+
+            let aspect_ratio = (frame.width() as f64 * info.par().numer() as f64)
+                / (frame.height() as f64 * info.par().denom() as f64);
+            let target_height = (THUMBNAIL_WIDTH as f64 / aspect_ratio).floor();
+
+            let width_stride = *info.format_info().pixel_stride().first().unwrap() as usize;
+
+            let img = image::FlatSamples::<&[u8]> {
+                samples: frame.plane_data(0).unwrap(),
+                layout: image::flat::SampleLayout {
+                    channels: 3,
+                    channel_stride: 1,
+                    width: frame.width(),
+                    width_stride,
+                    height: frame.height(),
+                    height_stride: frame.plane_stride()[0] as usize,
+                },
+                color_hint: Some(image::ColorType::Rgb8),
+            };
+            let scaled_img = image::imageops::thumbnail(
+                &img.as_view::<image::Rgb<u8>>()
+                    .expect("could not create image view"),
+                THUMBNAIL_WIDTH,
+                target_height as u32,
+            );
+
+            let gdk_texture = gdk::MemoryTexture::new(
+                THUMBNAIL_WIDTH as i32,
+                target_height as i32,
+                gdk::MemoryFormat::R8g8b8,
+                &glib::Bytes::from(&scaled_img.iter().as_slice()),
+                (THUMBNAIL_WIDTH * 3) as usize,
+            );
+
+            {
+                let thumbnail_lock = &*Arc::clone(&thumbnail);
+                let mut thumnail_vec = thumbnail_lock.lock().unwrap();
+                thumnail_vec.push(gdk_texture);
+            }
+
             barrier.wait();
         });
 
-        *thumbnails_started += 1;
         cvar.notify_one();
         Err(gst::FlowError::Eos)
     }
@@ -104,7 +97,7 @@ impl Thumbnail {
         video_uri: String,
         barrier: Arc<Barrier>,
         current_thumbnail_started: Arc<(Mutex<bool>, Condvar)>,
-        num_started: Arc<Mutex<u64>>,
+        thumbnail: Arc<Mutex<Vec<MemoryTexture>>>,
     ) -> Result<gst::Pipeline, Error> {
         let pipeline = gst::parse::launch(&format!(
             "uridecodebin uri={video_uri} ! videoconvert ! appsink name=sink"
@@ -133,7 +126,7 @@ impl Thumbnail {
                         appsink,
                         Arc::clone(&barrier),
                         Arc::clone(&current_thumbnail_started),
-                        Arc::clone(&num_started),
+                        Arc::clone(&thumbnail),
                     )
                 })
                 .build(),
@@ -141,20 +134,19 @@ impl Thumbnail {
         Ok(pipeline)
     }
 
-    // fixme: speed up
-    // try to reuse existing pipeline or thumbnail pipeline. would be ~1.3 sec quicker for
-    // subsequent videos
-    // after calling should wait on barrier otherwise thumbnails not done
-    fn launch_thumbnail_threads(video_uri: String, barrier: Arc<Barrier>) -> gst::Pipeline {
+    fn launch_thumbnail_threads(
+        video_uri: String,
+        barrier: Arc<Barrier>,
+        thumbnail: Arc<Mutex<Vec<MemoryTexture>>>,
+    ) {
         let current_thumbnail_started: Arc<(Mutex<bool>, Condvar)> =
             Arc::new((Mutex::new(false), Condvar::new()));
-        let num_started = Arc::new(Mutex::new(0));
 
         let pipeline = Self::create_thumbnail_pipeline(
             video_uri,
-            barrier,
+            Arc::clone(&barrier),
             Arc::clone(&current_thumbnail_started),
-            Arc::clone(&num_started),
+            Arc::clone(&thumbnail),
         )
         .expect("could not create thumbnail pipeline");
 
@@ -184,35 +176,25 @@ impl Thumbnail {
             *started = false;
         }
 
-        pipeline
-    }
-
-    fn thumbnail_save_path(thumnail_num: u64) -> PathBuf {
-        let mut path = gtk::glib::user_cache_dir();
-        path.push(format!("thumbnail_{}.jpg", thumnail_num));
-        path
-    }
-
-    pub fn thumbnail_paths() -> Vec<PathBuf> {
-        let mut file_names = Vec::new();
-        for i in 0..NUM_THUMBNAILS {
-            file_names.push(Self::thumbnail_save_path(i));
-        }
-        file_names
+        barrier.wait();
+        pipeline.set_state(State::Null).unwrap();
     }
 
     pub fn number_of_thumbnails() -> u64 {
         NUM_THUMBNAILS
     }
 
-    pub async fn generate_thumbnails(video_uri: String) {
-        let now = SystemTime::now();
+    pub async fn generate_thumbnails(video_uri: String) -> Vec<MemoryTexture> {
         let all_thumbnails_generated = Arc::new(Barrier::new((NUM_THUMBNAILS + 1) as usize));
-        let pipeline =
-            Self::launch_thumbnail_threads(video_uri, Arc::clone(&all_thumbnails_generated));
-        all_thumbnails_generated.wait();
-        pipeline.set_state(State::Null).unwrap();
-        println!("done thumbnails in {:?}", now.elapsed());
+        let thumbnails: Arc<Mutex<Vec<MemoryTexture>>> =
+            Arc::new(Mutex::new(Vec::with_capacity(NUM_THUMBNAILS as usize)));
+        Self::launch_thumbnail_threads(
+            video_uri,
+            Arc::clone(&all_thumbnails_generated),
+            thumbnails.clone(),
+        );
+
+        Arc::into_inner(thumbnails).unwrap().into_inner().unwrap()
     }
 }
 
@@ -225,11 +207,23 @@ mod tests {
         gst::init().unwrap();
 
         // todo: read from env/config
-        let uri = "file:///home/fareed/Videos/mp3e1.mkv";
+        let uri = "file:///home/fareed/Videos/TheFallGuy.mkv";
+
+        let thumbnails: Arc<Mutex<Vec<MemoryTexture>>> =
+            Arc::new(Mutex::new(Vec::with_capacity(NUM_THUMBNAILS as usize)));
         let barrier = Arc::new(Barrier::new((NUM_THUMBNAILS + 1) as usize));
-        Thumbnail::launch_thumbnail_threads(uri.parse().unwrap(), Arc::clone(&barrier));
+
+        Thumbnail::launch_thumbnail_threads(
+            uri.parse().unwrap(),
+            barrier.clone(),
+            thumbnails.clone(),
+        );
         barrier.wait();
 
-        assert_eq!(true, true);
+        {
+            let thumbnail_lock = &*Arc::clone(&thumbnails);
+            let thumnail_vec = thumbnail_lock.lock().unwrap();
+            assert_eq!(thumnail_vec.len(), NUM_THUMBNAILS as usize);
+        }
     }
 }
