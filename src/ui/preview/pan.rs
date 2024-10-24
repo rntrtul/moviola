@@ -59,7 +59,6 @@ impl Preview {
             #[weak]
             obj,
             move |_, _, _| {
-                // todo: should this only be in one drag handle?
                 obj.imp().prev_drag.set(graphene::Point::zero());
             }
         ));

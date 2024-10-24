@@ -266,8 +266,6 @@ impl Preview {
     }
 
     fn get_cordinate_percent_from_drag(&self, x: f64, y: f64) -> (f64, f64) {
-        // todo: be aware of scale factor and convert screen pixel to video pixel.
-        //      probably handled in zoom with func like screen_coords_to_video
         let preview = self.preview_rect();
 
         let x_adj = (x - preview.x() as f64).clamp(0., preview.width() as f64);

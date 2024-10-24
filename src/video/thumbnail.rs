@@ -190,8 +190,7 @@ mod tests {
     fn thumb_create() {
         gst::init().unwrap();
 
-        // todo: read from env/config
-        let uri = "file:///home/fareed/Videos/mp3e1.mkv";
+        let uri = crate::config::VIDEO_TEST_FILE;
 
         let thumbnails: Arc<Mutex<Vec<MemoryTexture>>> =
             Arc::new(Mutex::new(Vec::with_capacity(NUM_THUMBNAILS as usize)));
