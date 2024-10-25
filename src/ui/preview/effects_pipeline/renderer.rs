@@ -242,7 +242,9 @@ impl Renderer {
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
             format: wgpu::TextureFormat::Rgba8Unorm,
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+                | wgpu::TextureUsages::COPY_SRC
+                | wgpu::TextureUsages::STORAGE_BINDING,
             view_formats: &[wgpu::TextureFormat::Rgba8Unorm],
         });
 
@@ -303,6 +305,7 @@ impl Renderer {
 
     // todo: accept effect paramters
     pub fn prepare_video_frame_render_pass(&self, sample: gst::Sample) -> wgpu::CommandBuffer {
+        // todo: convert sample to texture in seperate step
         let texture = self.video_frame_texture.borrow();
         texture.write_from_sample(&self.queue, sample);
 
@@ -353,7 +356,7 @@ impl Renderer {
                 entries: &[
                     wgpu::BindGroupEntry {
                         binding: 0,
-                        resource: wgpu::BindingResource::TextureView(&texture.view),
+                        resource: wgpu::BindingResource::TextureView(&self.output_texture_view),
                     },
                     wgpu::BindGroupEntry {
                         binding: 1,
