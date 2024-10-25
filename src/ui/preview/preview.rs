@@ -107,8 +107,6 @@ impl WidgetImpl for Preview {
         let preview = self.preview_rect();
         snapshot.save();
 
-        self.orient_snapshot(&snapshot);
-
         let (translate_x, translate_y) = if !self.show_crop_box.get() && self.is_cropped.get() {
             let cropped_area = self.cropped_region_clip();
 
@@ -124,29 +122,16 @@ impl WidgetImpl for Preview {
             (preview.x(), preview.y())
         };
 
-        if self.orientation.get().is_vertical() {
-            snapshot.translate(&Point::new(translate_y, translate_x));
-        } else {
-            snapshot.translate(&Point::new(translate_x, translate_y));
-        };
+        snapshot.translate(&Point::new(translate_x, translate_y));
 
         if self.show_zoom.get() {
             snapshot.scale(self.zoom.get() as f32, self.zoom.get() as f32);
             let translate = self.translate.get();
-            if self.orientation.get().is_vertical() {
-                snapshot.translate(&Point::new(translate.y(), translate.x()));
-            } else {
-                snapshot.translate(&translate);
-            };
+            snapshot.translate(&translate);
         }
 
         if let Some(ref texture) = *self.texture.borrow() {
-            let (width, height) = if self.orientation.get().is_vertical() {
-                (preview.height() as f64, preview.width() as f64)
-            } else {
-                (preview.width() as f64, preview.height() as f64)
-            };
-            texture.snapshot(snapshot, width, height);
+            texture.snapshot(snapshot, preview.width() as f64, preview.height() as f64);
         }
 
         if !self.show_crop_box.get() && self.is_cropped.get() {

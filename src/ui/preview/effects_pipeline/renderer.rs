@@ -1,6 +1,7 @@
 use crate::ui::preview::effects_pipeline::timer::Timer;
-use crate::ui::preview::effects_pipeline::vertex::{INDICES, VERTICES};
+use crate::ui::preview::effects_pipeline::vertex::{FrameRect, INDICES};
 use crate::ui::preview::effects_pipeline::{texture, vertex};
+use crate::ui::preview::Orientation;
 use ges::glib;
 use gtk4::gdk;
 use gtk4::prelude::Cast;
@@ -29,6 +30,7 @@ pub struct Renderer {
     compute_buffer: wgpu::Buffer,
     output_dimensions: (u32, u32),
     video_frame_texture: RefCell<texture::Texture>,
+    video_frame_rect: FrameRect,
     timer: Timer,
     frame_count: Cell<u32>,
 }
@@ -102,9 +104,11 @@ impl Renderer {
         let (render_target, output_staging_buffer, output_texture_view, compute_buffer) =
             Self::create_render_target(output_dimensions.0, output_dimensions.1, &device);
 
+        let frame_rect = FrameRect::new();
+
         let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Vertex buffer"),
-            contents: bytemuck::cast_slice(VERTICES),
+            contents: bytemuck::cast_slice(&frame_rect.vertices()),
             usage: wgpu::BufferUsages::VERTEX,
         });
 
@@ -222,6 +226,7 @@ impl Renderer {
             output_dimensions,
             timer,
             video_frame_texture: RefCell::new(texture),
+            video_frame_rect: frame_rect,
             frame_count: Cell::new(0),
         }
     }
@@ -275,6 +280,31 @@ impl Renderer {
         )
     }
 
+    fn update_render_target(&mut self, width: u32, height: u32) {
+        let (render_target, output_staging_buffer, output_texture_view, compute_buffer) =
+            Self::create_render_target(width, height, &self.device);
+
+        self.render_target = render_target;
+        self.output_staging_buffer = output_staging_buffer;
+        self.compute_buffer = compute_buffer;
+        self.output_texture_view = output_texture_view;
+    }
+
+    pub fn orient(&mut self, orientation: Orientation) {
+        self.video_frame_rect.orient(orientation);
+
+        self.vertex_buffer = self
+            .device
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("Vertex buffer"),
+                contents: bytemuck::cast_slice(&self.video_frame_rect.vertices()),
+                usage: wgpu::BufferUsages::VERTEX,
+            });
+
+        self.output_dimensions = (self.output_dimensions.1, self.output_dimensions.0);
+        self.update_render_target(self.output_dimensions.0, self.output_dimensions.1);
+    }
+
     pub fn update_input_texture_output_texture_size(
         &mut self,
         frame_width: u32,
@@ -282,13 +312,7 @@ impl Renderer {
         render_width: u32,
         render_height: u32,
     ) {
-        let (render_target, output_staging_buffer, output_texture_view, compute_buffer) =
-            Self::create_render_target(render_width, render_height, &self.device);
-
-        self.render_target = render_target;
-        self.output_staging_buffer = output_staging_buffer;
-        self.compute_buffer = compute_buffer;
-        self.output_texture_view = output_texture_view;
+        self.update_render_target(render_width, render_height);
         self.output_dimensions = (render_width, render_height);
 
         self.video_frame_texture.replace(
