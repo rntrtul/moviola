@@ -153,28 +153,6 @@ impl Component for VideoControlModel {
 
         let widgets = view_output!();
 
-        sender.command(|out, shutdown| {
-            shutdown
-                .register(async move {
-                    loop {
-                        tokio::time::sleep(Duration::from_millis(60)).await;
-                        out.send(VideoControlCmdMsg::AnimateSeekBar).unwrap();
-                    }
-                })
-                .drop_on_shutdown()
-        });
-
-        sender.command(|out, shutdown| {
-            shutdown
-                .register(async move {
-                    loop {
-                        tokio::time::sleep(Duration::from_millis(1000)).await;
-                        out.send(VideoControlCmdMsg::UpdateCurrentTime).unwrap();
-                    }
-                })
-                .drop_on_shutdown()
-        });
-
         ComponentParts { model, widgets }
     }
 
@@ -244,6 +222,28 @@ impl Component for VideoControlModel {
                     self.player.borrow().info.duration,
                     &widgets.duration_label,
                 );
+
+                sender.command(|out, shutdown| {
+                    shutdown
+                        .register(async move {
+                            loop {
+                                tokio::time::sleep(Duration::from_millis(60)).await;
+                                out.send(VideoControlCmdMsg::AnimateSeekBar).unwrap();
+                            }
+                        })
+                        .drop_on_shutdown()
+                });
+
+                sender.command(|out, shutdown| {
+                    shutdown
+                        .register(async move {
+                            loop {
+                                tokio::time::sleep(Duration::from_millis(1000)).await;
+                                out.send(VideoControlCmdMsg::UpdateCurrentTime).unwrap();
+                            }
+                        })
+                        .drop_on_shutdown()
+                });
             }
             VideoControlMsg::Reset => {
                 self.start = 0f32;
