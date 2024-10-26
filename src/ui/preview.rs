@@ -11,47 +11,8 @@ use gtk4::glib;
 use gtk4::prelude::WidgetExt;
 use gtk4::subclass::prelude::ObjectSubclassIsExt;
 
-#[derive(Debug, Clone, Copy, Eq, PartialEq)]
-pub enum CropMode {
-    Free,
-    Original,
-    Square,
-    _16To9,
-    _4To5,
-    _5To7,
-    _4To3,
-    _3To5,
-    _3To2,
-}
-
-impl CropMode {
-    fn value(&self) -> f32 {
-        match *self {
-            CropMode::Free => 0.,
-            CropMode::Original => 0.,
-            CropMode::Square => 1.,
-            CropMode::_16To9 => 16. / 9.,
-            CropMode::_4To3 => 4. / 3.,
-            CropMode::_3To2 => 2. / 3.,
-            CropMode::_4To5 => 4. / 5.,
-            CropMode::_5To7 => 5. / 7.,
-            CropMode::_3To5 => 3. / 5.,
-        }
-    }
-}
-
-pub struct BoundingBoxDimensions {
-    pub(crate) left_x: f32,
-    pub(crate) top_y: f32,
-    pub(crate) right_x: f32,
-    pub(crate) bottom_y: f32,
-}
-
-#[derive(Debug, Clone, Copy)]
-pub struct Orientation {
-    pub(crate) angle: f32,
-    pub(crate) mirrored: bool,
-}
+pub use crate::ui::preview::bounding_box::{BoundingBoxDimensions, CropMode};
+pub use crate::ui::preview::orient::Orientation;
 
 glib::wrapper! {
     pub struct Preview(ObjectSubclass<preview::Preview>)

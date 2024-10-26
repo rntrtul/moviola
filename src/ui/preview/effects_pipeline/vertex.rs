@@ -80,7 +80,6 @@ impl FrameRect {
         }
 
         if orientation.mirrored {
-            // fixme: becomes lower res?
             self.tex_coords
                 .chunks_exact_mut(2)
                 .for_each(|chunk| chunk.reverse());

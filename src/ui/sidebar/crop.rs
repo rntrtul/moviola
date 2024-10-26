@@ -82,10 +82,7 @@ impl SimpleComponent for CropPageModel {
         let widgets = view_output!();
         let model = CropPageModel {
             crop_mode: CropMode::Free,
-            orientation: Orientation {
-                angle: 0.0,
-                mirrored: false,
-            },
+            orientation: Orientation::default(),
             show_crop_box: false,
         };
 

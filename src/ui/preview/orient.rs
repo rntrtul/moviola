@@ -1,8 +1,13 @@
 use crate::ui::preview;
-use crate::ui::preview::Orientation;
 use gst_video::VideoOrientationMethod;
 use gtk4::prelude::WidgetExt;
 use gtk4::subclass::prelude::ObjectSubclassIsExt;
+
+#[derive(Debug, Clone, Copy)]
+pub struct Orientation {
+    pub(crate) angle: f32,
+    pub(crate) mirrored: bool,
+}
 
 impl Orientation {
     pub fn is_vertical(&self) -> bool {
@@ -26,6 +31,15 @@ impl Orientation {
                 270.0 => VideoOrientationMethod::_90r,
                 _ => VideoOrientationMethod::Identity,
             }
+        }
+    }
+}
+
+impl Default for Orientation {
+    fn default() -> Self {
+        Self {
+            angle: 0.0,
+            mirrored: false,
         }
     }
 }

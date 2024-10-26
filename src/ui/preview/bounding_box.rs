@@ -1,5 +1,4 @@
 use crate::ui::preview::preview::Preview;
-use crate::ui::preview::CropMode;
 use ges::subclass::prelude::ObjectSubclassExt;
 use gtk4::glib;
 use gtk4::glib::clone;
@@ -13,6 +12,43 @@ static BOX_HANDLE_HEIGHT: f32 = 30f32;
 static BOX_COLOUR: gdk::RGBA = gdk::RGBA::WHITE;
 static HANDLE_FILL_RULE: gsk::FillRule = gsk::FillRule::Winding;
 static DIRECTIONS: [(f32, f32); 4] = [(1f32, 1f32), (1f32, -1f32), (-1f32, 1f32), (-1f32, -1f32)];
+
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+pub enum CropMode {
+    Free,
+    Original,
+    Square,
+    _16To9,
+    _4To5,
+    _5To7,
+    _4To3,
+    _3To5,
+    _3To2,
+}
+
+impl CropMode {
+    fn value(&self) -> f32 {
+        match *self {
+            CropMode::Free => 0.,
+            CropMode::Original => 0.,
+            CropMode::Square => 1.,
+            CropMode::_16To9 => 16. / 9.,
+            CropMode::_4To3 => 4. / 3.,
+            CropMode::_3To2 => 2. / 3.,
+            CropMode::_4To5 => 4. / 5.,
+            CropMode::_5To7 => 5. / 7.,
+            CropMode::_3To5 => 3. / 5.,
+        }
+    }
+}
+
+pub struct BoundingBoxDimensions {
+    pub(crate) left_x: f32,
+    pub(crate) top_y: f32,
+    pub(crate) right_x: f32,
+    pub(crate) bottom_y: f32,
+}
+
 #[derive(Debug, Clone, Copy)]
 pub enum HandleType {
     None,

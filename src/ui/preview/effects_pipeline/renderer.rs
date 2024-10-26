@@ -31,6 +31,7 @@ pub struct Renderer {
     output_dimensions: (u32, u32),
     video_frame_texture: RefCell<texture::Texture>,
     video_frame_rect: FrameRect,
+    orientation: Orientation,
     timer: Timer,
     frame_count: Cell<u32>,
 }
@@ -225,6 +226,7 @@ impl Renderer {
             output_texture_view,
             output_dimensions,
             timer,
+            orientation: Orientation::default(),
             video_frame_texture: RefCell::new(texture),
             video_frame_rect: frame_rect,
             frame_count: Cell::new(0),
@@ -301,8 +303,12 @@ impl Renderer {
                 usage: wgpu::BufferUsages::VERTEX,
             });
 
-        self.output_dimensions = (self.output_dimensions.1, self.output_dimensions.0);
-        self.update_render_target(self.output_dimensions.0, self.output_dimensions.1);
+        if self.orientation.is_vertical() != orientation.is_vertical() {
+            self.output_dimensions = (self.output_dimensions.1, self.output_dimensions.0);
+            self.update_render_target(self.output_dimensions.0, self.output_dimensions.1);
+        }
+
+        self.orientation = orientation;
     }
 
     pub fn update_input_texture_output_texture_size(
