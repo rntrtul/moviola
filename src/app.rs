@@ -11,18 +11,17 @@ use relm4::{
     Controller, RelmWidgetExt,
 };
 
-use crate::ui::preview::{CropMode, Orientation, Preview};
+use crate::ui::preview::{CropMode, Orientation};
 use crate::ui::sidebar::sidebar::{ControlsModel, ControlsMsg, ControlsOutput};
 use crate::ui::video_controls::{VideoControlModel, VideoControlMsg, VideoControlOutput};
 use crate::video::player::Player;
 
-use super::ui::video_player::{VideoPlayerModel, VideoPlayerMsg};
+use crate::ui::preview::preview_frame::{PreviewFrameModel, PreviewFrameMsg};
 
 pub(super) struct App {
-    video_player: Controller<VideoPlayerModel>,
+    preview_frame: Controller<PreviewFrameModel>,
     sidebar_panel: Controller<ControlsModel>,
     video_controls: Controller<VideoControlModel>,
-    preview: Preview,
     show_video: bool,
     show_spinner: bool,
     video_selected: bool,
@@ -214,7 +213,7 @@ impl Component for App {
                         gtk::Box{
                             #[watch]
                             set_visible: model.show_video,
-                            model.video_player.widget() {},
+                            model.preview_frame.widget() {},
                         },
 
                         gtk::Box{
@@ -234,11 +233,10 @@ impl Component for App {
         root: Self::Root,
         sender: ComponentSender<Self>,
     ) -> ComponentParts<Self> {
-        let preview = Preview::new();
         let player = Rc::new(RefCell::new(Player::new(sender.clone())));
 
-        let video_player: Controller<VideoPlayerModel> =
-            VideoPlayerModel::builder().launch(preview.clone()).detach();
+        let preview_frame: Controller<PreviewFrameModel> =
+            PreviewFrameModel::builder().launch(()).detach();
 
         let controls_panel: Controller<ControlsModel> = ControlsModel::builder()
             .launch(())
@@ -261,10 +259,9 @@ impl Component for App {
             });
 
         let model = Self {
-            video_player,
+            preview_frame,
             sidebar_panel: controls_panel,
             video_controls: timeline,
-            preview,
             show_video: false,
             show_spinner: false,
             video_selected: false,
@@ -305,11 +302,11 @@ impl Component for App {
                 self.show_video = false;
                 self.show_spinner = true;
 
-                self.video_player.widget().set_visible(false);
+                self.preview_frame.widget().set_visible(false);
 
                 self.player.borrow_mut().set_is_playing(false);
                 self.video_controls.emit(VideoControlMsg::Reset);
-                self.preview.reset_preview();
+                self.preview_frame.model().reset();
                 self.uri.replace(uri.clone());
 
                 self.video_controls
@@ -328,7 +325,7 @@ impl Component for App {
             AppMsg::ExportFrame => {}
             AppMsg::SaveFile => Self::launch_file_save(&sender),
             AppMsg::ExportVideo(save_uri) => {
-                self.video_player.widget().set_visible(false);
+                self.preview_frame.widget().set_visible(false);
                 self.show_video = false;
                 self.show_spinner = true;
 
@@ -343,7 +340,7 @@ impl Component for App {
                     save_uri,
                     timeline_export_settings,
                     self.sidebar_panel.model().export_settings(),
-                    self.preview.export_settings(),
+                    self.preview_frame.model().export_settings(),
                     sender.clone(),
                 );
             }
@@ -358,24 +355,28 @@ impl Component for App {
                 self.video_controls.emit(VideoControlMsg::Reset);
                 // widgets.crop_box.reset_box();
             }
-            AppMsg::Orient(orientation) => self.preview.set_orientation(orientation),
-            AppMsg::ShowCropBox => self.preview.show_crop_box(),
-            AppMsg::HideCropBox => self.preview.hide_crop_box(),
-            AppMsg::SetCropMode(mode) => self.preview.set_crop_mode(mode),
             AppMsg::Seek(timestamp) => self.player.borrow().seek(timestamp),
             AppMsg::TogglePlayPause => self.player.borrow_mut().toggle_play_plause(),
             AppMsg::ToggleMute => self.player.borrow_mut().toggle_mute(),
-            AppMsg::Zoom(level) => self.preview.set_zoom(level),
+            AppMsg::VideoFinished => self.player.borrow_mut().set_is_finished(),
+            AppMsg::Orient(orientation) => self
+                .preview_frame
+                .emit(PreviewFrameMsg::Orient(orientation)),
+            AppMsg::ShowCropBox => self.preview_frame.emit(PreviewFrameMsg::CropBoxShow),
+            AppMsg::HideCropBox => self.preview_frame.emit(PreviewFrameMsg::CropBoxHide),
+            AppMsg::SetCropMode(mode) => self.preview_frame.emit(PreviewFrameMsg::CropMode(mode)),
+            AppMsg::Zoom(level) => self.preview_frame.emit(PreviewFrameMsg::Zoom(level)),
             AppMsg::ZoomTempReset => {
                 widgets.preview_zoom.set_sensitive(false);
-                self.preview.hide_zoom();
+                self.preview_frame.emit(PreviewFrameMsg::ZoomHide)
             }
             AppMsg::ZoomRestore => {
                 widgets.preview_zoom.set_sensitive(true);
-                self.preview.show_zoom();
+                self.preview_frame.emit(PreviewFrameMsg::ZoomShow)
             }
-            AppMsg::NewFrame(sample) => self.preview.render_sample(sample),
-            AppMsg::VideoFinished => self.player.borrow_mut().set_is_finished(),
+            AppMsg::NewFrame(sample) => self
+                .preview_frame
+                .emit(PreviewFrameMsg::NewVideoFrame(sample)),
         }
 
         self.update_view(widgets, sender);
@@ -405,9 +406,9 @@ impl Component for App {
                 player.set_is_playing(true);
 
                 self.video_controls.emit(VideoControlMsg::VideoLoaded);
-                self.video_player.emit(VideoPlayerMsg::VideoLoaded);
+                self.preview_frame.emit(PreviewFrameMsg::VideoLoaded);
 
-                self.video_player.widget().set_visible(true);
+                self.preview_frame.widget().set_visible(true);
             }
         }
 

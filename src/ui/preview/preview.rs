@@ -1,6 +1,8 @@
 use crate::ui::preview::bounding_box::{HandleType, BOX_HANDLE_WIDTH};
 use crate::ui::preview::effects_pipeline::renderer::Renderer;
-use crate::ui::preview::CropMode;
+use crate::ui::preview::{BoundingBoxDimensions, CropMode};
+use crate::ui::sidebar::CropExportSettings;
+use ges::subclass::prelude::ObjectSubclassIsExt;
 use gst::subclass::prelude::{ObjectImpl, ObjectSubclass};
 use gst::{glib, Sample};
 use gtk4::graphene::Point;
@@ -206,8 +208,7 @@ impl Preview {
     }
 
     // todo: determine if taking sample and if memory not copied
-    // todo: try to make this async
-    pub(super) fn render_new_sample(&self, sample: Sample) {
+    pub(super) fn upload_new_sample(&self, sample: Sample) {
         let mut renderer = self.renderer.borrow_mut();
 
         let caps = sample.caps().expect("sample without caps");
@@ -230,8 +231,72 @@ impl Preview {
             );
         }
 
-        let cb = renderer.prepare_video_frame_render_pass(sample);
-        let texture = pollster::block_on(renderer.render(cb)).expect("Could not render");
+        renderer.sample_to_texture(sample);
+    }
+
+    // todo: try to make this async
+    pub(super) fn render_frame(&self) {
+        let mut renderer = self.renderer.borrow_mut();
+
+        let command_buffer = renderer.prepare_video_frame_render_pass();
+        let texture =
+            pollster::block_on(renderer.render(command_buffer)).expect("Could not render");
         self.texture.borrow_mut().replace(texture);
+    }
+}
+
+impl crate::ui::preview::Preview {
+    pub(crate) fn new() -> Self {
+        glib::Object::builder().build()
+    }
+
+    pub fn set_crop_mode(&self, crop_modes: CropMode) {
+        self.imp().crop_mode.set(crop_modes);
+        self.imp().maintain_aspect_ratio();
+        self.queue_draw();
+    }
+
+    pub fn show_crop_box(&self) {
+        self.imp().show_crop_box.set(true);
+        self.queue_draw();
+    }
+
+    pub fn hide_crop_box(&self) {
+        self.imp().show_crop_box.set(false);
+        self.queue_draw();
+    }
+
+    pub fn upload_new_sample(&self, sample: Sample) {
+        self.imp().upload_new_sample(sample);
+    }
+
+    pub fn render_frame(&self) {
+        self.imp().render_frame();
+        self.queue_draw();
+    }
+
+    pub fn export_settings(&self) -> CropExportSettings {
+        CropExportSettings {
+            bounding_box: BoundingBoxDimensions {
+                left_x: self.imp().left_x.get(),
+                top_y: self.imp().top_y.get(),
+                right_x: self.imp().right_x.get(),
+                bottom_y: self.imp().bottom_y.get(),
+            },
+            orientation: self.imp().orientation.get(),
+        }
+    }
+
+    pub fn reset_preview(&self) {
+        self.imp().left_x.set(0.0);
+        self.imp().top_y.set(0.0);
+        self.imp().right_x.set(1.0);
+        self.imp().bottom_y.set(1.0);
+
+        self.imp().zoom.set(1.0);
+        self.imp().orientation.set(crate::ui::preview::Orientation {
+            angle: 0.0,
+            mirrored: false,
+        });
     }
 }

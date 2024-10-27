@@ -333,11 +333,15 @@ impl Renderer {
         );
     }
 
+    pub fn sample_to_texture(&self, sample: gst::Sample) {
+        self.video_frame_texture
+            .borrow()
+            .write_from_sample(&self.queue, sample)
+    }
+
     // todo: accept effect paramters
-    pub fn prepare_video_frame_render_pass(&self, sample: gst::Sample) -> wgpu::CommandBuffer {
-        // todo: convert sample to texture in seperate step
+    pub fn prepare_video_frame_render_pass(&self) -> wgpu::CommandBuffer {
         let texture = self.video_frame_texture.borrow();
-        texture.write_from_sample(&self.queue, sample);
 
         let mut encoder = self
             .device
