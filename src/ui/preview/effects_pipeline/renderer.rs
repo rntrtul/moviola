@@ -1,5 +1,5 @@
 use crate::ui::preview::effects_pipeline::effects::EffectParameters;
-use crate::ui::preview::effects_pipeline::timer::Timer;
+use crate::ui::preview::effects_pipeline::timer::{Timer, BUFF_MAP_IDX, GDK_TEX_IDX};
 use crate::ui::preview::effects_pipeline::vertex::{FrameRect, INDICES};
 use crate::ui::preview::effects_pipeline::{texture, vertex};
 use crate::ui::preview::Orientation;
@@ -23,6 +23,7 @@ pub struct Renderer {
     num_indices: u32,
     frame_bind_group_layout: wgpu::BindGroupLayout,
     compute_bind_group_layout: wgpu::BindGroupLayout,
+    compute_bind_group: wgpu::BindGroup,
     output_texture_view: wgpu::TextureView,
     render_target: wgpu::Texture,
     vertex_buffer: wgpu::Buffer,
@@ -107,6 +108,33 @@ impl Renderer {
                 label: Some("texture_binding group layout"),
             });
 
+        let compute_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("Compute bind group layout"),
+                entries: &[
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::StorageTexture {
+                            format: wgpu::TextureFormat::Rgba8Unorm,
+                            access: wgpu::StorageTextureAccess::ReadOnly,
+                            view_dimension: wgpu::TextureViewDimension::D2,
+                        },
+                        count: None,
+                    },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 1,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Storage { read_only: false },
+                            has_dynamic_offset: false,
+                            min_binding_size: wgpu::BufferSize::new(256),
+                        },
+                        count: None,
+                    },
+                ],
+            });
+
         let effect_parameters = EffectParameters::new();
 
         let effect_buffer = device.create_buffer(&wgpu::BufferDescriptor {
@@ -133,8 +161,19 @@ impl Renderer {
         });
 
         let output_dimensions = (512, 288);
-        let (render_target, output_staging_buffer, output_texture_view, compute_buffer) =
-            Self::create_render_target(output_dimensions.0, output_dimensions.1, &device);
+
+        let (
+            render_target,
+            output_staging_buffer,
+            output_texture_view,
+            compute_buffer,
+            compute_bind_group,
+        ) = Self::create_render_target(
+            output_dimensions.0,
+            output_dimensions.1,
+            &compute_bind_group_layout,
+            &device,
+        );
 
         let frame_rect = FrameRect::new();
 
@@ -198,33 +237,6 @@ impl Renderer {
             source: wgpu::ShaderSource::Wgsl(include_str!("compute.wgsl").into()),
         });
 
-        let compute_bind_group_layout =
-            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                label: Some("Compute bind group layout"),
-                entries: &[
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 0,
-                        visibility: wgpu::ShaderStages::COMPUTE,
-                        ty: wgpu::BindingType::StorageTexture {
-                            format: wgpu::TextureFormat::Rgba8Unorm,
-                            access: wgpu::StorageTextureAccess::ReadOnly,
-                            view_dimension: wgpu::TextureViewDimension::D2,
-                        },
-                        count: None,
-                    },
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 1,
-                        visibility: wgpu::ShaderStages::COMPUTE,
-                        ty: wgpu::BindingType::Buffer {
-                            ty: wgpu::BufferBindingType::Storage { read_only: false },
-                            has_dynamic_offset: false,
-                            min_binding_size: wgpu::BufferSize::new(256),
-                        },
-                        count: None,
-                    },
-                ],
-            });
-
         let compute_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("compute pipeline"),
@@ -250,6 +262,7 @@ impl Renderer {
             num_indices,
             frame_bind_group_layout,
             compute_bind_group_layout,
+            compute_bind_group,
             vertex_buffer,
             index_buffer,
             output_staging_buffer,
@@ -269,8 +282,15 @@ impl Renderer {
     fn create_render_target(
         width: u32,
         height: u32,
+        compute_bind_group_layout: &wgpu::BindGroupLayout,
         device: &wgpu::Device,
-    ) -> (wgpu::Texture, wgpu::Buffer, wgpu::TextureView, wgpu::Buffer) {
+    ) -> (
+        wgpu::Texture,
+        wgpu::Buffer,
+        wgpu::TextureView,
+        wgpu::Buffer,
+        wgpu::BindGroup,
+    ) {
         let render_target = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("Output Texture Descriptor"),
             size: wgpu::Extent3d {
@@ -307,22 +327,49 @@ impl Renderer {
         let output_texture_view =
             render_target.create_view(&wgpu::TextureViewDescriptor::default());
 
+        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("Compute Bind Group"),
+            layout: &compute_bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&output_texture_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: compute_buffer.as_entire_binding(),
+                },
+            ],
+        });
+
         (
             render_target,
             output_staging_buffer,
             output_texture_view,
             compute_buffer,
+            bind_group,
         )
     }
 
     fn update_render_target(&mut self, width: u32, height: u32) {
-        let (render_target, output_staging_buffer, output_texture_view, compute_buffer) =
-            Self::create_render_target(width, height, &self.device);
+        let (
+            render_target,
+            output_staging_buffer,
+            output_texture_view,
+            compute_buffer,
+            compute_bind_group,
+        ) = Self::create_render_target(
+            width,
+            height,
+            &self.compute_bind_group_layout,
+            &self.device,
+        );
 
         self.render_target = render_target;
         self.output_staging_buffer = output_staging_buffer;
         self.compute_buffer = compute_buffer;
         self.output_texture_view = output_texture_view;
+        self.compute_bind_group = compute_bind_group;
     }
 
     pub fn orient(&mut self, orientation: Orientation) {
@@ -442,23 +489,8 @@ impl Renderer {
                 }),
             });
 
-            let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
-                label: Some("Compute Bind Group"),
-                layout: &self.compute_bind_group_layout,
-                entries: &[
-                    wgpu::BindGroupEntry {
-                        binding: 0,
-                        resource: wgpu::BindingResource::TextureView(&self.output_texture_view),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 1,
-                        resource: self.compute_buffer.as_entire_binding(),
-                    },
-                ],
-            });
-
             compute_pass.set_pipeline(&self.compute_pipeline);
-            compute_pass.set_bind_group(0, &bind_group, &[]);
+            compute_pass.set_bind_group(0, &self.compute_bind_group, &[]);
             compute_pass.dispatch_workgroups(
                 self.output_dimensions.0.div_ceil(256),
                 self.output_dimensions.1,
@@ -498,17 +530,17 @@ impl Renderer {
             let (sender, receiver) = flume::bounded(1);
             let slice = self.output_staging_buffer.slice(..);
 
-            self.timer.start_buff_map_time();
+            self.timer.start_time(BUFF_MAP_IDX);
 
             slice.map_async(wgpu::MapMode::Read, move |r| sender.send(r).unwrap());
             self.device.poll(wgpu::Maintain::wait()).panic_on_timeout();
             receiver.recv_async().await.unwrap().unwrap();
 
-            self.timer.stop_buff_map_time();
+            self.timer.stop_time(BUFF_MAP_IDX);
             self.timer.collect_query_results(&self.device, &self.queue);
 
             {
-                self.timer.start_gdk_mem_time();
+                self.timer.start_time(GDK_TEX_IDX);
                 let view = slice.get_mapped_range();
 
                 gdk_texture = gdk::MemoryTexture::new(
@@ -520,7 +552,7 @@ impl Renderer {
                 )
                 .upcast::<gdk::Texture>();
 
-                self.timer.stop_gdk_mem_time();
+                self.timer.stop_time(GDK_TEX_IDX);
                 self.frame_count.set(self.frame_count.get() + 1);
             }
 

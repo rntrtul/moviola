@@ -1,5 +1,6 @@
 use crate::ui::preview::bounding_box::{HandleType, BOX_HANDLE_WIDTH};
 use crate::ui::preview::effects_pipeline::renderer::Renderer;
+use crate::ui::preview::effects_pipeline::FRAME_TIME_IDX;
 use crate::ui::preview::{BoundingBoxDimensions, CropMode, EffectParameters};
 use crate::ui::sidebar::CropExportSettings;
 use ges::subclass::prelude::ObjectSubclassIsExt;
@@ -210,7 +211,7 @@ impl Preview {
     // todo: determine if taking sample and if memory not copied
     pub(super) fn upload_new_sample(&self, sample: Sample) {
         let mut renderer = self.renderer.borrow_mut();
-        renderer.timer.start_frame_time();
+        renderer.timer.start_time(FRAME_TIME_IDX);
 
         let caps = sample.caps().expect("sample without caps");
         let info = gst_video::VideoInfo::from_caps(caps).expect("Failed to parse caps");
@@ -244,14 +245,14 @@ impl Preview {
     // todo: try to make this async
     pub(super) fn render_frame(&self) {
         let mut renderer = self.renderer.borrow_mut();
-        renderer.timer.start_frame_time();
+        renderer.timer.start_time(FRAME_TIME_IDX);
 
         let command_buffer = renderer.prepare_video_frame_render_pass();
         let texture =
             pollster::block_on(renderer.render(command_buffer)).expect("Could not render");
         self.texture.borrow_mut().replace(texture);
 
-        renderer.timer.stop_frame_time();
+        renderer.timer.stop_time(FRAME_TIME_IDX);
         renderer.timer.print_results();
     }
 }
