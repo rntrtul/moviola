@@ -210,6 +210,7 @@ impl Preview {
     // todo: determine if taking sample and if memory not copied
     pub(super) fn upload_new_sample(&self, sample: Sample) {
         let mut renderer = self.renderer.borrow_mut();
+        renderer.timer.start_frame_time();
 
         let caps = sample.caps().expect("sample without caps");
         let info = gst_video::VideoInfo::from_caps(caps).expect("Failed to parse caps");
@@ -243,11 +244,15 @@ impl Preview {
     // todo: try to make this async
     pub(super) fn render_frame(&self) {
         let mut renderer = self.renderer.borrow_mut();
+        renderer.timer.start_frame_time();
 
         let command_buffer = renderer.prepare_video_frame_render_pass();
         let texture =
             pollster::block_on(renderer.render(command_buffer)).expect("Could not render");
         self.texture.borrow_mut().replace(texture);
+
+        renderer.timer.stop_frame_time();
+        renderer.timer.print_results();
     }
 }
 

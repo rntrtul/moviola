@@ -37,7 +37,7 @@ pub struct Renderer {
     video_frame_texture: RefCell<texture::Texture>,
     video_frame_rect: FrameRect,
     orientation: Orientation,
-    timer: Timer,
+    pub timer: Timer,
     frame_count: Cell<u32>,
 }
 
@@ -522,14 +522,18 @@ impl Renderer {
             let (sender, receiver) = flume::bounded(1);
             let slice = self.output_staging_buffer.slice(..);
 
+            self.timer.start_buff_map_time();
+
             slice.map_async(wgpu::MapMode::Read, move |r| sender.send(r).unwrap());
             self.device.poll(wgpu::Maintain::wait()).panic_on_timeout();
             receiver.recv_async().await.unwrap().unwrap();
 
-            self.timer.collect_results(&self.device, &self.queue);
+            self.timer.stop_buff_map_time();
+            self.timer.collect_query_results(&self.device, &self.queue);
 
             {
-                let view = slice.get_mapped_range_mut();
+                self.timer.start_gdk_mem_time();
+                let view = slice.get_mapped_range();
 
                 gdk_texture = gdk::MemoryTexture::new(
                     self.output_dimensions.0 as i32,
@@ -540,16 +544,7 @@ impl Renderer {
                 )
                 .upcast::<gdk::Texture>();
 
-                // if self.frame_count.get() % 48 == 0 {
-                //     println!("SAVING IMG");
-                //     let image_buffer = image::ImageBuffer::<image::Rgba<u8>, _>::from_raw(
-                //         self.output_dimensions.0,
-                //         self.output_dimensions.1,
-                //         view,
-                //     )
-                //     .unwrap();
-                //     image_buffer.save("test_image.png").unwrap();
-                // }
+                self.timer.stop_gdk_mem_time();
                 self.frame_count.set(self.frame_count.get() + 1);
             }
 
