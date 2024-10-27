@@ -76,10 +76,10 @@ impl Renderer {
                     wgpu::BindGroupLayoutEntry {
                         binding: 0,
                         visibility: wgpu::ShaderStages::FRAGMENT,
-                        ty: wgpu::BindingType::StorageTexture {
-                            format: wgpu::TextureFormat::Rgba8Unorm,
-                            access: wgpu::StorageTextureAccess::ReadWrite,
+                        ty: wgpu::BindingType::Texture {
+                            multisampled: false,
                             view_dimension: wgpu::TextureViewDimension::D2,
+                            sample_type: wgpu::TextureSampleType::Float { filterable: true },
                         },
                         count: None,
                     },
@@ -144,7 +144,7 @@ impl Renderer {
                 compilation_options: wgpu::PipelineCompilationOptions::default(),
             }),
             primitive: wgpu::PrimitiveState {
-                topology: wgpu::PrimitiveTopology::TriangleList, // maybe switch to line list for crop box
+                topology: wgpu::PrimitiveTopology::TriangleList,
                 strip_index_format: None,
                 front_face: wgpu::FrontFace::Ccw,
                 cull_mode: Some(wgpu::Face::Back),
