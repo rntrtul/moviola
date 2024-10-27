@@ -1,3 +1,4 @@
+use crate::ui::preview::effects_pipeline::effects::EffectParameters;
 use crate::ui::preview::effects_pipeline::timer::Timer;
 use crate::ui::preview::effects_pipeline::vertex::{FrameRect, INDICES};
 use crate::ui::preview::effects_pipeline::{texture, vertex};
@@ -19,15 +20,18 @@ pub struct Renderer {
     queue: wgpu::Queue,
     compute_pipeline: wgpu::ComputePipeline,
     render_pipeline: wgpu::RenderPipeline,
-    vertex_buffer: wgpu::Buffer,
-    index_buffer: wgpu::Buffer,
     num_indices: u32,
     frame_bind_group_layout: wgpu::BindGroupLayout,
     compute_bind_group_layout: wgpu::BindGroupLayout,
     output_texture_view: wgpu::TextureView,
     render_target: wgpu::Texture,
+    vertex_buffer: wgpu::Buffer,
+    index_buffer: wgpu::Buffer,
+    effect_src_buffer: wgpu::Buffer,
+    effect_buffer: wgpu::Buffer,
     output_staging_buffer: wgpu::Buffer,
     compute_buffer: wgpu::Buffer,
+    effect_parameters: EffectParameters,
     output_dimensions: (u32, u32),
     video_frame_texture: RefCell<texture::Texture>,
     video_frame_rect: FrameRect,
@@ -69,7 +73,6 @@ impl Renderer {
         // assuming timestamp feature available always
         let timer = Timer::new(&device);
 
-        // use bind groups for effects paramters?
         let frame_bind_group_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
                 entries: &[
@@ -89,12 +92,46 @@ impl Renderer {
                         ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
                         count: None,
                     },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 2,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Storage { read_only: true },
+                            has_dynamic_offset: false,
+                            min_binding_size: Some(
+                                wgpu::BufferSize::new(EffectParameters::buffer_size()).unwrap(),
+                            ),
+                        },
+                        count: None,
+                    },
                 ],
                 label: Some("texture_binding group layout"),
             });
 
-        let texture =
-            texture::Texture::new_for_size(1, 1, &device, &frame_bind_group_layout, "").unwrap();
+        let effect_parameters = EffectParameters::new();
+        let effect_src_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("Effect Parameter Src Buffer"),
+            size: EffectParameters::buffer_size(),
+            usage: wgpu::BufferUsages::COPY_SRC | wgpu::BufferUsages::MAP_WRITE,
+            mapped_at_creation: false,
+        });
+
+        let effect_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("Effect Parameter Buffer"),
+            size: EffectParameters::buffer_size(),
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+        let texture = texture::Texture::new_for_size(
+            1,
+            1,
+            &device,
+            &frame_bind_group_layout,
+            &effect_buffer,
+            "",
+        )
+        .unwrap();
 
         let draw_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("Main Shader"),
@@ -216,13 +253,16 @@ impl Renderer {
             render_target,
             compute_pipeline,
             render_pipeline,
-            vertex_buffer,
-            index_buffer,
             num_indices,
             frame_bind_group_layout,
             compute_bind_group_layout,
+            vertex_buffer,
+            index_buffer,
             output_staging_buffer,
             compute_buffer,
+            effect_src_buffer,
+            effect_buffer,
+            effect_parameters,
             output_texture_view,
             output_dimensions,
             timer,
@@ -233,7 +273,7 @@ impl Renderer {
         }
     }
 
-    pub fn create_render_target(
+    fn create_render_target(
         width: u32,
         height: u32,
         device: &wgpu::Device,
@@ -282,6 +322,10 @@ impl Renderer {
         )
     }
 
+    pub fn update_effects(&mut self, parameters: EffectParameters) {
+        self.effect_parameters = parameters;
+    }
+
     fn update_render_target(&mut self, width: u32, height: u32) {
         let (render_target, output_staging_buffer, output_texture_view, compute_buffer) =
             Self::create_render_target(width, height, &self.device);
@@ -327,6 +371,7 @@ impl Renderer {
                 frame_height,
                 &self.device,
                 &self.frame_bind_group_layout,
+                &self.effect_buffer,
                 "video frame texture",
             )
             .unwrap(),
@@ -346,6 +391,14 @@ impl Renderer {
         let mut encoder = self
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor::default());
+
+        encoder.copy_buffer_to_buffer(
+            &self.effect_src_buffer,
+            0,
+            &self.effect_buffer,
+            0,
+            self.effect_buffer.size(),
+        );
 
         {
             let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -437,16 +490,17 @@ impl Renderer {
         let gdk_texture: gdk::Texture;
 
         {
-            let buffer_slice = self.output_staging_buffer.slice(..);
             let (sender, receiver) = flume::bounded(1);
-            buffer_slice.map_async(wgpu::MapMode::Read, move |r| sender.send(r).unwrap());
+            let slice = self.output_staging_buffer.slice(..);
+
+            slice.map_async(wgpu::MapMode::Read, move |r| sender.send(r).unwrap());
             self.device.poll(wgpu::Maintain::wait()).panic_on_timeout();
             receiver.recv_async().await.unwrap().unwrap();
 
             self.timer.collect_results(&self.device, &self.queue);
 
             {
-                let view = buffer_slice.get_mapped_range_mut();
+                let view = slice.get_mapped_range_mut();
 
                 gdk_texture = gdk::MemoryTexture::new(
                     self.output_dimensions.0 as i32,
@@ -471,6 +525,24 @@ impl Renderer {
             }
 
             self.output_staging_buffer.unmap();
+        }
+
+        // todo: be seperate function and done in render pass setup
+        {
+            let (sender, receiver) = flume::bounded(1);
+            let slice = self.effect_src_buffer.slice(..);
+
+            slice.map_async(wgpu::MapMode::Write, move |r| sender.send(r).unwrap());
+            self.device.poll(wgpu::Maintain::wait()).panic_on_timeout();
+            receiver.recv_async().await.unwrap().unwrap();
+
+            {
+                let mut view = slice.get_mapped_range_mut();
+                let buffer = bytemuck::cast_slice_mut(&mut view);
+                self.effect_parameters.populate_buffer(buffer);
+            }
+
+            self.effect_src_buffer.unmap();
         }
 
         Ok(gdk_texture)

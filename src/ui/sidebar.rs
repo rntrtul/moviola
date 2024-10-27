@@ -1,6 +1,7 @@
 use crate::ui::preview::{BoundingBoxDimensions, Orientation};
 use crate::video::metadata::{AudioCodec, ContainerFormat, VideoCodec};
 
+mod adjust;
 mod crop;
 mod output;
 pub(crate) mod sidebar;

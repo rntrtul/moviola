@@ -11,7 +11,7 @@ use relm4::{
     Controller, RelmWidgetExt,
 };
 
-use crate::ui::preview::{CropMode, Orientation};
+use crate::ui::preview::{CropMode, EffectParameters, Orientation};
 use crate::ui::sidebar::sidebar::{ControlsModel, ControlsMsg, ControlsOutput};
 use crate::ui::video_controls::{VideoControlModel, VideoControlMsg, VideoControlOutput};
 use crate::video::player::Player;
@@ -43,6 +43,7 @@ pub(super) enum AppMsg {
     ShowCropBox,
     HideCropBox,
     SetCropMode(CropMode),
+    EffectsChanged(EffectParameters),
     Seek(ClockTime),
     TogglePlayPause,
     ToggleMute,
@@ -248,6 +249,7 @@ impl Component for App {
                 ControlsOutput::HideCropBox => AppMsg::HideCropBox,
                 ControlsOutput::TempResetZoom => AppMsg::ZoomTempReset,
                 ControlsOutput::RestoreZoom => AppMsg::ZoomRestore,
+                ControlsOutput::EffectsChanged(params) => AppMsg::EffectsChanged(params),
             });
 
         let timeline: Controller<VideoControlModel> = VideoControlModel::builder()
@@ -377,6 +379,12 @@ impl Component for App {
             AppMsg::NewFrame(sample) => self
                 .preview_frame
                 .emit(PreviewFrameMsg::NewVideoFrame(sample)),
+            AppMsg::EffectsChanged(params) => {
+                self.preview_frame.emit(PreviewFrameMsg::EffectsChanged((
+                    params,
+                    self.player.borrow().is_playing(),
+                )));
+            }
         }
 
         self.update_view(widgets, sender);

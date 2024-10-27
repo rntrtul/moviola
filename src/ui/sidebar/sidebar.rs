@@ -4,7 +4,8 @@ use relm4::{
     SimpleComponent,
 };
 
-use crate::ui::preview::{CropMode, Orientation};
+use crate::ui::preview::{CropMode, EffectParameters, Orientation};
+use crate::ui::sidebar::adjust::{AdjustPageModel, AdjustPageOutput};
 use crate::ui::sidebar::crop::{CropPageModel, CropPageMsg, CropPageOutput};
 use crate::ui::sidebar::output::{OutputPageModel, OutputPageMsg, OutputPageOutput};
 use crate::ui::sidebar::ControlsExportSettings;
@@ -13,6 +14,7 @@ use crate::video::metadata::VideoContainerInfo;
 pub struct ControlsModel {
     crop_page: Controller<CropPageModel>,
     output_page: Controller<OutputPageModel>,
+    adjust_page: Controller<AdjustPageModel>,
     stack: adw::ViewStack,
 }
 
@@ -25,6 +27,8 @@ pub enum ControlsMsg {
     DefaultCodec(VideoContainerInfo),
     CropPageSelected,
     OutputPageSelected,
+    AdjustPageSelected,
+    EffectsChanged(EffectParameters),
 }
 
 #[derive(Debug)]
@@ -36,6 +40,7 @@ pub enum ControlsOutput {
     RestoreZoom,
     OrientVideo(Orientation),
     SetCropMode(CropMode),
+    EffectsChanged(EffectParameters),
 }
 
 #[relm4::component(pub)]
@@ -57,11 +62,13 @@ impl SimpleComponent for ControlsModel {
             #[name="stack"]
             adw::ViewStack{
                 connect_visible_child_name_notify[sender] => move |stack|{
-                    if stack.visible_child_name().unwrap() == "crop_page" {
-                        sender.input(ControlsMsg::CropPageSelected)
-                    } else {
-                        sender.input(ControlsMsg::OutputPageSelected)
+                    match stack.visible_child_name().unwrap().as_str() {
+                        "crop_page" => sender.input(ControlsMsg::CropPageSelected),
+                        "output_page" => sender.input(ControlsMsg::OutputPageSelected),
+                        "adjust_page" => sender.input(ControlsMsg::AdjustPageSelected),
+                        _ => {},
                     }
+
                 },
             },
         },
@@ -87,11 +94,19 @@ impl SimpleComponent for ControlsModel {
                     OutputPageOutput::ExportFrame => ControlsMsg::ExportFrame,
                 });
 
+        let adjust_page =
+            AdjustPageModel::builder()
+                .launch(())
+                .forward(sender.input_sender(), |msg| match msg {
+                    AdjustPageOutput::EffectUpdate(params) => ControlsMsg::EffectsChanged(params),
+                });
+
         let widgets = view_output!();
 
         let model = ControlsModel {
             crop_page,
             output_page,
+            adjust_page,
             stack: widgets.stack.clone(),
         };
 
@@ -108,6 +123,13 @@ impl SimpleComponent for ControlsModel {
             model.crop_page.widget(),
             Some("crop_page"),
             "Crop",
+            "crop-symbolic",
+        );
+
+        model.stack.add_titled_with_icon(
+            model.adjust_page.widget(),
+            Some("adjust_page"),
+            "Adjust",
             "crop-symbolic",
         );
 
@@ -136,6 +158,13 @@ impl SimpleComponent for ControlsModel {
                 sender.output(ControlsOutput::HideCropBox).unwrap();
                 sender.output(ControlsOutput::RestoreZoom).unwrap();
             }
+            ControlsMsg::AdjustPageSelected => {
+                sender.output(ControlsOutput::HideCropBox).unwrap();
+                sender.output(ControlsOutput::RestoreZoom).unwrap();
+            }
+            ControlsMsg::EffectsChanged(params) => sender
+                .output(ControlsOutput::EffectsChanged(params))
+                .unwrap(),
         }
     }
 }

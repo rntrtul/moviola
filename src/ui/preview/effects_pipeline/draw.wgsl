@@ -23,8 +23,17 @@ fn vs_main(model: VertexInput) -> VertexOutput {
 var t_diffuse: texture_2d<f32>;
 @group(0) @binding(1)
 var s_diffuse: sampler;
+@group(0) @binding(2)
+var<storage, read> effect_parameters: array<f32>;
+
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
-    return textureSample(t_diffuse, s_diffuse, in.tex_coords);
+    let colour = textureSample(t_diffuse, s_diffuse, in.tex_coords);
+    
+    return contrast(colour, effect_parameters[0]);
+}
+
+fn contrast(colour: vec4<f32>, contrast: f32) -> vec4<f32> {
+    return ((colour - 0.5 ) * contrast) + 0.5;
 }

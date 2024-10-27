@@ -3,7 +3,7 @@ use std::fmt::Debug;
 use gtk4::prelude::{BoxExt, OrientableExt, WidgetExt};
 use relm4::*;
 
-use crate::ui::preview::{CropMode, Orientation, Preview};
+use crate::ui::preview::{CropMode, EffectParameters, Orientation, Preview};
 use crate::ui::sidebar::CropExportSettings;
 
 pub struct PreviewFrameModel {
@@ -23,6 +23,7 @@ pub enum PreviewFrameMsg {
     Zoom(f64),
     ZoomHide,
     ZoomShow,
+    EffectsChanged((EffectParameters, bool)),
 }
 
 #[derive(Debug)]
@@ -96,6 +97,12 @@ impl Component for PreviewFrameModel {
             PreviewFrameMsg::Zoom(level) => self.preview.set_zoom(level),
             PreviewFrameMsg::ZoomHide => self.preview.hide_zoom(),
             PreviewFrameMsg::ZoomShow => self.preview.show_zoom(),
+            PreviewFrameMsg::EffectsChanged((params, is_playing)) => {
+                self.preview.update_effect_parameters(params);
+                if !is_playing {
+                    self.preview.render_frame();
+                }
+            }
         }
 
         self.update_view(widgets, sender);

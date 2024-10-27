@@ -15,6 +15,7 @@ impl Texture {
         height: u32,
         device: &wgpu::Device,
         bind_group_layout: &BindGroupLayout,
+        effect_buffer: &wgpu::Buffer,
         label: &str,
     ) -> Result<Self> {
         let size = wgpu::Extent3d {
@@ -56,6 +57,10 @@ impl Texture {
                 wgpu::BindGroupEntry {
                     binding: 1,
                     resource: wgpu::BindingResource::Sampler(&sampler),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: effect_buffer.as_entire_binding(),
                 },
             ],
             label: Some("frame textue bind group"),

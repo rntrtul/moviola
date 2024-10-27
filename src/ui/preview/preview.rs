@@ -1,6 +1,6 @@
 use crate::ui::preview::bounding_box::{HandleType, BOX_HANDLE_WIDTH};
 use crate::ui::preview::effects_pipeline::renderer::Renderer;
-use crate::ui::preview::{BoundingBoxDimensions, CropMode};
+use crate::ui::preview::{BoundingBoxDimensions, CropMode, EffectParameters};
 use crate::ui::sidebar::CropExportSettings;
 use ges::subclass::prelude::ObjectSubclassIsExt;
 use gst::subclass::prelude::{ObjectImpl, ObjectSubclass};
@@ -234,6 +234,12 @@ impl Preview {
         renderer.sample_to_texture(sample);
     }
 
+    pub(super) fn update_effect_parameters(&self, parameters: EffectParameters) {
+        let mut renderer = self.renderer.borrow_mut();
+
+        renderer.update_effects(parameters);
+    }
+
     // todo: try to make this async
     pub(super) fn render_frame(&self) {
         let mut renderer = self.renderer.borrow_mut();
@@ -268,6 +274,10 @@ impl crate::ui::preview::Preview {
 
     pub fn upload_new_sample(&self, sample: Sample) {
         self.imp().upload_new_sample(sample);
+    }
+
+    pub fn update_effect_parameters(&self, parameters: EffectParameters) {
+        self.imp().update_effect_parameters(parameters);
     }
 
     pub fn render_frame(&self) {
