@@ -27,6 +27,11 @@ pub enum PreviewFrameMsg {
 }
 
 #[derive(Debug)]
+pub enum PreviewFrameOutput {
+    TogglePlayPause,
+}
+
+#[derive(Debug)]
 pub enum PreviewFrameCmd {
     FrameRendered,
 }
@@ -35,7 +40,7 @@ pub enum PreviewFrameCmd {
 impl Component for PreviewFrameModel {
     type CommandOutput = PreviewFrameCmd;
     type Input = PreviewFrameMsg;
-    type Output = ();
+    type Output = PreviewFrameOutput;
     type Init = ();
 
     view! {
@@ -45,13 +50,19 @@ impl Component for PreviewFrameModel {
             set_hexpand: true,
             set_width_request: 426,
             set_height_request: 240,
+
+            add_controller = gtk::GestureClick::builder().button(3).build(){
+                connect_pressed[sender] => move |_,_,_,_| {
+                    sender.output(PreviewFrameOutput::TogglePlayPause).unwrap()
+                }
+            },
         }
     }
 
     fn init(
         _: Self::Init,
         root: Self::Root,
-        _sender: ComponentSender<Self>,
+        sender: ComponentSender<Self>,
     ) -> ComponentParts<Self> {
         let preview = Preview::new();
 

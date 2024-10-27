@@ -66,7 +66,8 @@ impl Component for VideoControlModel {
 
                 #[name = "position_label"]
                 gtk::Label {
-                    add_css_class: "monospace"
+                    add_css_class: "monospace",
+                    set_label: "00:00",
                 },
 
                 gtk::Button {
@@ -130,7 +131,8 @@ impl Component for VideoControlModel {
 
                 #[name = "duration_label"]
                 gtk::Label {
-                    set_css_classes: &["monospace", "dim-label"]
+                    set_css_classes: &["monospace", "dim-label"],
+                    set_label: "00:00",
                 },
             }
         }

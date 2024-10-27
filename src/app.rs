@@ -16,7 +16,7 @@ use crate::ui::sidebar::sidebar::{ControlsModel, ControlsMsg, ControlsOutput};
 use crate::ui::video_controls::{VideoControlModel, VideoControlMsg, VideoControlOutput};
 use crate::video::player::Player;
 
-use crate::ui::preview::preview_frame::{PreviewFrameModel, PreviewFrameMsg};
+use crate::ui::preview::preview_frame::{PreviewFrameModel, PreviewFrameMsg, PreviewFrameOutput};
 
 pub(super) struct App {
     preview_frame: Controller<PreviewFrameModel>,
@@ -45,7 +45,9 @@ pub(super) enum AppMsg {
     SetCropMode(CropMode),
     EffectsChanged(EffectParameters),
     Seek(ClockTime),
+    // fixme: get better names for these 2
     TogglePlayPause,
+    TogglePlayPauseRequested,
     ToggleMute,
     Zoom(f64),
     ZoomTempReset,
@@ -220,7 +222,6 @@ impl Component for App {
                         gtk::Box{
                             #[watch]
                             set_visible: model.show_video,
-
                             model.video_controls.widget() {},
                         },
                     },
@@ -236,8 +237,11 @@ impl Component for App {
     ) -> ComponentParts<Self> {
         let player = Rc::new(RefCell::new(Player::new(sender.clone())));
 
-        let preview_frame: Controller<PreviewFrameModel> =
-            PreviewFrameModel::builder().launch(()).detach();
+        let preview_frame: Controller<PreviewFrameModel> = PreviewFrameModel::builder()
+            .launch(())
+            .forward(sender.input_sender(), |msg| match msg {
+                PreviewFrameOutput::TogglePlayPause => AppMsg::TogglePlayPauseRequested,
+            });
 
         let controls_panel: Controller<ControlsModel> = ControlsModel::builder()
             .launch(())
@@ -356,6 +360,9 @@ impl Component for App {
                 self.player.borrow_mut().reset_pipeline();
                 self.video_controls.emit(VideoControlMsg::Reset);
                 // widgets.crop_box.reset_box();
+            }
+            AppMsg::TogglePlayPauseRequested => {
+                self.video_controls.emit(VideoControlMsg::TogglePlayPause)
             }
             AppMsg::Seek(timestamp) => self.player.borrow().seek(timestamp),
             AppMsg::TogglePlayPause => self.player.borrow_mut().toggle_play_plause(),
