@@ -237,7 +237,7 @@ impl Preview {
     pub(super) fn update_effect_parameters(&self, parameters: EffectParameters) {
         let mut renderer = self.renderer.borrow_mut();
 
-        renderer.update_effects(parameters);
+        pollster::block_on(renderer.update_effects(parameters));
     }
 
     // todo: try to make this async

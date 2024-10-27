@@ -32,6 +32,7 @@ pub struct Renderer {
     output_staging_buffer: wgpu::Buffer,
     compute_buffer: wgpu::Buffer,
     effect_parameters: EffectParameters,
+    is_effect_updated: bool,
     output_dimensions: (u32, u32),
     video_frame_texture: RefCell<texture::Texture>,
     video_frame_rect: FrameRect,
@@ -113,8 +114,12 @@ impl Renderer {
             label: Some("Effect Parameter Src Buffer"),
             size: EffectParameters::buffer_size(),
             usage: wgpu::BufferUsages::COPY_SRC | wgpu::BufferUsages::MAP_WRITE,
-            mapped_at_creation: false,
+            mapped_at_creation: true,
         });
+        effect_parameters.populate_buffer(bytemuck::cast_slice_mut(
+            &mut *effect_src_buffer.slice(..).get_mapped_range_mut(),
+        ));
+        effect_src_buffer.unmap();
 
         let effect_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("Effect Parameter Buffer"),
@@ -266,6 +271,7 @@ impl Renderer {
             output_texture_view,
             output_dimensions,
             timer,
+            is_effect_updated: true,
             orientation: Orientation::default(),
             video_frame_texture: RefCell::new(texture),
             video_frame_rect: frame_rect,
@@ -320,10 +326,6 @@ impl Renderer {
             output_texture_view,
             compute_buffer,
         )
-    }
-
-    pub fn update_effects(&mut self, parameters: EffectParameters) {
-        self.effect_parameters = parameters;
     }
 
     fn update_render_target(&mut self, width: u32, height: u32) {
@@ -384,22 +386,48 @@ impl Renderer {
             .write_from_sample(&self.queue, sample)
     }
 
+    pub async fn update_effects(&mut self, parameters: EffectParameters) {
+        self.effect_parameters = parameters;
+
+        {
+            let (sender, receiver) = flume::bounded(1);
+            let slice = self.effect_src_buffer.slice(..);
+
+            slice.map_async(wgpu::MapMode::Write, move |r| sender.send(r).unwrap());
+            self.device.poll(wgpu::Maintain::wait()).panic_on_timeout();
+            receiver.recv_async().await.unwrap().unwrap();
+
+            {
+                let mut view = slice.get_mapped_range_mut();
+                let buffer = bytemuck::cast_slice_mut(&mut view);
+                self.effect_parameters.populate_buffer(buffer);
+            }
+
+            self.effect_src_buffer.unmap();
+        }
+        self.is_effect_updated = true;
+    }
+
     // todo: accept effect paramters
-    pub fn prepare_video_frame_render_pass(&self) -> wgpu::CommandBuffer {
+    pub fn prepare_video_frame_render_pass(&mut self) -> wgpu::CommandBuffer {
         let texture = self.video_frame_texture.borrow();
 
         let mut encoder = self
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor::default());
 
-        encoder.copy_buffer_to_buffer(
-            &self.effect_src_buffer,
-            0,
-            &self.effect_buffer,
-            0,
-            self.effect_buffer.size(),
-        );
+        if self.is_effect_updated {
+            encoder.copy_buffer_to_buffer(
+                &self.effect_src_buffer,
+                0,
+                &self.effect_buffer,
+                0,
+                self.effect_buffer.size(),
+            );
+            self.is_effect_updated = false;
+        }
 
+        // render pass
         {
             let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("Render Pass"),
@@ -427,6 +455,7 @@ impl Renderer {
             render_pass.draw_indexed(0..self.num_indices, 0, 0..1);
         }
 
+        // compute pass
         {
             let mut compute_pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
                 label: Some("Compute Pass"),
@@ -525,24 +554,6 @@ impl Renderer {
             }
 
             self.output_staging_buffer.unmap();
-        }
-
-        // todo: be seperate function and done in render pass setup
-        {
-            let (sender, receiver) = flume::bounded(1);
-            let slice = self.effect_src_buffer.slice(..);
-
-            slice.map_async(wgpu::MapMode::Write, move |r| sender.send(r).unwrap());
-            self.device.poll(wgpu::Maintain::wait()).panic_on_timeout();
-            receiver.recv_async().await.unwrap().unwrap();
-
-            {
-                let mut view = slice.get_mapped_range_mut();
-                let buffer = bytemuck::cast_slice_mut(&mut view);
-                self.effect_parameters.populate_buffer(buffer);
-            }
-
-            self.effect_src_buffer.unmap();
         }
 
         Ok(gdk_texture)
