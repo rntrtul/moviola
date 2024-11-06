@@ -1,10 +1,15 @@
 use crate::ui::preview::EffectParameters;
 use crate::ui::sidebar::adjust::AdjustPageMsg::ContrastChange;
-use gtk4::prelude::{RangeExt, WidgetExt};
-use relm4::{adw, gtk, ComponentParts, ComponentSender, SimpleComponent};
+use crate::ui::slider::adjust_row::{AdjustRowModel, AdjustRowOutput};
+use gtk4::prelude::WidgetExt;
+use relm4::{
+    adw, Component, ComponentController, ComponentParts, ComponentSender, Controller,
+    SimpleComponent,
+};
 
 pub struct AdjustPageModel {
     parameters: EffectParameters,
+    contrast_slider: Controller<AdjustRowModel>,
 }
 
 #[derive(Debug)]
@@ -28,11 +33,7 @@ impl SimpleComponent for AdjustPageModel {
             set_hexpand: true,
 
             adw::PreferencesGroup{
-                gtk::Scale::with_range(gtk::Orientation::Horizontal, -0f64, 2f64, 0.1f64 ){
-                    connect_value_changed[sender] => move|scale| {
-                                sender.input(ContrastChange(scale.value()));
-                    },
-                },
+                model.contrast_slider.widget(){},
             },
         }
     }
@@ -42,10 +43,18 @@ impl SimpleComponent for AdjustPageModel {
         root: Self::Root,
         sender: ComponentSender<Self>,
     ) -> ComponentParts<Self> {
-        let widgets = view_output!();
+        let contrast_slider = AdjustRowModel::builder()
+            .launch("Contrast".to_string())
+            .forward(sender.input_sender(), |msg| match msg {
+                AdjustRowOutput::ValueChanged(val) => AdjustPageMsg::ContrastChange(val),
+            });
+
         let model = AdjustPageModel {
             parameters: EffectParameters::new(),
+            contrast_slider,
         };
+
+        let widgets = view_output!();
 
         ComponentParts { model, widgets }
     }

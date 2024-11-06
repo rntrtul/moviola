@@ -253,7 +253,7 @@ impl Preview {
         self.texture.borrow_mut().replace(texture);
 
         renderer.timer.stop_time(FRAME_TIME_IDX);
-        renderer.timer.print_results();
+        // renderer.timer.print_results();
     }
 }
 
