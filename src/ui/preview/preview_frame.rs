@@ -19,7 +19,7 @@ pub struct PreviewFrameModel {
 #[derive(Debug)]
 pub enum PreviewFrameMsg {
     VideoLoaded,
-    NewVideoFrame(gst::Sample),
+    FrameRendered(gdk::Texture),
     Orient(Orientation),
     CropMode(CropMode),
     CropBoxShow,
@@ -102,29 +102,13 @@ impl Component for PreviewFrameModel {
                 self.video_is_loaded = true;
                 root.last_child().unwrap().set_visible(true);
             }
-            PreviewFrameMsg::NewVideoFrame(frame_sample) => {
-                // todo: determine if taking sample and if memory not copied
+            PreviewFrameMsg::FrameRendered(texture) => {
+                self.preview.update_texture(texture);
+
+                // todo: move timer out of renderer. at least frame time one
                 let mut renderer = self.renderer.blocking_lock();
-
-                let caps = frame_sample.caps().expect("sample without caps");
-                let info = gst_video::VideoInfo::from_caps(caps).expect("Failed to parse caps");
-
-                if !renderer.is_dimension_equal_output(info.width(), info.height()) {
-                    self.preview
-                        .update_native_resolution(info.width(), info.height());
-
-                    // todo: add blur on edge of target, so make size slightly larger
-                    renderer.update_input_texture_output_texture_size(
-                        info.width(),
-                        info.height(),
-                        info.width(),
-                        info.height(),
-                    );
-                }
-                renderer.sample_to_texture(frame_sample);
-                drop(renderer); // lock is dropped
-
-                self.start_render(&sender);
+                renderer.timer.stop_time(FRAME_TIME_IDX);
+                renderer.timer.print_results();
             }
             PreviewFrameMsg::Orient(orientation) => {
                 self.preview.set_orientation(orientation);
@@ -191,5 +175,9 @@ impl PreviewFrameModel {
 
     pub fn export_settings(&self) -> CropExportSettings {
         self.preview.export_settings()
+    }
+
+    pub fn renderer(&self) -> Arc<Mutex<Renderer>> {
+        Arc::clone(&self.renderer)
     }
 }

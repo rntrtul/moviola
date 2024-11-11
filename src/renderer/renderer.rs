@@ -3,6 +3,7 @@ use crate::renderer::vertex::{FrameRect, INDICES};
 use crate::renderer::{texture, vertex, EffectParameters};
 use crate::ui::preview::Orientation;
 use ges::glib;
+use gst::Sample;
 use gtk4::gdk;
 use gtk4::prelude::Cast;
 use lazy_static::lazy_static;
@@ -418,7 +419,7 @@ impl Renderer {
         );
     }
 
-    pub fn sample_to_texture(&self, sample: gst::Sample) {
+    pub fn sample_to_texture(&self, sample: &Sample) {
         self.video_frame_texture
             .borrow()
             .write_from_sample(&self.queue, sample);
@@ -563,5 +564,24 @@ impl Renderer {
         }
 
         Ok(gdk_texture)
+    }
+
+    pub async fn render_sample(&mut self, sample: &Sample) -> gdk::Texture {
+        let caps = sample.caps().expect("sample without caps");
+        let info = gst_video::VideoInfo::from_caps(caps).expect("Failed to parse caps");
+
+        if !self.is_dimension_equal_output(info.width(), info.height()) {
+            self.update_input_texture_output_texture_size(
+                info.width(),
+                info.height(),
+                info.width(),
+                info.height(),
+            );
+        }
+        self.sample_to_texture(sample);
+
+        let command_buffer = self.prepare_video_frame_render_pass();
+
+        self.render(command_buffer).await.expect("Could not render")
     }
 }

@@ -83,7 +83,7 @@ impl Texture {
         let rgba = img.to_rgba8();
         self.write_from_buffer(queue, &rgba);
     }
-    pub fn write_from_sample(&self, queue: &wgpu::Queue, sample: gst::Sample) {
+    pub fn write_from_sample(&self, queue: &wgpu::Queue, sample: &gst::Sample) {
         let buffer = sample.buffer().unwrap();
         self.write_from_buffer(queue, &buffer.map_readable().unwrap().as_slice());
     }

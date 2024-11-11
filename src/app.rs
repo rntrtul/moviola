@@ -9,8 +9,8 @@ use crate::video::player::Player;
 use gst::ClockTime;
 use gtk::glib;
 use gtk::prelude::{ApplicationExt, GtkWindowExt, OrientableExt, WidgetExt};
-use gtk4::gio;
 use gtk4::prelude::{ButtonExt, FileExt, GtkApplicationExt, RangeExt};
+use gtk4::{gdk, gio};
 use relm4::{
     adw, gtk, main_application, Component, ComponentController, ComponentParts, ComponentSender,
     Controller, RelmWidgetExt,
@@ -53,13 +53,13 @@ pub(super) enum AppMsg {
     ZoomTempReset,
     ZoomRestore,
     Quit,
-    NewFrame(gst::Sample),
     VideoFinished,
 }
 
 #[derive(Debug)]
 pub enum AppCommandMsg {
     VideoLoaded,
+    FrameRendered(gdk::Texture),
 }
 
 impl App {
@@ -235,13 +235,14 @@ impl Component for App {
         root: Self::Root,
         sender: ComponentSender<Self>,
     ) -> ComponentParts<Self> {
-        let player = Rc::new(RefCell::new(Player::new(sender.clone())));
-
         let preview_frame: Controller<PreviewFrameModel> = PreviewFrameModel::builder()
             .launch(())
             .forward(sender.input_sender(), |msg| match msg {
                 PreviewFrameOutput::TogglePlayPause => AppMsg::TogglePlayPauseRequested,
             });
+
+        let renderer = preview_frame.model().renderer();
+        let player = Rc::new(RefCell::new(Player::new(sender.clone(), renderer)));
 
         let controls_panel: Controller<ControlsModel> = ControlsModel::builder()
             .launch(())
@@ -383,9 +384,6 @@ impl Component for App {
                 widgets.preview_zoom.set_sensitive(true);
                 self.preview_frame.emit(PreviewFrameMsg::ZoomShow)
             }
-            AppMsg::NewFrame(sample) => self
-                .preview_frame
-                .emit(PreviewFrameMsg::NewVideoFrame(sample)),
             AppMsg::EffectsChanged(params) => {
                 self.preview_frame.emit(PreviewFrameMsg::EffectsChanged((
                     params,
@@ -425,6 +423,9 @@ impl Component for App {
 
                 self.preview_frame.widget().set_visible(true);
             }
+            AppCommandMsg::FrameRendered(texture) => self
+                .preview_frame
+                .emit(PreviewFrameMsg::FrameRendered(texture)),
         }
 
         self.update_view(widgets, sender);
