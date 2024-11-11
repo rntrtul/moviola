@@ -48,7 +48,6 @@ impl Default for Orientation {
 impl preview::Preview {
     pub fn set_orientation(&self, orintation: Orientation) {
         self.imp().orientation.set(orintation);
-        self.imp().renderer.borrow_mut().orient(orintation);
         self.queue_resize();
     }
 }

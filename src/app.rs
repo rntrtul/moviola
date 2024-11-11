@@ -1,6 +1,11 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
+use crate::renderer::EffectParameters;
+use crate::ui::preview::{CropMode, Orientation};
+use crate::ui::sidebar::sidebar::{ControlsModel, ControlsMsg, ControlsOutput};
+use crate::ui::video_controls::{VideoControlModel, VideoControlMsg, VideoControlOutput};
+use crate::video::player::Player;
 use gst::ClockTime;
 use gtk::glib;
 use gtk::prelude::{ApplicationExt, GtkWindowExt, OrientableExt, WidgetExt};
@@ -10,11 +15,6 @@ use relm4::{
     adw, gtk, main_application, Component, ComponentController, ComponentParts, ComponentSender,
     Controller, RelmWidgetExt,
 };
-
-use crate::ui::preview::{CropMode, EffectParameters, Orientation};
-use crate::ui::sidebar::sidebar::{ControlsModel, ControlsMsg, ControlsOutput};
-use crate::ui::video_controls::{VideoControlModel, VideoControlMsg, VideoControlOutput};
-use crate::video::player::Player;
 
 use crate::ui::preview::preview_frame::{PreviewFrameModel, PreviewFrameMsg, PreviewFrameOutput};
 

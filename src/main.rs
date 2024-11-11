@@ -7,6 +7,7 @@ use self::config::RESOURCES_FILE;
 
 mod app;
 mod config;
+mod renderer;
 mod ui;
 mod video;
 

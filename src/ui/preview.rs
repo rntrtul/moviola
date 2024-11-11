@@ -1,5 +1,4 @@
 mod bounding_box;
-mod effects_pipeline;
 mod orient;
 mod pan;
 mod preview;
@@ -9,7 +8,6 @@ mod zoom;
 use gtk4::glib;
 
 pub use crate::ui::preview::bounding_box::{BoundingBoxDimensions, CropMode};
-pub use crate::ui::preview::effects_pipeline::EffectParameters;
 pub use crate::ui::preview::orient::Orientation;
 
 glib::wrapper! {

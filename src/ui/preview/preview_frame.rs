@@ -1,12 +1,16 @@
-use std::fmt::Debug;
-
+use crate::renderer::renderer::Renderer;
+use crate::renderer::{EffectParameters, FRAME_TIME_IDX};
+use crate::ui::preview::{CropMode, Orientation, Preview};
+use crate::ui::sidebar::CropExportSettings;
+use gtk4::gdk;
 use gtk4::prelude::{BoxExt, OrientableExt, WidgetExt};
 use relm4::*;
-
-use crate::ui::preview::{CropMode, EffectParameters, Orientation, Preview};
-use crate::ui::sidebar::CropExportSettings;
+use std::fmt::Debug;
+use std::sync::Arc;
+use tokio::sync::Mutex;
 
 pub struct PreviewFrameModel {
+    renderer: Arc<Mutex<Renderer>>,
     video_is_loaded: bool,
     is_playing: bool,
     preview: Preview,
@@ -33,7 +37,7 @@ pub enum PreviewFrameOutput {
 
 #[derive(Debug)]
 pub enum PreviewFrameCmd {
-    FrameRendered,
+    FrameRendered(gdk::Texture),
 }
 
 #[relm4::component(pub)]
@@ -65,12 +69,14 @@ impl Component for PreviewFrameModel {
         sender: ComponentSender<Self>,
     ) -> ComponentParts<Self> {
         let preview = Preview::new();
+        let renderer = pollster::block_on(Renderer::new());
 
         let offload = gtk4::GraphicsOffload::new(Some(&preview));
         offload.set_enabled(gtk::GraphicsOffloadEnabled::Enabled);
         offload.set_visible(false);
 
         let model = PreviewFrameModel {
+            renderer: Arc::new(Mutex::new(renderer)),
             preview,
             video_is_loaded: false,
             is_playing: false,
@@ -97,11 +103,33 @@ impl Component for PreviewFrameModel {
                 root.last_child().unwrap().set_visible(true);
             }
             PreviewFrameMsg::NewVideoFrame(frame_sample) => {
-                self.preview.upload_new_sample(frame_sample);
-                // todo: have render frame be async in command. Need to wrap preview in Arc + Mutex
-                self.preview.render_frame();
+                // todo: determine if taking sample and if memory not copied
+                let mut renderer = self.renderer.blocking_lock();
+
+                let caps = frame_sample.caps().expect("sample without caps");
+                let info = gst_video::VideoInfo::from_caps(caps).expect("Failed to parse caps");
+
+                if !renderer.is_dimension_equal_output(info.width(), info.height()) {
+                    self.preview
+                        .update_native_resolution(info.width(), info.height());
+
+                    // todo: add blur on edge of target, so make size slightly larger
+                    renderer.update_input_texture_output_texture_size(
+                        info.width(),
+                        info.height(),
+                        info.width(),
+                        info.height(),
+                    );
+                }
+                renderer.sample_to_texture(frame_sample);
+                drop(renderer); // lock is dropped
+
+                self.start_render(&sender);
             }
-            PreviewFrameMsg::Orient(orientation) => self.preview.set_orientation(orientation),
+            PreviewFrameMsg::Orient(orientation) => {
+                self.preview.set_orientation(orientation);
+                self.renderer.blocking_lock().orient(orientation);
+            }
             PreviewFrameMsg::CropMode(mode) => self.preview.set_crop_mode(mode),
             PreviewFrameMsg::CropBoxShow => self.preview.show_crop_box(),
             PreviewFrameMsg::CropBoxHide => self.preview.hide_crop_box(),
@@ -109,18 +137,54 @@ impl Component for PreviewFrameModel {
             PreviewFrameMsg::ZoomHide => self.preview.hide_zoom(),
             PreviewFrameMsg::ZoomShow => self.preview.show_zoom(),
             PreviewFrameMsg::EffectsChanged((params, is_playing)) => {
-                self.preview.update_effect_parameters(params);
+                self.renderer.blocking_lock().update_effects(params);
+
                 if !is_playing {
-                    self.preview.render_frame();
+                    self.start_render(&sender);
                 }
             }
         }
 
         self.update_view(widgets, sender);
     }
+
+    fn update_cmd(
+        &mut self,
+        message: Self::CommandOutput,
+        _sender: ComponentSender<Self>,
+        _root: &Self::Root,
+    ) {
+        match message {
+            PreviewFrameCmd::FrameRendered(texture) => {
+                self.preview.update_texture(texture);
+
+                let mut renderer = self.renderer.blocking_lock();
+                renderer.timer.stop_time(FRAME_TIME_IDX);
+                renderer.timer.print_results();
+            }
+        }
+    }
 }
 
 impl PreviewFrameModel {
+    fn start_render(&self, sender: &ComponentSender<Self>) {
+        let renderer = Arc::clone(&self.renderer);
+
+        sender.oneshot_command(async move {
+            let mut renderer = renderer.lock().await;
+            renderer.timer.start_time(FRAME_TIME_IDX);
+
+            let command_buffer = renderer.prepare_video_frame_render_pass();
+            let texture = renderer
+                .render(command_buffer)
+                .await
+                .expect("Could not render");
+
+            drop(renderer);
+            PreviewFrameCmd::FrameRendered(texture)
+        })
+    }
+
     pub fn reset(&self) {
         self.preview.reset_preview();
     }

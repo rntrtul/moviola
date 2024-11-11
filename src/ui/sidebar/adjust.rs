@@ -1,4 +1,4 @@
-use crate::ui::preview::EffectParameters;
+use crate::renderer::EffectParameters;
 use crate::ui::sidebar::adjust::AdjustPageMsg::ContrastChange;
 use crate::ui::slider::adjust_row::{AdjustRowModel, AdjustRowOutput};
 use gtk4::prelude::WidgetExt;

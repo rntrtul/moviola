@@ -1,7 +1,6 @@
-use crate::ui::preview::effects_pipeline::effects::EffectParameters;
-use crate::ui::preview::effects_pipeline::timer::{Timer, BUFF_MAP_IDX, GDK_TEX_IDX};
-use crate::ui::preview::effects_pipeline::vertex::{FrameRect, INDICES};
-use crate::ui::preview::effects_pipeline::{texture, vertex};
+use crate::renderer::timer::{Timer, BUFF_MAP_IDX, GDK_TEX_IDX};
+use crate::renderer::vertex::{FrameRect, INDICES};
+use crate::renderer::{texture, vertex, EffectParameters};
 use crate::ui::preview::Orientation;
 use ges::glib;
 use gtk4::gdk;
@@ -372,6 +371,10 @@ impl Renderer {
         self.compute_bind_group = compute_bind_group;
     }
 
+    pub fn is_dimension_equal_output(&self, width: u32, height: u32) -> bool {
+        width == self.output_dimensions.0 && height == self.output_dimensions.1
+    }
+
     pub fn orient(&mut self, orientation: Orientation) {
         self.video_frame_rect.orient(orientation);
 
@@ -438,7 +441,7 @@ impl Renderer {
         let buffer = bytemuck::cast_slice_mut(&mut view);
         effect_parameters.populate_buffer(buffer);
     }
-    pub async fn update_effects(&mut self, parameters: EffectParameters) {
+    pub fn update_effects(&mut self, parameters: EffectParameters) {
         self.effect_parameters = parameters;
         Self::populate_effect_buffer(self.effect_parameters, &self.queue, &self.effect_buffer);
         self.queue.submit([]);

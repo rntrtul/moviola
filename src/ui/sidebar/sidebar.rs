@@ -1,15 +1,15 @@
-use gtk4::prelude::ButtonExt;
-use relm4::{
-    adw, gtk, Component, ComponentController, ComponentParts, ComponentSender, Controller,
-    SimpleComponent,
-};
-
-use crate::ui::preview::{CropMode, EffectParameters, Orientation};
+use crate::renderer::EffectParameters;
+use crate::ui::preview::{CropMode, Orientation};
 use crate::ui::sidebar::adjust::{AdjustPageModel, AdjustPageOutput};
 use crate::ui::sidebar::crop::{CropPageModel, CropPageMsg, CropPageOutput};
 use crate::ui::sidebar::output::{OutputPageModel, OutputPageMsg, OutputPageOutput};
 use crate::ui::sidebar::ControlsExportSettings;
 use crate::video::metadata::VideoContainerInfo;
+use gtk4::prelude::ButtonExt;
+use relm4::{
+    adw, gtk, Component, ComponentController, ComponentParts, ComponentSender, Controller,
+    SimpleComponent,
+};
 
 pub struct ControlsModel {
     crop_page: Controller<CropPageModel>,

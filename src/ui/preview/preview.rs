@@ -1,11 +1,9 @@
 use crate::ui::preview::bounding_box::{HandleType, BOX_HANDLE_WIDTH};
-use crate::ui::preview::effects_pipeline::renderer::Renderer;
-use crate::ui::preview::effects_pipeline::FRAME_TIME_IDX;
-use crate::ui::preview::{BoundingBoxDimensions, CropMode, EffectParameters};
+use crate::ui::preview::{BoundingBoxDimensions, CropMode};
 use crate::ui::sidebar::CropExportSettings;
 use ges::subclass::prelude::ObjectSubclassIsExt;
+use gst::glib;
 use gst::subclass::prelude::{ObjectImpl, ObjectSubclass};
-use gst::{glib, Sample};
 use gtk4::graphene::Point;
 use gtk4::prelude::{PaintableExt, SnapshotExt, WidgetExt};
 use gtk4::subclass::prelude::ObjectSubclassExt;
@@ -17,7 +15,6 @@ static DEFAULT_WIDTH: f64 = 640f64;
 static DEFAULT_HEIGHT: f64 = 360f64;
 
 pub struct Preview {
-    pub(crate) renderer: RefCell<Renderer>,
     pub(crate) left_x: Cell<f32>,
     pub(crate) top_y: Cell<f32>,
     pub(crate) right_x: Cell<f32>,
@@ -32,7 +29,7 @@ pub struct Preview {
     pub(crate) show_zoom: Cell<bool>,
     pub(crate) orientation: Cell<crate::ui::preview::Orientation>,
     pub(crate) texture: RefCell<Option<gdk::Texture>>,
-    pub(crate) crop_scale: Cell<f32>,
+    pub(crate) _crop_scale: Cell<f32>,
     pub(crate) is_cropped: Cell<bool>,
     //todo: accept orignal dimensions as struct?
     pub(crate) original_aspect_ratio: Cell<f32>,
@@ -42,9 +39,7 @@ pub struct Preview {
 
 impl Default for Preview {
     fn default() -> Self {
-        let renderer = pollster::block_on(Renderer::new());
         Self {
-            renderer: RefCell::new(renderer),
             translate: Cell::new(Point::zero()),
             prev_drag: Cell::new(Point::zero()),
             left_x: Cell::new(0f32),
@@ -62,7 +57,7 @@ impl Default for Preview {
                 mirrored: false,
             }),
             texture: RefCell::new(None),
-            crop_scale: Cell::new(1.0),
+            _crop_scale: Cell::new(1.0),
             is_cropped: Cell::new(false),
             original_aspect_ratio: Cell::new(1.77f32),
             native_frame_width: Cell::new(0),
@@ -208,52 +203,8 @@ impl Preview {
         graphene::Rect::new(x, y, width, height)
     }
 
-    // todo: determine if taking sample and if memory not copied
-    pub(super) fn upload_new_sample(&self, sample: Sample) {
-        let mut renderer = self.renderer.borrow_mut();
-        renderer.timer.start_time(FRAME_TIME_IDX);
-
-        let caps = sample.caps().expect("sample without caps");
-        let info = gst_video::VideoInfo::from_caps(caps).expect("Failed to parse caps");
-
-        if info.width() != self.native_frame_width.get()
-            && info.height() != self.native_frame_height.get()
-        {
-            self.native_frame_width.replace(info.width());
-            self.native_frame_height.replace(info.height());
-            self.original_aspect_ratio
-                .set(info.width() as f32 / info.height() as f32);
-
-            // todo: add blur on edge of target, so make size slightly larger
-            renderer.update_input_texture_output_texture_size(
-                info.width(),
-                info.height(),
-                info.width(),
-                info.height(),
-            );
-        }
-
-        renderer.sample_to_texture(sample);
-    }
-
-    pub(super) fn update_effect_parameters(&self, parameters: EffectParameters) {
-        let mut renderer = self.renderer.borrow_mut();
-
-        pollster::block_on(renderer.update_effects(parameters));
-    }
-
-    // todo: try to make this async
-    pub(super) fn render_frame(&self) {
-        let mut renderer = self.renderer.borrow_mut();
-        renderer.timer.start_time(FRAME_TIME_IDX);
-
-        let command_buffer = renderer.prepare_video_frame_render_pass();
-        let texture =
-            pollster::block_on(renderer.render(command_buffer)).expect("Could not render");
+    pub(super) fn update_texture(&self, texture: gdk::Texture) {
         self.texture.borrow_mut().replace(texture);
-
-        renderer.timer.stop_time(FRAME_TIME_IDX);
-        // renderer.timer.print_results();
     }
 }
 
@@ -278,17 +229,17 @@ impl crate::ui::preview::Preview {
         self.queue_draw();
     }
 
-    pub fn upload_new_sample(&self, sample: Sample) {
-        self.imp().upload_new_sample(sample);
-    }
-
-    pub fn update_effect_parameters(&self, parameters: EffectParameters) {
-        self.imp().update_effect_parameters(parameters);
-    }
-
-    pub fn render_frame(&self) {
-        self.imp().render_frame();
+    pub fn update_texture(&self, texture: gdk::Texture) {
+        self.imp().update_texture(texture);
         self.queue_draw();
+    }
+
+    pub fn update_native_resolution(&self, width: u32, height: u32) {
+        self.imp().native_frame_width.set(width);
+        self.imp().native_frame_height.set(height);
+        self.imp()
+            .original_aspect_ratio
+            .set(width as f32 / height as f32)
     }
 
     pub fn export_settings(&self) -> CropExportSettings {
