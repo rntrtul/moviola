@@ -201,16 +201,13 @@ impl Component for App {
                             },
                         },
 
-                        // todo: switch to adw::spinner when relm4 targets gnome 47
-                        gtk::Spinner {
-                            #[watch]
-                            set_spinning: model.show_spinner,
+                        adw::Spinner{
                             #[watch]
                             set_visible: model.show_spinner,
-                            set_height_request: 360,
                             set_halign: gtk::Align::Fill,
                             set_valign: gtk::Align::Fill,
-                            set_hexpand: true,
+                            set_height_request: 64,
+                            set_vexpand: true,
                         },
 
                         gtk::Box{
@@ -360,7 +357,6 @@ impl Component for App {
 
                 self.player.borrow_mut().reset_pipeline();
                 self.video_controls.emit(VideoControlMsg::Reset);
-                // widgets.crop_box.reset_box();
             }
             AppMsg::TogglePlayPauseRequested => {
                 self.video_controls.emit(VideoControlMsg::TogglePlayPause)
