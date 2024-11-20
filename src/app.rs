@@ -2,6 +2,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use crate::renderer::EffectParameters;
+use crate::ui::preview::preview_frame::{PreviewFrameModel, PreviewFrameMsg, PreviewFrameOutput};
 use crate::ui::preview::{CropMode, Orientation};
 use crate::ui::sidebar::sidebar::{ControlsModel, ControlsMsg, ControlsOutput};
 use crate::ui::video_controls::{VideoControlModel, VideoControlMsg, VideoControlOutput};
@@ -15,8 +16,6 @@ use relm4::{
     adw, gtk, main_application, Component, ComponentController, ComponentParts, ComponentSender,
     Controller, RelmWidgetExt,
 };
-
-use crate::ui::preview::preview_frame::{PreviewFrameModel, PreviewFrameMsg, PreviewFrameOutput};
 
 pub(super) struct App {
     preview_frame: Controller<PreviewFrameModel>,
@@ -119,7 +118,7 @@ impl Component for App {
     type Input = AppMsg;
     type Output = ();
     type CommandOutput = AppCommandMsg;
-    type Init = u8;
+    type Init = Option<String>;
     view! {
         main_window = adw::ApplicationWindow::new(&main_application()) {
             set_default_width: 1160,
@@ -228,7 +227,7 @@ impl Component for App {
     }
 
     fn init(
-        _: Self::Init,
+        path: Self::Init,
         root: Self::Root,
         sender: ComponentSender<Self>,
     ) -> ComponentParts<Self> {
@@ -281,6 +280,10 @@ impl Component for App {
             .sidebar_panel
             .model()
             .connect_switcher_to_stack(&widgets.page_switcher);
+
+        if path.is_some() {
+            sender.input(AppMsg::SetVideo(path.unwrap()));
+        }
 
         ComponentParts { model, widgets }
     }

@@ -11,7 +11,19 @@ mod renderer;
 mod ui;
 mod video;
 
+use clap::Parser;
+use url::Url;
+
+#[derive(Parser)]
+#[clap(about, version, author, long_about = None)]
+struct Cli {
+    #[arg(short, long)]
+    file_path: Option<std::path::PathBuf>,
+}
+
 fn main() {
+    let cli = Cli::parse();
+
     env_logger::init();
     gst::init().unwrap();
     gtk::init().unwrap();
@@ -26,6 +38,15 @@ fn main() {
     let style_manger = adw::StyleManager::default();
     style_manger.set_color_scheme(adw::ColorScheme::ForceDark);
 
-    let app = RelmApp::new("org.fareedsh.Moviola");
-    app.run::<App>(0);
+    let uri = if let Some(path) = cli.file_path {
+        let uri = Url::from_file_path(path.canonicalize().unwrap())
+            .unwrap()
+            .to_string();
+        Some(uri)
+    } else {
+        None
+    };
+
+    let app = RelmApp::new("org.fareedsh.Moviola").with_args(vec![]);
+    app.run::<App>(uri);
 }
