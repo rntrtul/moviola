@@ -129,7 +129,10 @@ impl Thumbnail {
         Ok(pipeline)
     }
 
-    fn launch_thumbnail_threads(video_uri: String, thumbnail: Arc<Mutex<Vec<MemoryTexture>>>) {
+    pub(crate) fn launch_thumbnail_threads(
+        video_uri: String,
+        thumbnail: Arc<Mutex<Vec<MemoryTexture>>>,
+    ) {
         let current_thumbnail_started: Arc<(Mutex<bool>, Condvar)> =
             Arc::new((Mutex::new(false), Condvar::new()));
 
@@ -190,7 +193,7 @@ mod tests {
     fn thumb_create() {
         gst::init().unwrap();
 
-        let uri = crate::config::VIDEO_TEST_FILE;
+        let uri = crate::config::VIDEO_TEST_FILE_1080;
 
         let thumbnails: Arc<Mutex<Vec<MemoryTexture>>> =
             Arc::new(Mutex::new(Vec::with_capacity(NUM_THUMBNAILS as usize)));

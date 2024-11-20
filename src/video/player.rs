@@ -67,6 +67,7 @@ impl Player {
         app_sink.set_callbacks(
             gst_app::AppSinkCallbacks::builder()
                 .new_sample(move |appsink| {
+                    tracing::trace!("New sample");
                     let sample_renderer = Arc::clone(&sample_renderer);
                     let sample = appsink.pull_sample().unwrap();
 

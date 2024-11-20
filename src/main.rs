@@ -12,6 +12,7 @@ mod ui;
 mod video;
 
 use clap::Parser;
+use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 use url::Url;
 
 #[derive(Parser)]
@@ -24,7 +25,11 @@ struct Cli {
 fn main() {
     let cli = Cli::parse();
 
-    env_logger::init();
+    let tracing_sub = tracing_subscriber::registry()
+        .with(fmt::layer())
+        .with(EnvFilter::from_default_env())
+        .init();
+
     gst::init().unwrap();
     gtk::init().unwrap();
 
@@ -39,10 +44,11 @@ fn main() {
     style_manger.set_color_scheme(adw::ColorScheme::ForceDark);
 
     let uri = if let Some(path) = cli.file_path {
-        let uri = Url::from_file_path(path.canonicalize().unwrap())
-            .unwrap()
-            .to_string();
-        Some(uri)
+        Some(
+            Url::from_file_path(path.canonicalize().unwrap())
+                .unwrap()
+                .to_string(),
+        )
     } else {
         None
     };

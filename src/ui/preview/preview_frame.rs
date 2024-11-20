@@ -10,6 +10,7 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 
 pub struct PreviewFrameModel {
+    // todo: pull renderer into app
     renderer: Arc<Mutex<Renderer>>,
     video_is_loaded: bool,
     is_playing: bool,
@@ -108,7 +109,6 @@ impl Component for PreviewFrameModel {
                 // todo: move timer out of renderer. at least frame time one
                 let mut renderer = self.renderer.blocking_lock();
                 renderer.timer.stop_time(FRAME_TIME_IDX);
-                renderer.timer.print_results();
             }
             PreviewFrameMsg::Orient(orientation) => {
                 self.preview.set_orientation(orientation);
@@ -144,7 +144,6 @@ impl Component for PreviewFrameModel {
 
                 let mut renderer = self.renderer.blocking_lock();
                 renderer.timer.stop_time(FRAME_TIME_IDX);
-                renderer.timer.print_results();
             }
         }
     }
