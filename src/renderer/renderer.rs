@@ -9,6 +9,7 @@ use gtk4::prelude::Cast;
 use lazy_static::lazy_static;
 use std::cell::{Cell, RefCell};
 use std::default::Default;
+use wgpu::include_wgsl;
 use wgpu::util::DeviceExt;
 
 lazy_static! {
@@ -155,10 +156,7 @@ impl Renderer {
         )
         .unwrap();
 
-        let draw_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("Main Shader"),
-            source: wgpu::ShaderSource::Wgsl(include_str!("draw.wgsl").into()),
-        });
+        let draw_shader = device.create_shader_module(include_wgsl!("draw.wgsl"));
 
         let output_dimensions = (512, 288);
 
@@ -203,13 +201,13 @@ impl Renderer {
             layout: Some(&render_pipeline_layout),
             vertex: wgpu::VertexState {
                 module: &draw_shader,
-                entry_point: "vs_main",
+                entry_point: Some("vs_main"),
                 buffers: &[vertex::Vertex::layout()],
                 compilation_options: wgpu::PipelineCompilationOptions::default(),
             },
             fragment: Some(wgpu::FragmentState {
                 module: &draw_shader,
-                entry_point: "fs_main",
+                entry_point: Some("fs_main"),
                 targets: &[Some(wgpu::TextureFormat::Rgba8Unorm.into())],
                 compilation_options: wgpu::PipelineCompilationOptions::default(),
             }),
@@ -232,10 +230,7 @@ impl Renderer {
             cache: None,
         });
 
-        let compute_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("Compute Shader"),
-            source: wgpu::ShaderSource::Wgsl(include_str!("compute.wgsl").into()),
-        });
+        let compute_shader = device.create_shader_module(include_wgsl!("compute.wgsl"));
 
         let compute_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
@@ -248,7 +243,7 @@ impl Renderer {
             label: Some("compute pipeline"),
             layout: Some(&compute_pipeline_layout),
             module: &compute_shader,
-            entry_point: "main",
+            entry_point: Some("main"),
             compilation_options: Default::default(),
             cache: None,
         });
