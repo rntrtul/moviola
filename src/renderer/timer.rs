@@ -1,6 +1,6 @@
 use std::collections::{HashMap, VecDeque};
 use std::io::Write;
-use std::time::{Duration, SystemTime};
+use std::time::{Duration, Instant};
 
 pub static FRAME_TIME_IDX: &str = "Frame time";
 pub static BUFF_MAP_IDX: &str = "buffer map";
@@ -40,20 +40,20 @@ impl RollingAverage {
 }
 
 struct InFlightTimer {
-    start_time: SystemTime,
+    start_time: Instant,
     started: bool,
 }
 
 impl InFlightTimer {
     pub fn new() -> Self {
         Self {
-            start_time: SystemTime::now(),
+            start_time: Instant::now(),
             started: false,
         }
     }
 
     pub fn start_time(&mut self) {
-        let now = SystemTime::now();
+        let now = Instant::now();
         if !self.started {
             self.start_time = now;
             self.started = true;
@@ -61,7 +61,7 @@ impl InFlightTimer {
     }
 
     pub fn stop_time(&mut self) -> Duration {
-        let elapsed = self.start_time.elapsed().unwrap();
+        let elapsed = self.start_time.elapsed();
         self.started = false;
         elapsed
     }
