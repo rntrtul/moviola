@@ -43,13 +43,13 @@ impl Thumbnail {
             / (frame.height() as f64 * info.par().denom() as f64);
         let target_height = (THUMBNAIL_WIDTH as f64 / aspect_ratio).floor();
 
-        let rgba_image = image::RgbaImage::from_raw(
+        let src_img = fast_image_resize::images::ImageRef::new(
             frame.width(),
             frame.height(),
-            Vec::from(frame.plane_data(0).unwrap()),
+            frame.plane_data(0).unwrap(),
+            PixelType::U8x4,
         )
         .unwrap();
-        let dyn_img = image::DynamicImage::from(rgba_image);
 
         let mut thumbnail_pic = fast_image_resize::images::Image::new(
             THUMBNAIL_WIDTH,
@@ -62,7 +62,7 @@ impl Thumbnail {
         let mut resizer = Resizer::new();
         resizer
             .resize(
-                &dyn_img,
+                &src_img,
                 &mut thumbnail_pic,
                 Some(
                     &ResizeOptions::new()
