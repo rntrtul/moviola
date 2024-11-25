@@ -1,7 +1,5 @@
-use std::cell::RefCell;
-use std::rc::Rc;
-
-use crate::renderer::EffectParameters;
+use crate::renderer::renderer::Renderer;
+use crate::renderer::{EffectParameters, FRAME_TIME_IDX};
 use crate::ui::preview::preview_frame::{PreviewFrameModel, PreviewFrameMsg, PreviewFrameOutput};
 use crate::ui::preview::{CropMode, Orientation};
 use crate::ui::sidebar::sidebar::{ControlsModel, ControlsMsg, ControlsOutput};
@@ -16,8 +14,14 @@ use relm4::{
     adw, gtk, main_application, Component, ComponentController, ComponentParts, ComponentSender,
     Controller, RelmWidgetExt,
 };
+use std::cell::RefCell;
+use std::rc::Rc;
+use std::sync::Arc;
+use tokio::sync::Mutex;
 
 pub(super) struct App {
+    // todo: pull renderer into app
+    renderer: Arc<Mutex<Renderer>>,
     preview_frame: Controller<PreviewFrameModel>,
     sidebar_panel: Controller<ControlsModel>,
     video_controls: Controller<VideoControlModel>,
@@ -237,8 +241,9 @@ impl Component for App {
                 PreviewFrameOutput::TogglePlayPause => AppMsg::TogglePlayPauseRequested,
             });
 
-        let renderer = preview_frame.model().renderer();
-        let player = Rc::new(RefCell::new(Player::new(sender.clone(), renderer)));
+        let renderer = Arc::new(Mutex::new(pollster::block_on(Renderer::new())));
+        // let renderer = preview_frame.model().renderer();
+        let player = Rc::new(RefCell::new(Player::new(sender.clone(), renderer.clone())));
 
         let controls_panel: Controller<ControlsModel> = ControlsModel::builder()
             .launch(())
@@ -262,6 +267,7 @@ impl Component for App {
             });
 
         let model = Self {
+            renderer,
             preview_frame,
             sidebar_panel: controls_panel,
             video_controls: timeline,
@@ -368,9 +374,11 @@ impl Component for App {
             AppMsg::TogglePlayPause => self.player.borrow_mut().toggle_play_plause(),
             AppMsg::ToggleMute => self.player.borrow_mut().toggle_mute(),
             AppMsg::VideoFinished => self.player.borrow_mut().set_is_finished(),
-            AppMsg::Orient(orientation) => self
-                .preview_frame
-                .emit(PreviewFrameMsg::Orient(orientation)),
+            AppMsg::Orient(orientation) => {
+                self.preview_frame
+                    .emit(PreviewFrameMsg::Orient(orientation));
+                self.renderer.blocking_lock().orient(orientation);
+            }
             AppMsg::ShowCropBox => self.preview_frame.emit(PreviewFrameMsg::CropBoxShow),
             AppMsg::HideCropBox => self.preview_frame.emit(PreviewFrameMsg::CropBoxHide),
             AppMsg::SetCropMode(mode) => self.preview_frame.emit(PreviewFrameMsg::CropMode(mode)),
@@ -384,10 +392,21 @@ impl Component for App {
                 self.preview_frame.emit(PreviewFrameMsg::ZoomShow)
             }
             AppMsg::EffectsChanged(params) => {
-                self.preview_frame.emit(PreviewFrameMsg::EffectsChanged((
-                    params,
-                    self.player.borrow().is_playing(),
-                )));
+                if !self.player.borrow().is_playing() {
+                    let renderer = Arc::clone(&self.renderer);
+
+                    sender.oneshot_command(async move {
+                        let tex;
+                        {
+                            let mut renderer = renderer.lock().await;
+                            renderer.timer.start_time(FRAME_TIME_IDX);
+                            tex = renderer.render_new_effects(params).await;
+                        }
+                        AppCommandMsg::FrameRendered(tex)
+                    })
+                } else {
+                    self.renderer.blocking_lock().update_effects(params);
+                }
             }
         }
 
@@ -422,9 +441,13 @@ impl Component for App {
 
                 self.preview_frame.widget().set_visible(true);
             }
-            AppCommandMsg::FrameRendered(texture) => self
-                .preview_frame
-                .emit(PreviewFrameMsg::FrameRendered(texture)),
+            AppCommandMsg::FrameRendered(texture) => {
+                self.preview_frame
+                    .emit(PreviewFrameMsg::FrameRendered(texture));
+                // todo: move timer out of renderer. at least frame time one
+                let mut renderer = self.renderer.blocking_lock();
+                renderer.timer.stop_time(FRAME_TIME_IDX);
+            }
         }
 
         self.update_view(widgets, sender);

@@ -579,4 +579,14 @@ impl Renderer {
 
         self.render(command_buffer).await.expect("Could not render")
     }
+
+    pub async fn render_new_effects(
+        &mut self,
+        effect_parameters: EffectParameters,
+    ) -> gdk::Texture {
+        self.update_effects(effect_parameters);
+
+        let command_buffer = self.prepare_video_frame_render_pass();
+        self.render(command_buffer).await.expect("Could not render")
+    }
 }

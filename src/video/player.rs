@@ -67,15 +67,17 @@ impl Player {
         app_sink.set_callbacks(
             gst_app::AppSinkCallbacks::builder()
                 .new_sample(move |appsink| {
-                    tracing::trace!("New sample");
                     let sample_renderer = Arc::clone(&sample_renderer);
                     let sample = appsink.pull_sample().unwrap();
 
                     sample_sender.oneshot_command(async move {
-                        let mut renderer = sample_renderer.lock().await;
-                        renderer.timer.start_time(FRAME_TIME_IDX);
-
-                        AppCommandMsg::FrameRendered(renderer.render_sample(&sample).await)
+                        let tex;
+                        {
+                            let mut renderer = sample_renderer.lock().await;
+                            renderer.timer.start_time(FRAME_TIME_IDX);
+                            tex = renderer.render_sample(&sample).await;
+                        }
+                        AppCommandMsg::FrameRendered(tex)
                     });
 
                     Ok(FlowSuccess::Ok)
@@ -85,10 +87,13 @@ impl Player {
                     let sample = appsink.pull_preroll().unwrap();
 
                     preroll_sender.oneshot_command(async move {
-                        let mut renderer = preroll_renderer.lock().await;
-                        renderer.timer.start_time(FRAME_TIME_IDX);
-
-                        AppCommandMsg::FrameRendered(renderer.render_sample(&sample).await)
+                        let tex;
+                        {
+                            let mut renderer = preroll_renderer.lock().await;
+                            renderer.timer.start_time(FRAME_TIME_IDX);
+                            tex = renderer.render_sample(&sample).await;
+                        }
+                        AppCommandMsg::FrameRendered(tex)
                     });
                     Ok(FlowSuccess::Ok)
                 })
