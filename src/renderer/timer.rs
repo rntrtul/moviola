@@ -175,7 +175,7 @@ impl Timer {
             for (label, (_, avg)) in self.in_flight_times.iter() {
                 msg.push_str(&format!(" {label}: {:.2}ms", avg.avg()));
             }
-            tracing::info!(msg);
+            tracing::trace!(msg);
         }
     }
 }

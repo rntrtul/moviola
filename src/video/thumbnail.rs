@@ -9,6 +9,7 @@ use gst_video::VideoFrameExt;
 use gtk4::gdk;
 use gtk4::gdk::MemoryTexture;
 use std::sync::{Arc, Condvar, Mutex};
+use tracing::{info, instrument, trace};
 
 static THUMBNAIL_WIDTH: u32 = 180;
 static NUM_THUMBNAILS: u64 = 8;
@@ -129,10 +130,8 @@ impl Thumbnail {
         Ok(pipeline)
     }
 
-    pub(crate) fn launch_thumbnail_threads(
-        video_uri: String,
-        thumbnail: Arc<Mutex<Vec<MemoryTexture>>>,
-    ) {
+    #[instrument(skip_all)]
+    pub(crate) fn create_thumbnails(video_uri: String, thumbnail: Arc<Mutex<Vec<MemoryTexture>>>) {
         let current_thumbnail_started: Arc<(Mutex<bool>, Condvar)> =
             Arc::new((Mutex::new(false), Condvar::new()));
 
@@ -145,10 +144,12 @@ impl Thumbnail {
 
         pipeline.set_state(State::Paused).unwrap();
         video::player::Player::wait_for_pipeline_init(pipeline.bus().unwrap());
+        info!("thumbnail pipeline ready");
 
         let duration = pipeline.query_duration::<ClockTime>().unwrap();
         // + 1 so first and last frame not chosen
         let step = duration.mseconds() / (NUM_THUMBNAILS + 1);
+        trace!("thumbnail is stepping at {step} second intervals");
 
         for i in 0..NUM_THUMBNAILS {
             let timestamp =
@@ -179,7 +180,7 @@ impl Thumbnail {
     pub async fn generate_thumbnails(video_uri: String) -> Vec<MemoryTexture> {
         let thumbnails: Arc<Mutex<Vec<MemoryTexture>>> =
             Arc::new(Mutex::new(Vec::with_capacity(NUM_THUMBNAILS as usize)));
-        Self::launch_thumbnail_threads(video_uri, thumbnails.clone());
+        Self::create_thumbnails(video_uri, thumbnails.clone());
 
         Arc::into_inner(thumbnails).unwrap().into_inner().unwrap()
     }
@@ -198,7 +199,7 @@ mod tests {
         let thumbnails: Arc<Mutex<Vec<MemoryTexture>>> =
             Arc::new(Mutex::new(Vec::with_capacity(NUM_THUMBNAILS as usize)));
 
-        Thumbnail::launch_thumbnail_threads(uri.parse().unwrap(), thumbnails.clone());
+        Thumbnail::create_thumbnails(uri.parse().unwrap(), thumbnails.clone());
 
         {
             let thumbnail_lock = &*Arc::clone(&thumbnails);

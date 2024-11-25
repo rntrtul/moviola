@@ -12,6 +12,7 @@ mod ui;
 mod video;
 
 use clap::Parser;
+use tracing_subscriber::fmt::format::FmtSpan;
 use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 use url::Url;
 
@@ -26,7 +27,7 @@ fn main() {
     let cli = Cli::parse();
 
     let tracing_sub = tracing_subscriber::registry()
-        .with(fmt::layer())
+        .with(fmt::layer().with_span_events(FmtSpan::FULL))
         .with(EnvFilter::from_default_env())
         .init();
 
