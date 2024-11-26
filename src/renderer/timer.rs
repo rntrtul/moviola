@@ -1,5 +1,4 @@
 use std::collections::{HashMap, VecDeque};
-use std::io::Write;
 use std::time::{Duration, Instant};
 
 pub static FRAME_TIME_IDX: &str = "Frame time";
@@ -163,7 +162,7 @@ impl Timer {
         self.gpu_compute_times
             .add_sample(elapsed_micro_seconds(timestamps[2], timestamps[3]));
 
-        if (self.total_frames_recorded % 30 == 0) {
+        if self.total_frames_recorded % 30 == 0 {
             let render_time = self.gpu_render_times.avg();
             let compute_time = self.gpu_compute_times.avg();
             let total_time = render_time + compute_time;

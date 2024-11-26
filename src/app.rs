@@ -20,7 +20,6 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 
 pub(super) struct App {
-    // todo: pull renderer into app
     renderer: Arc<Mutex<Renderer>>,
     preview_frame: Controller<PreviewFrameModel>,
     sidebar_panel: Controller<ControlsModel>,
@@ -242,7 +241,6 @@ impl Component for App {
             });
 
         let renderer = Arc::new(Mutex::new(pollster::block_on(Renderer::new())));
-        // let renderer = preview_frame.model().renderer();
         let player = Rc::new(RefCell::new(Player::new(sender.clone(), renderer.clone())));
 
         let controls_panel: Controller<ControlsModel> = ControlsModel::builder()
@@ -437,16 +435,32 @@ impl Component for App {
                 player.set_is_playing(true);
 
                 self.video_controls.emit(VideoControlMsg::VideoLoaded);
-                self.preview_frame.emit(PreviewFrameMsg::VideoLoaded);
+                self.preview_frame.emit(PreviewFrameMsg::VideoLoaded(
+                    player.info.width,
+                    player.info.height,
+                ));
 
                 self.preview_frame.widget().set_visible(true);
             }
             AppCommandMsg::FrameRendered(texture) => {
+                if self
+                    .preview_frame
+                    .model()
+                    .is_preview_size_changed_take_if_raised()
+                {
+                    let (width, height) = self.preview_frame.model().preview_size();
+                    self.renderer
+                        .blocking_lock()
+                        .update_output_resolution(width as u32, height as u32);
+                }
+
                 self.preview_frame
                     .emit(PreviewFrameMsg::FrameRendered(texture));
                 // todo: move timer out of renderer. at least frame time one
-                let mut renderer = self.renderer.blocking_lock();
-                renderer.timer.stop_time(FRAME_TIME_IDX);
+                self.renderer
+                    .blocking_lock()
+                    .timer
+                    .stop_time(FRAME_TIME_IDX);
             }
         }
 

@@ -4,13 +4,11 @@ use crate::ui::sidebar::CropExportSettings;
 use ges::subclass::prelude::ObjectSubclassIsExt;
 use gst::glib;
 use gst::subclass::prelude::{ObjectImpl, ObjectSubclass};
-use gtk::gdk::prelude::TextureExt;
 use gtk4::graphene::Point;
 use gtk4::prelude::{PaintableExt, SnapshotExt, WidgetExt};
 use gtk4::subclass::prelude::ObjectSubclassExt;
 use gtk4::subclass::widget::WidgetImpl;
 use gtk4::{gdk, graphene, Orientation};
-use relm4::gtk;
 use std::cell::{Cell, RefCell};
 
 static DEFAULT_WIDTH: f64 = 640f64;
@@ -231,9 +229,15 @@ impl crate::ui::preview::Preview {
         self.queue_draw();
     }
 
+    pub fn preview_frame_size(&self) -> (i32, i32) {
+        let (width, height) = self
+            .imp()
+            .preview_size(self.imp().original_aspect_ratio.get());
+
+        (width as i32, height as i32)
+    }
+
     pub fn update_texture(&self, texture: gdk::Texture) {
-        // will need to move this somewhere else when given smaller texture based on screen size.
-        self.update_native_resolution(texture.width() as u32, texture.height() as u32);
         self.imp().update_texture(texture);
         self.queue_draw();
     }

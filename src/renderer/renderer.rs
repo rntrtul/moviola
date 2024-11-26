@@ -367,8 +367,9 @@ impl Renderer {
         self.compute_bind_group = compute_bind_group;
     }
 
-    pub fn is_dimension_equal_output(&self, width: u32, height: u32) -> bool {
-        width == self.output_dimensions.0 && height == self.output_dimensions.1
+    pub fn is_size_equal_to_curr_input_size(&self, width: u32, height: u32) -> bool {
+        let texture = &self.video_frame_texture.borrow().texture;
+        width == texture.width() && height == texture.height()
     }
 
     pub fn orient(&mut self, orientation: Orientation) {
@@ -390,21 +391,11 @@ impl Renderer {
         self.orientation = orientation;
     }
 
-    pub fn update_input_texture_output_texture_size(
-        &mut self,
-        frame_width: u32,
-        frame_height: u32,
-        render_width: u32,
-        render_height: u32,
-    ) {
-        self.update_render_target(render_width, render_height);
-        self.output_dimensions = (render_width, render_height);
-        self.timer.reset();
-
+    fn update_input_texture_size(&mut self, width: u32, height: u32) {
         self.video_frame_texture.replace(
             texture::Texture::new_for_size(
-                frame_width,
-                frame_height,
+                width,
+                height,
                 &self.device,
                 &self.frame_bind_group_layout,
                 &self.effect_buffer,
@@ -414,14 +405,19 @@ impl Renderer {
         );
     }
 
-    pub fn sample_to_texture(&self, sample: &Sample) {
+    fn update_output_texture_size(&mut self, width: u32, height: u32) {
+        self.update_render_target(width, height);
+        self.output_dimensions = (width, height);
+    }
+
+    fn sample_to_texture(&self, sample: &Sample) {
         self.video_frame_texture
             .borrow()
             .write_from_sample(&self.queue, sample);
         self.queue.submit([]);
     }
 
-    pub fn populate_effect_buffer(
+    fn populate_effect_buffer(
         effect_parameters: EffectParameters,
         queue: &wgpu::Queue,
         buffer: &wgpu::Buffer,
@@ -437,13 +433,8 @@ impl Renderer {
         let buffer = bytemuck::cast_slice_mut(&mut view);
         effect_parameters.populate_buffer(buffer);
     }
-    pub fn update_effects(&mut self, parameters: EffectParameters) {
-        self.effect_parameters = parameters;
-        Self::populate_effect_buffer(self.effect_parameters, &self.queue, &self.effect_buffer);
-        self.queue.submit([]);
-    }
 
-    pub fn prepare_video_frame_render_pass(&mut self) -> wgpu::CommandBuffer {
+    fn prepare_video_frame_render_pass(&mut self) -> wgpu::CommandBuffer {
         let texture = self.video_frame_texture.borrow();
 
         let mut encoder = self
@@ -518,7 +509,7 @@ impl Renderer {
     }
 
     // todo: accept multiple command buffers
-    pub async fn render(
+    async fn render(
         &mut self,
         command_buffer: wgpu::CommandBuffer,
     ) -> Result<gdk::Texture, wgpu::SurfaceError> {
@@ -565,19 +556,21 @@ impl Renderer {
         let caps = sample.caps().expect("sample without caps");
         let info = gst_video::VideoInfo::from_caps(caps).expect("Failed to parse caps");
 
-        if !self.is_dimension_equal_output(info.width(), info.height()) {
-            self.update_input_texture_output_texture_size(
-                info.width(),
-                info.height(),
-                info.width(),
-                info.height(),
-            );
+        if !self.is_size_equal_to_curr_input_size(info.width(), info.height()) {
+            self.update_input_texture_size(info.width(), info.height());
+            self.timer.reset();
         }
         self.sample_to_texture(sample);
 
         let command_buffer = self.prepare_video_frame_render_pass();
 
         self.render(command_buffer).await.expect("Could not render")
+    }
+
+    pub fn update_effects(&mut self, parameters: EffectParameters) {
+        self.effect_parameters = parameters;
+        Self::populate_effect_buffer(self.effect_parameters, &self.queue, &self.effect_buffer);
+        self.queue.submit([]);
     }
 
     pub async fn render_new_effects(
@@ -588,5 +581,9 @@ impl Renderer {
 
         let command_buffer = self.prepare_video_frame_render_pass();
         self.render(command_buffer).await.expect("Could not render")
+    }
+
+    pub fn update_output_resolution(&mut self, width: u32, height: u32) {
+        self.update_output_texture_size(width, height);
     }
 }
