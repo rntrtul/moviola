@@ -1,6 +1,6 @@
 use crate::renderer::EffectParameters;
 use crate::ui::sidebar::adjust::AdjustPageMsg::ContrastChange;
-use crate::ui::slider::adjust_row::{AdjustRowModel, AdjustRowOutput};
+use crate::ui::slider::adjust_row::{AdjustRowInit, AdjustRowModel, AdjustRowOutput};
 use gtk4::prelude::WidgetExt;
 use relm4::{
     adw, Component, ComponentController, ComponentParts, ComponentSender, Controller,
@@ -44,7 +44,9 @@ impl SimpleComponent for AdjustPageModel {
         sender: ComponentSender<Self>,
     ) -> ComponentParts<Self> {
         let contrast_slider = AdjustRowModel::builder()
-            .launch("Contrast".to_string())
+            .launch(AdjustRowInit::default_with_label_values(
+                "Contrast", 0.0, 2.0, 1.0,
+            ))
             .forward(sender.input_sender(), |msg| match msg {
                 AdjustRowOutput::ValueChanged(val) => AdjustPageMsg::ContrastChange(val),
             });

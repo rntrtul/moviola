@@ -6,6 +6,10 @@ use gtk4::subclass::widget::WidgetImpl;
 use gtk4::{gdk, graphene, gsk, Orientation, Snapshot};
 use std::cell::Cell;
 
+// todo: have a display range so can expose different ranges as -1,0,1
+//  while under the hood dealing with different ranges
+//  (for contrast don't want to go from 0, since that becomes a grey image)
+//
 pub struct Slider {
     value: Cell<f32>,
     min_value: Cell<f32>,
@@ -27,7 +31,7 @@ impl Default for Slider {
             value_step_size: Cell::new(0.01),
             show_ticks: Cell::new(false),
             show_bar: Cell::new(true),
-            fill_colour: Cell::new(gdk::RGBA::new(0.5, 0.5, 0.5, 0.5)),
+            fill_colour: Cell::new(gdk::RGBA::new(0.5, 0.5, 0.5, 1.0)),
         }
     }
 }
@@ -120,6 +124,17 @@ impl Slider {
 impl crate::ui::slider::Slider {
     pub(crate) fn new() -> Self {
         glib::Object::builder().build()
+    }
+
+    pub(crate) fn new_with_val(min: f32, max: f32, default: f32) -> Self {
+        let obj: Self = glib::Object::builder().build();
+
+        obj.imp().min_value.set(min);
+        obj.imp().max_value.set(max);
+        obj.imp().default_value.set(default);
+        obj.imp().value.set(default);
+
+        obj
     }
 
     pub(crate) fn drag_update(&self, target: f64) {

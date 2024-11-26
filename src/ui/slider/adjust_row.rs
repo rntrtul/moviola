@@ -19,18 +19,52 @@ pub enum AdjustRowOutput {
     ValueChanged(f64),
 }
 
+#[derive(Debug)]
+pub struct AdjustRowInit {
+    label: String,
+    show_label: bool,
+    show_value: bool,
+    min_value: f32,
+    max_value: f32,
+    default_value: f32,
+}
+
+impl AdjustRowInit {
+    pub fn default_with_label(label: &str) -> Self {
+        Self {
+            label: label.to_string(),
+            show_label: true,
+            show_value: true,
+            min_value: -1.0,
+            max_value: 1.0,
+            default_value: 0.0,
+        }
+    }
+
+    pub fn default_with_label_values(label: &str, min: f32, max: f32, default: f32) -> Self {
+        Self {
+            label: label.to_string(),
+            show_label: true,
+            show_value: true,
+            min_value: min,
+            max_value: max,
+            default_value: default,
+        }
+    }
+}
+
 #[relm4::component(pub)]
 impl Component for AdjustRowModel {
     type Input = AdjustRowMsg;
     type Output = AdjustRowOutput;
-    type Init = String;
+    type Init = AdjustRowInit;
     type CommandOutput = ();
 
     view! {
         #[root]
         gtk::Overlay{
             #[wrap(Some)]
-            set_child: slider = &Slider::new() {
+            set_child: slider = &Slider::new_with_val(init.min_value, init.max_value, init.default_value) {
                 add_controller = gtk::GestureDrag {
                     connect_drag_update[sender] => move |drag,x_offset,_| {
                         let (start_x, _) = drag.start_point().unwrap();
@@ -52,7 +86,7 @@ impl Component for AdjustRowModel {
                 },
                 #[name = "value_label"]
                 gtk::Label {
-                    set_label: "0.00",
+                    set_label: format!("{:.2}", init.default_value).as_str(),
                     #[watch]
                     set_visible: model.show_value,
                     set_halign: gtk::Align::End,
@@ -69,9 +103,9 @@ impl Component for AdjustRowModel {
         sender: ComponentSender<Self>,
     ) -> ComponentParts<Self> {
         let model = AdjustRowModel {
-            label: init,
-            show_label: true,
-            show_value: true,
+            label: init.label,
+            show_label: init.show_label,
+            show_value: init.show_value,
         };
 
         let widgets = view_output!();
