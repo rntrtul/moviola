@@ -26,7 +26,7 @@ struct Cli {
 fn main() {
     let cli = Cli::parse();
 
-    let tracing_sub = tracing_subscriber::registry()
+    let _tracing_sub = tracing_subscriber::registry()
         .with(fmt::layer().with_span_events(FmtSpan::FULL))
         .with(EnvFilter::from_default_env())
         .init();

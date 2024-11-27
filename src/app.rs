@@ -114,6 +114,20 @@ impl App {
             sender.input(AppMsg::ExportVideo(file.uri().to_string()));
         });
     }
+
+    fn render_curr_frame(&self, sender: &ComponentSender<Self>) {
+        let renderer = Arc::clone(&self.renderer);
+
+        sender.oneshot_command(async move {
+            let tex;
+            {
+                let mut renderer = renderer.lock().await;
+                renderer.timer.start_time(FRAME_TIME_IDX);
+                tex = renderer.render_curr_sample().await;
+            }
+            AppCommandMsg::FrameRendered(tex)
+        })
+    }
 }
 
 #[relm4::component(pub)]
@@ -376,6 +390,10 @@ impl Component for App {
                 self.preview_frame
                     .emit(PreviewFrameMsg::Orient(orientation));
                 self.renderer.blocking_lock().orient(orientation);
+
+                if !self.player.borrow().is_playing() {
+                    self.render_curr_frame(&sender);
+                }
             }
             AppMsg::ShowCropBox => self.preview_frame.emit(PreviewFrameMsg::CropBoxShow),
             AppMsg::HideCropBox => self.preview_frame.emit(PreviewFrameMsg::CropBoxHide),
@@ -390,20 +408,10 @@ impl Component for App {
                 self.preview_frame.emit(PreviewFrameMsg::ZoomShow)
             }
             AppMsg::EffectsChanged(params) => {
-                if !self.player.borrow().is_playing() {
-                    let renderer = Arc::clone(&self.renderer);
+                self.renderer.blocking_lock().update_effects(params);
 
-                    sender.oneshot_command(async move {
-                        let tex;
-                        {
-                            let mut renderer = renderer.lock().await;
-                            renderer.timer.start_time(FRAME_TIME_IDX);
-                            tex = renderer.render_new_effects(params).await;
-                        }
-                        AppCommandMsg::FrameRendered(tex)
-                    })
-                } else {
-                    self.renderer.blocking_lock().update_effects(params);
+                if !self.player.borrow().is_playing() {
+                    self.render_curr_frame(&sender);
                 }
             }
         }

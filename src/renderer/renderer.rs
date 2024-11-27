@@ -384,8 +384,7 @@ impl Renderer {
             });
 
         if self.orientation.is_vertical() != orientation.is_vertical() {
-            self.output_dimensions = (self.output_dimensions.1, self.output_dimensions.0);
-            self.update_render_target(self.output_dimensions.0, self.output_dimensions.1);
+            self.update_output_texture_size(self.output_dimensions.1, self.output_dimensions.0);
         }
 
         self.orientation = orientation;
@@ -573,12 +572,7 @@ impl Renderer {
         self.queue.submit([]);
     }
 
-    pub async fn render_new_effects(
-        &mut self,
-        effect_parameters: EffectParameters,
-    ) -> gdk::Texture {
-        self.update_effects(effect_parameters);
-
+    pub async fn render_curr_sample(&mut self) -> gdk::Texture {
         let command_buffer = self.prepare_video_frame_render_pass();
         self.render(command_buffer).await.expect("Could not render")
     }
