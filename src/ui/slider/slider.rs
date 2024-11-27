@@ -6,18 +6,56 @@ use gtk4::subclass::widget::WidgetImpl;
 use gtk4::{gdk, graphene, gsk, Orientation, Snapshot};
 use std::cell::Cell;
 
-// todo: have a display range so can expose different ranges as -1,0,1
-//  while under the hood dealing with different ranges
-//  (for contrast don't want to go from 0, since that becomes a grey image)
-//
+#[derive(Clone, Copy, Debug)]
+pub struct Range {
+    pub min: f64,
+    pub max: f64,
+}
+
+impl Default for Range {
+    fn default() -> Self {
+        Range {
+            min: -1.0,
+            max: 1.0,
+        }
+    }
+}
+
+impl Range {
+    pub fn new(min: f64, max: f64) -> Self {
+        Range { min, max }
+    }
+
+    pub fn distance(&self) -> f64 {
+        self.max - self.min
+    }
+
+    pub fn percent_from_value(&self, value: f64) -> f64 {
+        (value - self.min) / self.distance()
+    }
+
+    pub fn value_from_percent(&self, percent: f64) -> f64 {
+        (self.distance() * percent) + self.min
+    }
+
+    pub fn map_value_from_range(&self, range: Range, value: f64) -> f64 {
+        self.value_from_percent(range.percent_from_value(value))
+    }
+}
+
+pub enum SliderFillMode {
+    EdgeToEdge,
+    CenterOut,
+}
+
 pub struct Slider {
-    value: Cell<f32>,
-    min_value: Cell<f32>,
-    max_value: Cell<f32>,
-    default_value: Cell<f32>,
-    value_step_size: Cell<f32>,
+    value: Cell<f64>,
+    value_range: Cell<Range>,
+    default_value: Cell<f64>,
+    value_step_size: Cell<f64>,
     show_ticks: Cell<bool>,
     show_bar: Cell<bool>,
+    fill_mode: SliderFillMode,
     fill_colour: Cell<gdk::RGBA>,
 }
 
@@ -25,12 +63,12 @@ impl Default for Slider {
     fn default() -> Self {
         Self {
             value: Cell::new(0.0),
-            min_value: Cell::new(-1.0),
-            max_value: Cell::new(1.0),
+            value_range: Cell::new(Range::default()),
             default_value: Cell::new(0.0),
             value_step_size: Cell::new(0.01),
             show_ticks: Cell::new(false),
             show_bar: Cell::new(true),
+            fill_mode: SliderFillMode::EdgeToEdge,
             fill_colour: Cell::new(gdk::RGBA::new(0.5, 0.5, 0.5, 1.0)),
         }
     }
@@ -57,7 +95,7 @@ impl WidgetImpl for Slider {
             &graphene::Rect::new(
                 0f32,
                 0f32,
-                self.value_to_width_percent(),
+                self.value_to_width_percent() as f32,
                 widget.height() as f32,
             ),
         );
@@ -92,8 +130,10 @@ impl Slider {
         snapshot.append_stroke(&line, &stroke, &gdk::RGBA::WHITE);
     }
 
-    fn percent_to_stepped_value(&self, percent: f32) -> f32 {
-        let value = (percent * self.value_range()) + self.min_value.get();
+    fn percent_to_stepped_value(&self, percent: f64) -> f64 {
+        let range = self.value_range.get();
+
+        let value = (percent * range.distance()) + range.min;
         let remainder = value.abs() % self.value_step_size.get();
 
         if remainder == 0.0 {
@@ -107,17 +147,8 @@ impl Slider {
         }
     }
 
-    fn value_range(&self) -> f32 {
-        self.max_value.get() - self.min_value.get()
-    }
-
-    fn value_as_range_percent(&self) -> f32 {
-        // fixme: handle negative values as valid (0 could be 50%)
-        (self.value.get() - self.min_value.get()) / self.value_range()
-    }
-
-    fn value_to_width_percent(&self) -> f32 {
-        self.obj().width() as f32 * self.value_as_range_percent()
+    fn value_to_width_percent(&self) -> f64 {
+        self.obj().width() as f64 * self.value_range.get().percent_from_value(self.value.get())
     }
 }
 
@@ -126,11 +157,10 @@ impl crate::ui::slider::Slider {
         glib::Object::builder().build()
     }
 
-    pub(crate) fn new_with_val(min: f32, max: f32, default: f32) -> Self {
+    pub(crate) fn new_with_range(range: Range, default: f64) -> Self {
         let obj: Self = glib::Object::builder().build();
 
-        obj.imp().min_value.set(min);
-        obj.imp().max_value.set(max);
+        obj.imp().value_range.set(range);
         obj.imp().default_value.set(default);
         obj.imp().value.set(default);
 
@@ -139,13 +169,24 @@ impl crate::ui::slider::Slider {
 
     pub(crate) fn drag_update(&self, target: f64) {
         let percent = (target / self.width() as f64).clamp(0.0, 1.0);
-        let value = self.imp().percent_to_stepped_value(percent as f32);
+        let value = self.imp().percent_to_stepped_value(percent);
 
         self.imp().value.set(value);
         self.queue_draw();
     }
 
-    pub(crate) fn value(&self) -> f32 {
+    pub(crate) fn value(&self) -> f64 {
         self.imp().value.get()
+    }
+
+    pub(crate) fn value_as_range_percent(&self) -> f64 {
+        self.imp()
+            .value_range
+            .get()
+            .percent_from_value(self.imp().value.get())
+    }
+
+    pub(crate) fn map_value_to_range(&self, range: Range) -> f64 {
+        range.map_value_from_range(self.imp().value_range.get(), self.imp().value.get())
     }
 }

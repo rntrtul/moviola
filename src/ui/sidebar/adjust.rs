@@ -45,10 +45,10 @@ impl SimpleComponent for AdjustPageModel {
     ) -> ComponentParts<Self> {
         let contrast_slider = AdjustRowModel::builder()
             .launch(AdjustRowInit::default_with_label_values(
-                "Contrast", 0.0, 2.0, 1.0,
+                "Contrast", 0.5, 1.5, 1.0,
             ))
             .forward(sender.input_sender(), |msg| match msg {
-                AdjustRowOutput::ValueChanged(val) => AdjustPageMsg::ContrastChange(val),
+                AdjustRowOutput::ValueChanged(val) => ContrastChange(val),
             });
 
         let model = AdjustPageModel {

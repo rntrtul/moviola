@@ -1,3 +1,4 @@
+use crate::ui::slider::slider::Range;
 use crate::ui::slider::Slider;
 use gtk4::prelude::{GestureDragExt, WidgetExt};
 use relm4::{gtk, Component, ComponentParts, ComponentSender};
@@ -7,6 +8,7 @@ pub struct AdjustRowModel {
     label: String,
     show_label: bool,
     show_value: bool,
+    display_range: Range,
 }
 
 #[derive(Debug)]
@@ -24,9 +26,9 @@ pub struct AdjustRowInit {
     label: String,
     show_label: bool,
     show_value: bool,
-    min_value: f32,
-    max_value: f32,
-    default_value: f32,
+    value_range: Range,
+    display_range: Range,
+    default_value: f64,
 }
 
 impl AdjustRowInit {
@@ -35,19 +37,19 @@ impl AdjustRowInit {
             label: label.to_string(),
             show_label: true,
             show_value: true,
-            min_value: -1.0,
-            max_value: 1.0,
+            value_range: Range::default(),
+            display_range: Range::new(-100.0, 100.0),
             default_value: 0.0,
         }
     }
 
-    pub fn default_with_label_values(label: &str, min: f32, max: f32, default: f32) -> Self {
+    pub fn default_with_label_values(label: &str, min: f64, max: f64, default: f64) -> Self {
         Self {
             label: label.to_string(),
             show_label: true,
             show_value: true,
-            min_value: min,
-            max_value: max,
+            value_range: Range::new(min, max),
+            display_range: Range::new(-100.0, 100.0),
             default_value: default,
         }
     }
@@ -64,7 +66,7 @@ impl Component for AdjustRowModel {
         #[root]
         gtk::Overlay{
             #[wrap(Some)]
-            set_child: slider = &Slider::new_with_val(init.min_value, init.max_value, init.default_value) {
+            set_child: slider = &Slider::new_with_range(init.value_range, init.default_value) {
                 add_controller = gtk::GestureDrag {
                     connect_drag_update[sender] => move |drag,x_offset,_| {
                         let (start_x, _) = drag.start_point().unwrap();
@@ -86,7 +88,7 @@ impl Component for AdjustRowModel {
                 },
                 #[name = "value_label"]
                 gtk::Label {
-                    set_label: format!("{:.2}", init.default_value).as_str(),
+                    set_label: model.format_init_display_value(init.value_range, init.default_value).as_str(),
                     #[watch]
                     set_visible: model.show_value,
                     set_halign: gtk::Align::End,
@@ -106,6 +108,7 @@ impl Component for AdjustRowModel {
             label: init.label,
             show_label: init.show_label,
             show_value: init.show_value,
+            display_range: init.display_range,
         };
 
         let widgets = view_output!();
@@ -122,21 +125,34 @@ impl Component for AdjustRowModel {
     ) {
         match message {
             AdjustRowMsg::DragUpdate(target) => {
-                let old_value = widgets.slider.value();
+                let old_value = widgets.slider.value_as_range_percent();
                 widgets.slider.drag_update(target);
-                let new_value = widgets.slider.value();
+                let new_value = widgets.slider.value_as_range_percent();
 
                 if old_value != new_value {
-                    widgets
-                        .value_label
-                        .set_label(format!("{:.2}", new_value).as_str());
+                    let display_value = widgets.slider.map_value_to_range(self.display_range);
+                    let display_str = self.format_display_value(display_value);
+                    widgets.value_label.set_label(display_str.as_str());
                     sender
-                        .output(AdjustRowOutput::ValueChanged(new_value as f64))
+                        .output(AdjustRowOutput::ValueChanged(widgets.slider.value()))
                         .unwrap();
                 }
             }
         }
 
         self.update_view(widgets, sender);
+    }
+}
+
+impl AdjustRowModel {
+    fn format_display_value(&self, value: f64) -> String {
+        format!("{:.0}", value)
+    }
+
+    fn format_init_display_value(&self, value_range: Range, default_value: f64) -> String {
+        self.format_display_value(
+            self.display_range
+                .map_value_from_range(value_range, default_value),
+        )
     }
 }
