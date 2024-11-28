@@ -1,4 +1,4 @@
-use crate::ui::slider::slider::Range;
+use crate::ui::slider::slider::{Range, SliderFillMode};
 use crate::ui::slider::Slider;
 use gtk4::prelude::{GestureDragExt, WidgetExt};
 use relm4::{gtk, Component, ComponentParts, ComponentSender};
@@ -29,6 +29,7 @@ pub struct AdjustRowInit {
     value_range: Range,
     display_range: Range,
     default_value: f64,
+    fill_mode: SliderFillMode,
 }
 
 impl AdjustRowInit {
@@ -40,6 +41,7 @@ impl AdjustRowInit {
             value_range: Range::default(),
             display_range: Range::new(-100.0, 100.0),
             default_value: 0.0,
+            fill_mode: SliderFillMode::EdgeToEdge,
         }
     }
 
@@ -49,8 +51,27 @@ impl AdjustRowInit {
             show_label: true,
             show_value: true,
             value_range: Range::new(min, max),
-            display_range: Range::new(-100.0, 100.0),
+            display_range: Range::new(0.0, 100.0),
             default_value: default,
+            fill_mode: SliderFillMode::EdgeToEdge,
+        }
+    }
+
+    pub fn default_with(
+        label: &str,
+        min: f64,
+        max: f64,
+        default: f64,
+        fill_mode: SliderFillMode,
+    ) -> Self {
+        Self {
+            label: label.to_string(),
+            show_label: true,
+            show_value: true,
+            value_range: Range::new(min, max),
+            display_range: Range::new(0.0, 100.0),
+            default_value: default,
+            fill_mode,
         }
     }
 }
@@ -66,7 +87,7 @@ impl Component for AdjustRowModel {
         #[root]
         gtk::Overlay{
             #[wrap(Some)]
-            set_child: slider = &Slider::new_with_range(init.value_range, init.default_value) {
+            set_child: slider = &Slider::new_with_range(init.value_range, init.default_value, init.fill_mode) {
                 add_controller = gtk::GestureDrag {
                     connect_drag_update[sender] => move |drag,x_offset,_| {
                         let (start_x, _) = drag.start_point().unwrap();

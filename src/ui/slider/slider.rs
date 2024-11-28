@@ -43,6 +43,7 @@ impl Range {
     }
 }
 
+#[derive(Clone, Copy, Debug)]
 pub enum SliderFillMode {
     EdgeToEdge,
     CenterOut,
@@ -55,7 +56,7 @@ pub struct Slider {
     value_step_size: Cell<f64>,
     show_ticks: Cell<bool>,
     show_bar: Cell<bool>,
-    fill_mode: SliderFillMode,
+    fill_mode: Cell<SliderFillMode>,
     fill_colour: Cell<gdk::RGBA>,
 }
 
@@ -66,10 +67,10 @@ impl Default for Slider {
             value_range: Cell::new(Range::default()),
             default_value: Cell::new(0.0),
             value_step_size: Cell::new(0.01),
-            show_ticks: Cell::new(false),
+            show_ticks: Cell::new(true),
             show_bar: Cell::new(true),
-            fill_mode: SliderFillMode::EdgeToEdge,
-            fill_colour: Cell::new(gdk::RGBA::new(0.5, 0.5, 0.5, 1.0)),
+            fill_mode: Cell::new(SliderFillMode::EdgeToEdge),
+            fill_colour: Cell::new(gdk::RGBA::new(0.29, 0.29, 0.29, 1.0)),
         }
     }
 }
@@ -90,16 +91,37 @@ impl WidgetImpl for Slider {
     fn snapshot(&self, snapshot: &Snapshot) {
         let widget = self.obj();
         snapshot.save();
-        snapshot.append_color(
-            &gdk::RGBA::new(0.294, 0.294, 0.294, 1.0),
-            &graphene::Rect::new(
+        let range = self.value_range.get();
+        let value = self.value.get();
+
+        let fill_rect = match self.fill_mode.get() {
+            SliderFillMode::EdgeToEdge => graphene::Rect::new(
                 0f32,
                 0f32,
                 self.value_to_width_percent() as f32,
                 widget.height() as f32,
             ),
-        );
-        self.draw_tickmarks(snapshot);
+            SliderFillMode::CenterOut => {
+                let center_x = widget.width() as f32 / 2.0;
+                let rel_percent = range.percent_from_value(value) - 0.50;
+                let fill_width = (widget.width() as f64 * rel_percent).abs() as f32;
+
+                let (start_x, width) = if rel_percent < 0.0 {
+                    (center_x - fill_width, fill_width)
+                } else {
+                    (center_x, fill_width)
+                };
+
+                graphene::Rect::new(start_x, 0f32, width, widget.height() as f32)
+            }
+        };
+
+        snapshot.append_color(&self.fill_colour.get(), &fill_rect);
+
+        if self.show_ticks.get() {
+            self.draw_tickmarks(snapshot);
+        }
+
         snapshot.restore();
     }
 }
@@ -157,13 +179,17 @@ impl crate::ui::slider::Slider {
         glib::Object::builder().build()
     }
 
-    pub(crate) fn new_with_range(range: Range, default: f64) -> Self {
+    pub(crate) fn new_with_range(
+        range: Range,
+        default_value: f64,
+        fill_mode: SliderFillMode,
+    ) -> Self {
         let obj: Self = glib::Object::builder().build();
 
         obj.imp().value_range.set(range);
-        obj.imp().default_value.set(default);
-        obj.imp().value.set(default);
-
+        obj.imp().default_value.set(default_value);
+        obj.imp().value.set(default_value);
+        obj.imp().fill_mode.set(fill_mode);
         obj
     }
 
