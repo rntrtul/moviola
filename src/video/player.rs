@@ -1,6 +1,5 @@
-use crate::app::{App, AppCommandMsg, AppMsg};
-use crate::renderer::renderer::Renderer;
-use crate::renderer::FRAME_TIME_IDX;
+use crate::app::{App, AppMsg};
+use crate::renderer::RenderCmd;
 use crate::video::metadata::{
     AudioCodec, AudioStreamInfo, ContainerFormat, VideoCodec, VideoContainerInfo, VideoInfo,
     AUDIO_BITRATE_DEFAULT, VIDEO_BITRATE_DEFAULT,
@@ -10,8 +9,7 @@ use gst::prelude::{ElementExt, ElementExtManual, ObjectExt, PadExt};
 use gst::{Bus, ClockTime, FlowSuccess, SeekFlags, State};
 use relm4::ComponentSender;
 use std::fmt::Debug;
-use std::sync::Arc;
-use tokio::sync::Mutex;
+use std::sync::mpsc;
 
 #[derive(Debug)]
 pub enum PlayerError {
@@ -29,7 +27,7 @@ pub struct Player {
 }
 
 impl Player {
-    pub fn new(app_sender: ComponentSender<App>, renderer: Arc<Mutex<Renderer>>) -> Self {
+    pub fn new(app_sender: ComponentSender<App>, sample_sender: mpsc::Sender<RenderCmd>) -> Self {
         let playbin = gst::ElementFactory::make("playbin")
             .name("playbin")
             .build()
@@ -58,43 +56,20 @@ impl Player {
             )
             .build();
 
-        let sample_sender = app_sender.clone();
-        let preroll_sender = app_sender.clone();
-
-        let preroll_renderer = Arc::clone(&renderer);
-        let sample_renderer = Arc::clone(&renderer);
+        let preroll_sender = sample_sender.clone();
 
         app_sink.set_callbacks(
             gst_app::AppSinkCallbacks::builder()
                 .new_sample(move |appsink| {
-                    let sample_renderer = Arc::clone(&sample_renderer);
                     let sample = appsink.pull_sample().unwrap();
-
-                    sample_sender.oneshot_command(async move {
-                        let tex;
-                        {
-                            let mut renderer = sample_renderer.lock().await;
-                            renderer.timer.start_time(FRAME_TIME_IDX);
-                            tex = renderer.render_sample(&sample).await;
-                        }
-                        AppCommandMsg::FrameRendered(tex)
-                    });
-
+                    sample_sender.send(RenderCmd::RenderSample(sample)).unwrap();
                     Ok(FlowSuccess::Ok)
                 })
                 .new_preroll(move |appsink| {
-                    let preroll_renderer = Arc::clone(&preroll_renderer);
                     let sample = appsink.pull_preroll().unwrap();
-
-                    preroll_sender.oneshot_command(async move {
-                        let tex;
-                        {
-                            let mut renderer = preroll_renderer.lock().await;
-                            renderer.timer.start_time(FRAME_TIME_IDX);
-                            tex = renderer.render_sample(&sample).await;
-                        }
-                        AppCommandMsg::FrameRendered(tex)
-                    });
+                    preroll_sender
+                        .send(RenderCmd::RenderSample(sample))
+                        .unwrap();
                     Ok(FlowSuccess::Ok)
                 })
                 .eos(move |_| {

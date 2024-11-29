@@ -66,11 +66,38 @@ impl InFlightTimer {
     }
 }
 
+pub(crate) struct SingleTimer {
+    avg: RollingAverage,
+    timer: InFlightTimer,
+}
+
+impl SingleTimer {
+    pub fn new() -> Self {
+        Self {
+            avg: RollingAverage::new(SAMPLES_FOR_AVG),
+            timer: InFlightTimer::new(),
+        }
+    }
+
+    pub fn avg(&self) -> f64 {
+        self.avg.avg()
+    }
+
+    pub fn start_time(&mut self) {
+        self.timer.start_time();
+    }
+
+    pub fn stop_time(&mut self) {
+        let elapsed = self.timer.stop_time();
+        self.avg.add_sample(elapsed.as_millis() as f64);
+    }
+}
+
 pub(crate) struct Timer {
     pub(crate) query_set: wgpu::QuerySet,
     pub(crate) resolve_buffer: wgpu::Buffer,
     pub(crate) destination_buffer: wgpu::Buffer,
-    in_flight_times: HashMap<String, (InFlightTimer, RollingAverage)>,
+    in_flight_times: HashMap<String, SingleTimer>,
     gpu_render_times: RollingAverage,
     gpu_compute_times: RollingAverage,
     total_frames_recorded: u32,
@@ -119,24 +146,17 @@ impl Timer {
 
     pub fn start_time(&mut self, label: &str) {
         if !self.in_flight_times.contains_key(label) {
-            self.in_flight_times.insert(
-                label.to_string(),
-                (InFlightTimer::new(), RollingAverage::new(SAMPLES_FOR_AVG)),
-            );
+            self.in_flight_times
+                .insert(label.to_string(), SingleTimer::new());
         }
-        self.in_flight_times.get_mut(label).unwrap().0.start_time();
+        self.in_flight_times.get_mut(label).unwrap().start_time();
     }
 
     pub fn stop_time(&mut self, label: &str) {
         if !self.in_flight_times.contains_key(label) {
             return;
         }
-        let elapsed = self.in_flight_times.get_mut(label).unwrap().0.stop_time();
-        self.in_flight_times
-            .get_mut(label)
-            .unwrap()
-            .1
-            .add_sample(elapsed.as_millis() as f64);
+        self.in_flight_times.get_mut(label).unwrap().stop_time();
     }
 
     pub fn collect_query_results(&mut self, device: &wgpu::Device, queue: &wgpu::Queue) {
@@ -171,8 +191,8 @@ impl Timer {
                 "gpu: {:.2}μs (r {:.2} + c {:.2})",
                 total_time, render_time, compute_time
             );
-            for (label, (_, avg)) in self.in_flight_times.iter() {
-                msg.push_str(&format!(" {label}: {:.2}ms", avg.avg()));
+            for (label, timer) in self.in_flight_times.iter() {
+                msg.push_str(&format!(" {label}: {:.2}ms", timer.avg()));
             }
             tracing::trace!(msg);
         }

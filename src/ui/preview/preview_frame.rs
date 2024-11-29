@@ -130,7 +130,7 @@ impl PreviewFrameModel {
         self.preview.preview_frame_size()
     }
 
-    pub fn is_preview_size_changed_take_if_raised(&self) -> bool {
+    pub fn check_and_lower_preview_size_changed(&self) -> bool {
         let changed = self.preview_size_changed.get();
         self.preview_size_changed.set(false);
         changed

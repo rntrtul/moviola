@@ -372,24 +372,6 @@ impl Renderer {
         width == texture.width() && height == texture.height()
     }
 
-    pub fn orient(&mut self, orientation: Orientation) {
-        self.video_frame_rect.orient(orientation);
-
-        self.vertex_buffer = self
-            .device
-            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("Vertex buffer"),
-                contents: bytemuck::cast_slice(&self.video_frame_rect.vertices()),
-                usage: wgpu::BufferUsages::VERTEX,
-            });
-
-        if self.orientation.is_vertical() != orientation.is_vertical() {
-            self.update_output_texture_size(self.output_dimensions.1, self.output_dimensions.0);
-        }
-
-        self.orientation = orientation;
-    }
-
     fn update_input_texture_size(&mut self, width: u32, height: u32) {
         self.video_frame_texture.replace(
             texture::Texture::new_for_size(
@@ -579,5 +561,23 @@ impl Renderer {
 
     pub fn update_output_resolution(&mut self, width: u32, height: u32) {
         self.update_output_texture_size(width, height);
+    }
+
+    pub fn orient(&mut self, orientation: Orientation) {
+        self.video_frame_rect.orient(orientation);
+
+        self.vertex_buffer = self
+            .device
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("Vertex buffer"),
+                contents: bytemuck::cast_slice(&self.video_frame_rect.vertices()),
+                usage: wgpu::BufferUsages::VERTEX,
+            });
+
+        if self.orientation.is_vertical() != orientation.is_vertical() {
+            self.update_output_texture_size(self.output_dimensions.1, self.output_dimensions.0);
+        }
+
+        self.orientation = orientation;
     }
 }
