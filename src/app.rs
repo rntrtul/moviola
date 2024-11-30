@@ -56,6 +56,7 @@ pub(super) enum AppMsg {
 
 #[derive(Debug)]
 pub enum AppCommandMsg {
+    InitWithvideo,
     VideoLoaded,
     FrameRendered(gdk::Texture),
 }
@@ -288,7 +289,7 @@ impl Component for App {
             video_is_loaded: false,
             video_is_exporting: false,
             player,
-            uri: None,
+            uri: path,
         };
 
         let widgets = view_output!();
@@ -298,8 +299,12 @@ impl Component for App {
             .model()
             .connect_switcher_to_stack(&widgets.page_switcher);
 
-        if path.is_some() {
-            sender.input(AppMsg::SetVideo(path.unwrap()));
+        if model.uri.is_some() {
+            sender.oneshot_command(async move {
+                // fixme: find way to wait for widgets to size and init instead of sleeping
+                tokio::time::sleep(std::time::Duration::from_millis(400)).await;
+                AppCommandMsg::InitWithvideo
+            });
         }
 
         ComponentParts { model, widgets }
@@ -467,6 +472,9 @@ impl Component for App {
 
                 self.preview_frame
                     .emit(PreviewFrameMsg::FrameRendered(texture));
+            }
+            AppCommandMsg::InitWithvideo => {
+                sender.input(AppMsg::SetVideo(self.uri.as_ref().unwrap().clone()));
             }
         }
 

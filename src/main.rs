@@ -40,7 +40,7 @@ fn main() {
     let theme = gtk::IconTheme::for_display(&gtk::gdk::Display::default().unwrap());
     theme.add_resource_path("/org/fareedsh/Moviola/icons");
 
-    RELM_THREADS.set(2).unwrap();
+    RELM_THREADS.set(4).unwrap();
     let style_manger = adw::StyleManager::default();
     style_manger.set_color_scheme(adw::ColorScheme::ForceDark);
 
