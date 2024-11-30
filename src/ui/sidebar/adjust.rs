@@ -1,23 +1,29 @@
 use crate::renderer::EffectParameters;
-use crate::ui::sidebar::adjust::AdjustPageMsg::ContrastChange;
+use crate::ui::sidebar::adjust::AdjustPageMsg::{
+    BrightnessChange, ContrastChange, SaturationChange,
+};
 use crate::ui::slider::adjust_row::{AdjustRowInit, AdjustRowModel, AdjustRowOutput};
 use crate::ui::slider::SliderFillMode;
 use crate::ui::Range;
-use gtk4::prelude::WidgetExt;
+use gtk4::prelude::{BoxExt, OrientableExt, WidgetExt};
 use relm4::component::Connector;
 use relm4::{
-    adw, Component, ComponentController, ComponentParts, ComponentSender, Controller,
+    adw, gtk, Component, ComponentController, ComponentParts, ComponentSender, Controller,
     SimpleComponent,
 };
 
 pub struct AdjustPageModel {
     parameters: EffectParameters,
     contrast_slider: Controller<AdjustRowModel>,
+    brigtness_slider: Controller<AdjustRowModel>,
+    saturation_slider: Controller<AdjustRowModel>,
 }
 
 #[derive(Debug)]
 pub enum AdjustPageMsg {
     ContrastChange(f64),
+    BrightnessChange(f64),
+    SaturationChange(f64),
 }
 
 #[derive(Debug)]
@@ -34,9 +40,16 @@ impl SimpleComponent for AdjustPageModel {
     view! {
         adw::PreferencesPage {
             set_hexpand: true,
+            adw::PreferencesGroup {
+                gtk::Box {
+                    set_hexpand: true,
+                    set_orientation: gtk::Orientation::Vertical,
+                    set_spacing: 10,
 
-            adw::PreferencesGroup{
-                model.contrast_slider.widget(){},
+                    model.contrast_slider.widget(){},
+                    model.brigtness_slider.widget(){},
+                    model.saturation_slider.widget(){},
+                },
             },
         }
     }
@@ -53,9 +66,21 @@ impl SimpleComponent for AdjustPageModel {
             },
         );
 
+        let brigtness_slider = build_slider("Brightness", EffectParameters::brigntess_range())
+            .forward(sender.input_sender(), |msg| match msg {
+                AdjustRowOutput::ValueChanged(val) => BrightnessChange(val),
+            });
+
+        let saturation_slider = build_slider("Saturation", EffectParameters::saturation_range())
+            .forward(sender.input_sender(), |msg| match msg {
+                AdjustRowOutput::ValueChanged(val) => SaturationChange(val),
+            });
+
         let model = AdjustPageModel {
             parameters: EffectParameters::new(),
             contrast_slider,
+            brigtness_slider,
+            saturation_slider,
         };
 
         let widgets = view_output!();
@@ -67,6 +92,18 @@ impl SimpleComponent for AdjustPageModel {
         match message {
             ContrastChange(level) => {
                 self.parameters.set_contrast(level as f32);
+                sender
+                    .output(AdjustPageOutput::EffectUpdate(self.parameters))
+                    .unwrap()
+            }
+            BrightnessChange(level) => {
+                self.parameters.set_brightness(level as f32);
+                sender
+                    .output(AdjustPageOutput::EffectUpdate(self.parameters))
+                    .unwrap()
+            }
+            SaturationChange(level) => {
+                self.parameters.set_saturation(level as f32);
                 sender
                     .output(AdjustPageOutput::EffectUpdate(self.parameters))
                     .unwrap()

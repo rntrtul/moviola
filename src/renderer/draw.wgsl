@@ -31,9 +31,24 @@ var<storage, read> effect_parameters: array<f32>;
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let colour = textureSample(t_diffuse, s_diffuse, in.tex_coords);
     
-    return contrast(colour, effect_parameters[0]);
+    return apply_colour_effects(colour);
 }
 
-fn contrast(colour: vec4<f32>, contrast: f32) -> vec4<f32> {
-    return ((colour - 0.5 ) * contrast) + 0.5;
+fn apply_colour_effects(colour: vec4<f32> ) -> vec4<f32> {
+    let contrast_bright = contrast_brigtness(colour);
+
+    return saturate(contrast_bright);
+}
+
+fn contrast_brigtness(colour: vec4<f32>) -> vec4<f32> {
+    let contrast = effect_parameters[0] ;
+    let brightness = effect_parameters[1];
+    //todo: should use midpoint as pow(0.5, 2.2)
+    return ((colour - 0.5 ) * contrast) + 0.5 + brightness;
+}
+
+fn saturate(colour: vec4<f32>) -> vec4<f32> {
+    let saturation = effect_parameters[2];
+    let luma = dot(colour, vec4<f32>(0.216279, 0.7515122, 0.0721750, 0.0));
+    return luma + saturation * (colour - luma);
 }
