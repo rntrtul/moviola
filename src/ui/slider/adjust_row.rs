@@ -74,6 +74,8 @@ impl Component for AdjustRowModel {
             add_overlay = &gtk::Box {
                 set_can_target: false,
                 set_hexpand: true,
+                set_margin_start: 12,
+                set_margin_end: 12,
 
                 gtk::Label {
                     set_label: &model.label,

@@ -4,6 +4,7 @@ use gtk4::prelude::{SnapshotExt, WidgetExt};
 use gtk4::subclass::prelude::{ObjectSubclassExt, ObjectSubclassIsExt};
 use gtk4::subclass::widget::WidgetImpl;
 use gtk4::{gdk, graphene, gsk, Orientation, Snapshot};
+use relm4::adw;
 use std::cell::Cell;
 
 // todo: move range into own file
@@ -60,6 +61,12 @@ pub enum SliderFillMode {
     CenterOut,
 }
 
+// todo: find better colours
+static BACKGROUND_COLOUR: gdk::RGBA = gdk::RGBA::new(0.23, 0.23, 0.23, 1.0);
+static FILL_COLOUR: gdk::RGBA = gdk::RGBA::new(0.3, 0.3, 0.3, 1.0);
+static BAR_WIDTH: f32 = 6f32;
+static BAR_OFFSET: f32 = BAR_WIDTH / 2.0;
+
 pub struct Slider {
     value: Cell<f64>,
     value_range: Cell<Range>,
@@ -75,11 +82,11 @@ impl Default for Slider {
         Self {
             value: Cell::new(0.0),
             value_range: Cell::new(Range::default()),
-            value_step_size: Cell::new(0.01),
+            value_step_size: Cell::new(0.005),
             show_ticks: Cell::new(true),
             show_bar: Cell::new(true),
             fill_mode: Cell::new(SliderFillMode::EdgeToEdge),
-            fill_colour: Cell::new(gdk::RGBA::new(0.29, 0.29, 0.29, 1.0)),
+            fill_colour: Cell::new(FILL_COLOUR),
         }
     }
 }
@@ -95,7 +102,7 @@ impl ObjectImpl for Slider {}
 
 impl WidgetImpl for Slider {
     fn measure(&self, _orientation: Orientation, _for_size: i32) -> (i32, i32, i32, i32) {
-        (0, 50, 0, 0)
+        (0, 40, 0, 0)
     }
     fn snapshot(&self, snapshot: &Snapshot) {
         let widget = self.obj();
@@ -103,33 +110,69 @@ impl WidgetImpl for Slider {
         let range = self.value_range.get();
         let value = self.value.get();
 
-        let fill_rect = match self.fill_mode.get() {
-            SliderFillMode::EdgeToEdge => graphene::Rect::new(
-                0f32,
-                0f32,
-                self.value_to_width_percent() as f32,
-                widget.height() as f32,
-            ),
+        let widget_rect =
+            graphene::Rect::new(0f32, 0f32, widget.width() as f32, widget.height() as f32);
+
+        let rounded_size = graphene::Size::new(4.0, 6.0);
+        snapshot.push_rounded_clip(&gsk::RoundedRect::new(
+            widget_rect,
+            rounded_size,
+            rounded_size,
+            rounded_size,
+            rounded_size,
+        ));
+
+        let (fill_rect, bar_rect) = match self.fill_mode.get() {
+            SliderFillMode::EdgeToEdge => {
+                let x = self.value_to_width_percent() as f32;
+                let bar_rect =
+                    graphene::Rect::new(x - BAR_OFFSET, 0f32, BAR_WIDTH, widget.height() as f32);
+
+                let fill_rect = graphene::Rect::new(
+                    0f32,
+                    0f32,
+                    self.value_to_width_percent() as f32,
+                    widget.height() as f32,
+                );
+
+                (fill_rect, bar_rect)
+            }
             SliderFillMode::CenterOut => {
                 let center_x = widget.width() as f32 / 2.0;
                 let rel_percent = range.percent_from_value(value) - 0.50;
                 let fill_width = (widget.width() as f64 * rel_percent).abs() as f32;
 
-                let (start_x, width) = if rel_percent < 0.0 {
-                    (center_x - fill_width, fill_width)
+                let (start_x, width, far_edge_x) = if rel_percent < 0.0 {
+                    (center_x - fill_width, fill_width, center_x - fill_width)
                 } else {
-                    (center_x, fill_width)
+                    (center_x, fill_width, center_x + fill_width)
                 };
 
-                graphene::Rect::new(start_x, 0f32, width, widget.height() as f32)
+                let bar_rect = graphene::Rect::new(
+                    far_edge_x - BAR_OFFSET,
+                    0f32,
+                    BAR_WIDTH,
+                    widget.height() as f32,
+                );
+
+                let fill_rect = graphene::Rect::new(start_x, 0f32, width, widget.height() as f32);
+
+                (fill_rect, bar_rect)
             }
         };
 
+        snapshot.append_color(&BACKGROUND_COLOUR, &widget_rect);
         snapshot.append_color(&self.fill_colour.get(), &fill_rect);
+        // todo: get actual accent colour
+        if self.show_bar.get() {
+            snapshot.append_color(&adw::AccentColor::Blue.to_rgba(), &bar_rect);
+        }
 
         if self.show_ticks.get() {
             self.draw_tickmarks(snapshot);
         }
+
+        snapshot.pop(); // popping clip
 
         snapshot.restore();
     }
