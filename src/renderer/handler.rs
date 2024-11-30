@@ -4,6 +4,7 @@ use crate::renderer::EffectParameters;
 use crate::ui::preview::Orientation;
 use gtk4::gdk;
 use std::cell::RefCell;
+use std::sync::atomic::AtomicBool;
 use std::sync::{mpsc, Arc};
 use std::thread;
 use tokio::sync::Mutex;
@@ -22,55 +23,144 @@ pub struct RendererHandler {
     frame_timer: RefCell<SingleTimer>,
 }
 
+fn render_frame(
+    sender: mpsc::Sender<gdk::Texture>,
+    renderer: Arc<Mutex<Renderer>>,
+    render_queued: Arc<AtomicBool>,
+    render_cmd_sender: mpsc::Sender<RenderCmd>,
+) {
+    tokio::spawn(async move {
+        let tex;
+        {
+            let mut renderer = renderer.lock().await;
+            tex = renderer.render_frame().await;
+        }
+        sender.send(tex).unwrap();
+
+        if render_queued.load(std::sync::atomic::Ordering::Relaxed) {
+            render_cmd_sender.send(RenderCmd::RenderFrame).unwrap();
+        }
+    });
+}
+
+async fn update_queued(
+    renderer: Arc<Mutex<Renderer>>,
+    effect_parms: &mut Option<EffectParameters>,
+    sample: &mut Option<gst::Sample>,
+    orientation: &mut Option<Orientation>,
+    output_res: &mut Option<(u32, u32)>,
+) {
+    let mut renderer = renderer.lock().await;
+
+    if let Some((width, height)) = output_res {
+        renderer.update_output_resolution(*width, *height);
+    }
+
+    if let Some(orientation) = orientation.take() {
+        renderer.orient(orientation);
+    }
+
+    if let Some(sample) = sample.take() {
+        renderer.upload_new_smple(&sample);
+    }
+
+    if let Some(params) = effect_parms.take() {
+        renderer.update_effects(params);
+    }
+}
+
 async fn render_loop(
     texture_sender: mpsc::Sender<gdk::Texture>,
     cmd_recv: mpsc::Receiver<RenderCmd>,
+    renderer_cmd_sender: mpsc::Sender<RenderCmd>,
 ) {
     let renderer = Arc::new(Mutex::new(pollster::block_on(Renderer::new())));
+
+    let mut queued_effect_params: Option<EffectParameters> = None;
+    let mut queued_output_resolution: Option<(u32, u32)> = None;
+    let mut queued_orientation: Option<Orientation> = None;
+    let mut queued_sample: Option<gst::Sample> = None;
+    let render_queued = Arc::new(AtomicBool::new(false));
 
     loop {
         let Ok(cmd) = cmd_recv.recv() else {
             break;
         };
 
-        // todo: check if already rendering.
-        //  if true update next_sample and then after render finishes return tex and do that framet.
-        //  Avoids rendering every frame if we will be are slow. User get most up to date img
-        //  probably most useful for when changing effects on a static image.
         match cmd {
             RenderCmd::UpdateEffects(params) => {
-                renderer.lock().await.update_effects(params);
+                queued_effect_params.replace(params);
+
+                if let Ok(mut renderer) = renderer.try_lock() {
+                    renderer.update_effects(queued_effect_params.take().unwrap());
+                } else {
+                    render_queued.store(true, std::sync::atomic::Ordering::Relaxed);
+                }
             }
             RenderCmd::RenderSample(sample) => {
-                let sender = texture_sender.clone();
-                let renderer = renderer.clone();
+                queued_sample.replace(sample);
 
-                tokio::spawn(async move {
-                    let tex;
-                    {
-                        let mut renderer = renderer.lock().await;
-                        tex = renderer.render_sample(&sample).await;
-                    }
-                    sender.send(tex).unwrap();
-                });
+                if let Ok(mut guarded_renderer) = renderer.try_lock() {
+                    guarded_renderer.upload_new_smple(&queued_sample.take().unwrap());
+                    drop(guarded_renderer);
+
+                    render_frame(
+                        texture_sender.clone(),
+                        renderer.clone(),
+                        render_queued.clone(),
+                        renderer_cmd_sender.clone(),
+                    );
+                } else {
+                    render_queued.store(true, std::sync::atomic::Ordering::Relaxed);
+                }
             }
             RenderCmd::RenderFrame => {
-                let sender = texture_sender.clone();
-                let renderer = renderer.clone();
-                tokio::spawn(async move {
-                    let tex;
-                    {
-                        let mut renderer = renderer.lock().await;
-                        tex = renderer.render_curr_sample().await;
+                // fixme: find better way of testing if lockable other than getting lock
+                //      and dropping it.
+                if let Ok(guarded_renderer) = renderer.try_lock() {
+                    drop(guarded_renderer);
+
+                    if render_queued.load(std::sync::atomic::Ordering::Relaxed) {
+                        render_queued.store(false, std::sync::atomic::Ordering::Relaxed);
+                        update_queued(
+                            renderer.clone(),
+                            &mut queued_effect_params,
+                            &mut queued_sample,
+                            &mut queued_orientation,
+                            &mut queued_output_resolution,
+                        )
+                        .await;
                     }
-                    sender.send(tex).unwrap();
-                });
+
+                    render_frame(
+                        texture_sender.clone(),
+                        renderer.clone(),
+                        render_queued.clone(),
+                        renderer_cmd_sender.clone(),
+                    );
+                } else {
+                    render_queued.store(true, std::sync::atomic::Ordering::Relaxed);
+                }
             }
-            RenderCmd::UpdateOutputResolution(width, height) => renderer
-                .lock()
-                .await
-                .update_output_resolution(width, height),
-            RenderCmd::UpdateOrientation(orientation) => renderer.lock().await.orient(orientation),
+            RenderCmd::UpdateOutputResolution(width, height) => {
+                queued_output_resolution.replace((width, height));
+
+                if let Ok(mut renderer) = renderer.try_lock() {
+                    let (width, height) = queued_output_resolution.take().unwrap();
+                    renderer.update_output_resolution(width, height);
+                } else {
+                    render_queued.store(true, std::sync::atomic::Ordering::Relaxed);
+                }
+            }
+            RenderCmd::UpdateOrientation(orientation) => {
+                queued_orientation.replace(orientation);
+
+                if let Ok(mut renderer) = renderer.try_lock() {
+                    renderer.orient(queued_orientation.take().unwrap());
+                } else {
+                    render_queued.store(true, std::sync::atomic::Ordering::Relaxed);
+                }
+            }
         }
     }
 }
@@ -80,9 +170,10 @@ impl RendererHandler {
         let (cmd_sender, cmd_recv) = mpsc::channel::<RenderCmd>();
         let (output_sender, output_receiver) = mpsc::channel::<gdk::Texture>();
 
+        let renderer_cmd_sender = cmd_sender.clone();
         let thread = thread::spawn(move || {
             let runtime = tokio::runtime::Runtime::new().unwrap();
-            runtime.block_on(render_loop(output_sender, cmd_recv));
+            runtime.block_on(render_loop(output_sender, cmd_recv, renderer_cmd_sender));
         });
 
         let handler = Self {

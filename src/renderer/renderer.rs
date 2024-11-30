@@ -533,7 +533,7 @@ impl Renderer {
         Ok(gdk_texture)
     }
 
-    pub async fn render_sample(&mut self, sample: &Sample) -> gdk::Texture {
+    pub fn upload_new_smple(&mut self, sample: &Sample) {
         let caps = sample.caps().expect("sample without caps");
         let info = gst_video::VideoInfo::from_caps(caps).expect("Failed to parse caps");
 
@@ -542,19 +542,14 @@ impl Renderer {
             self.timer.reset();
         }
         self.sample_to_texture(sample);
-
-        let command_buffer = self.prepare_video_frame_render_pass();
-
-        self.render(command_buffer).await.expect("Could not render")
     }
 
     pub fn update_effects(&mut self, parameters: EffectParameters) {
         self.effect_parameters = parameters;
         Self::populate_effect_buffer(self.effect_parameters, &self.queue, &self.effect_buffer);
-        self.queue.submit([]);
     }
 
-    pub async fn render_curr_sample(&mut self) -> gdk::Texture {
+    pub async fn render_frame(&mut self) -> gdk::Texture {
         let command_buffer = self.prepare_video_frame_render_pass();
         self.render(command_buffer).await.expect("Could not render")
     }
