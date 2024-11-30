@@ -28,49 +28,24 @@ pub struct AdjustRowInit {
     show_value: bool,
     value_range: Range,
     display_range: Range,
-    default_value: f64,
     fill_mode: SliderFillMode,
 }
 
 impl AdjustRowInit {
-    pub fn default_with_label(label: &str) -> Self {
-        Self {
-            label: label.to_string(),
-            show_label: true,
-            show_value: true,
-            value_range: Range::default(),
-            display_range: Range::new(-100.0, 100.0),
-            default_value: 0.0,
-            fill_mode: SliderFillMode::EdgeToEdge,
-        }
-    }
-
-    pub fn default_with_label_values(label: &str, min: f64, max: f64, default: f64) -> Self {
-        Self {
-            label: label.to_string(),
-            show_label: true,
-            show_value: true,
-            value_range: Range::new(min, max),
-            display_range: Range::new(0.0, 100.0),
-            default_value: default,
-            fill_mode: SliderFillMode::EdgeToEdge,
-        }
-    }
-
-    pub fn default_with(
+    pub fn new(
         label: &str,
-        min: f64,
-        max: f64,
-        default: f64,
+        show_label: bool,
+        show_value: bool,
+        value_range: Range,
+        display_range: Range,
         fill_mode: SliderFillMode,
     ) -> Self {
         Self {
             label: label.to_string(),
-            show_label: true,
-            show_value: true,
-            value_range: Range::new(min, max),
-            display_range: Range::new(0.0, 100.0),
-            default_value: default,
+            show_label,
+            show_value,
+            value_range,
+            display_range,
             fill_mode,
         }
     }
@@ -87,7 +62,7 @@ impl Component for AdjustRowModel {
         #[root]
         gtk::Overlay{
             #[wrap(Some)]
-            set_child: slider = &Slider::new_with_range(init.value_range, init.default_value, init.fill_mode) {
+            set_child: slider = &Slider::new_with_range(init.value_range, init.fill_mode) {
                 add_controller = gtk::GestureDrag {
                     connect_drag_update[sender] => move |drag,x_offset,_| {
                         let (start_x, _) = drag.start_point().unwrap();
@@ -109,7 +84,7 @@ impl Component for AdjustRowModel {
                 },
                 #[name = "value_label"]
                 gtk::Label {
-                    set_label: model.format_init_display_value(init.value_range, init.default_value).as_str(),
+                    set_label: model.format_init_display_value(init.value_range).as_str(),
                     #[watch]
                     set_visible: model.show_value,
                     set_halign: gtk::Align::End,
@@ -170,10 +145,10 @@ impl AdjustRowModel {
         format!("{:.0}", value)
     }
 
-    fn format_init_display_value(&self, value_range: Range, default_value: f64) -> String {
+    fn format_init_display_value(&self, value_range: Range) -> String {
         self.format_display_value(
             self.display_range
-                .map_value_from_range(value_range, default_value),
+                .map_value_from_range(value_range, value_range.default),
         )
     }
 }

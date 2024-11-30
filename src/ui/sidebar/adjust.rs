@@ -1,7 +1,10 @@
 use crate::renderer::EffectParameters;
 use crate::ui::sidebar::adjust::AdjustPageMsg::ContrastChange;
 use crate::ui::slider::adjust_row::{AdjustRowInit, AdjustRowModel, AdjustRowOutput};
+use crate::ui::slider::SliderFillMode;
+use crate::ui::Range;
 use gtk4::prelude::WidgetExt;
+use relm4::component::Connector;
 use relm4::{
     adw, Component, ComponentController, ComponentParts, ComponentSender, Controller,
     SimpleComponent,
@@ -43,13 +46,12 @@ impl SimpleComponent for AdjustPageModel {
         root: Self::Root,
         sender: ComponentSender<Self>,
     ) -> ComponentParts<Self> {
-        let contrast_slider = AdjustRowModel::builder()
-            .launch(AdjustRowInit::default_with_label_values(
-                "Contrast", 0.5, 1.5, 1.0,
-            ))
-            .forward(sender.input_sender(), |msg| match msg {
+        let contrast_slider = build_slider("Contrast", EffectParameters::contrast_range()).forward(
+            sender.input_sender(),
+            |msg| match msg {
                 AdjustRowOutput::ValueChanged(val) => ContrastChange(val),
-            });
+            },
+        );
 
         let model = AdjustPageModel {
             parameters: EffectParameters::new(),
@@ -71,4 +73,18 @@ impl SimpleComponent for AdjustPageModel {
             }
         }
     }
+}
+
+fn build_slider(
+    label: &str,
+    (val_range, display_range): (Range, Range),
+) -> Connector<AdjustRowModel> {
+    AdjustRowModel::builder().launch(AdjustRowInit::new(
+        label,
+        true,
+        true,
+        val_range,
+        display_range,
+        SliderFillMode::EdgeToEdge,
+    ))
 }

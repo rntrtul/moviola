@@ -1,3 +1,5 @@
+use crate::ui::Range;
+
 #[derive(Debug, Copy, Clone)]
 pub struct EffectParameters {
     contrast: f32,
@@ -32,11 +34,11 @@ impl EffectParameters {
         buffer[3] = self.saturation;
     }
 
-    pub fn contrast(&self) -> f32 {
-        self.contrast
-    }
-
     pub fn set_contrast(&mut self, value: f32) {
         self.contrast = value;
+    }
+
+    pub fn contrast_range() -> (Range, Range) {
+        (Range::new(0.5, 1.5), Range::new(-100.0, 100.0))
     }
 }

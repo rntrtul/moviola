@@ -6,10 +6,12 @@ use gtk4::subclass::widget::WidgetImpl;
 use gtk4::{gdk, graphene, gsk, Orientation, Snapshot};
 use std::cell::Cell;
 
+// todo: move range into own file
 #[derive(Clone, Copy, Debug)]
 pub struct Range {
     pub min: f64,
     pub max: f64,
+    pub default: f64,
 }
 
 impl Default for Range {
@@ -17,13 +19,22 @@ impl Default for Range {
         Range {
             min: -1.0,
             max: 1.0,
+            default: 0.0,
         }
     }
 }
 
 impl Range {
     pub fn new(min: f64, max: f64) -> Self {
-        Range { min, max }
+        Range {
+            min,
+            max,
+            default: ((max - min) / 2.0) + min,
+        }
+    }
+
+    pub fn new_with_default(min: f64, max: f64, default: f64) -> Self {
+        Range { min, max, default }
     }
 
     pub fn distance(&self) -> f64 {
@@ -52,7 +63,6 @@ pub enum SliderFillMode {
 pub struct Slider {
     value: Cell<f64>,
     value_range: Cell<Range>,
-    default_value: Cell<f64>,
     value_step_size: Cell<f64>,
     show_ticks: Cell<bool>,
     show_bar: Cell<bool>,
@@ -65,7 +75,6 @@ impl Default for Slider {
         Self {
             value: Cell::new(0.0),
             value_range: Cell::new(Range::default()),
-            default_value: Cell::new(0.0),
             value_step_size: Cell::new(0.01),
             show_ticks: Cell::new(true),
             show_bar: Cell::new(true),
@@ -179,16 +188,11 @@ impl crate::ui::slider::Slider {
         glib::Object::builder().build()
     }
 
-    pub(crate) fn new_with_range(
-        range: Range,
-        default_value: f64,
-        fill_mode: SliderFillMode,
-    ) -> Self {
+    pub(crate) fn new_with_range(range: Range, fill_mode: SliderFillMode) -> Self {
         let obj: Self = glib::Object::builder().build();
 
         obj.imp().value_range.set(range);
-        obj.imp().default_value.set(default_value);
-        obj.imp().value.set(default_value);
+        obj.imp().value.set(range.default);
         obj.imp().fill_mode.set(fill_mode);
         obj
     }
