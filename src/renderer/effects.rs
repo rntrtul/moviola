@@ -25,6 +25,12 @@ impl EffectParameters {
         }
     }
 
+    pub fn reset(&mut self) {
+        self.contrast = 1f32;
+        self.brigthness = 0f32;
+        self.saturation = 1f32;
+    }
+
     pub fn populate_buffer(&self, buffer: &mut [f32]) {
         buffer[0] = self.contrast;
         buffer[1] = self.brigthness;

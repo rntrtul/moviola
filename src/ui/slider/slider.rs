@@ -201,6 +201,11 @@ impl crate::ui::slider::Slider {
         self.queue_draw();
     }
 
+    pub(crate) fn reset(&self) {
+        self.imp().value.set(self.imp().value_range.get().default);
+        self.queue_draw();
+    }
+
     pub(crate) fn value(&self) -> f64 {
         self.imp().value.get()
     }

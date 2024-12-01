@@ -2,8 +2,9 @@ use crate::renderer::EffectParameters;
 use crate::ui::sidebar::adjust::AdjustPageMsg::{
     BrightnessChange, ContrastChange, SaturationChange,
 };
-use crate::ui::slider::adjust_row::{AdjustRowModel, AdjustRowOutput};
+use crate::ui::slider::adjust_row::{AdjustRowModel, AdjustRowMsg, AdjustRowOutput};
 use gtk4::prelude::{BoxExt, OrientableExt, WidgetExt};
+use relm4::adw::prelude::PreferencesRowExt;
 use relm4::{
     adw, gtk, ComponentController, ComponentParts, ComponentSender, Controller, SimpleComponent,
 };
@@ -20,6 +21,7 @@ pub enum AdjustPageMsg {
     ContrastChange(f64),
     BrightnessChange(f64),
     SaturationChange(f64),
+    ResetAll,
 }
 
 #[derive(Debug)]
@@ -47,6 +49,18 @@ impl SimpleComponent for AdjustPageModel {
                     model.saturation_slider.widget(){},
                 },
             },
+
+            adw::PreferencesGroup {
+                set_valign: gtk::Align::End,
+                set_vexpand: true,
+
+                adw::ButtonRow {
+                    set_title: "Reset",
+                    add_css_class: "destructive-action",
+
+                    connect_activated => AdjustPageMsg::ResetAll,
+                }
+            }
         }
     }
 
@@ -103,6 +117,15 @@ impl SimpleComponent for AdjustPageModel {
             }
             SaturationChange(level) => {
                 self.parameters.set_saturation(level as f32);
+                sender
+                    .output(AdjustPageOutput::EffectUpdate(self.parameters))
+                    .unwrap()
+            }
+            AdjustPageMsg::ResetAll => {
+                self.parameters.reset();
+                self.saturation_slider.emit(AdjustRowMsg::ResetSilent);
+                self.contrast_slider.emit(AdjustRowMsg::ResetSilent);
+                self.brigtness_slider.emit(AdjustRowMsg::ResetSilent);
                 sender
                     .output(AdjustPageOutput::EffectUpdate(self.parameters))
                     .unwrap()

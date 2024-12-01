@@ -1,7 +1,7 @@
 use crate::range::Range;
 use crate::ui::slider::slider::SliderFillMode;
 use crate::ui::slider::Slider;
-use gtk4::prelude::{GestureDragExt, WidgetExt};
+use gtk4::prelude::{ButtonExt, GestureDragExt, WidgetExt};
 use relm4::component::Connector;
 use relm4::{gtk, Component, ComponentParts, ComponentSender};
 
@@ -15,6 +15,7 @@ pub struct AdjustRowModel {
 
 #[derive(Debug)]
 pub enum AdjustRowMsg {
+    ResetSilent,
     DragUpdate(f64),
 }
 
@@ -73,6 +74,7 @@ impl Component for AdjustRowModel {
                     }
                 }
             },
+
             add_overlay = &gtk::Box {
                 set_can_target: false,
                 set_hexpand: true,
@@ -81,7 +83,6 @@ impl Component for AdjustRowModel {
 
                 gtk::Label {
                     set_label: &model.label,
-                    #[watch]
                     set_visible: model.show_label,
                     set_halign: gtk::Align::Start,
                     set_hexpand: true,
@@ -89,10 +90,8 @@ impl Component for AdjustRowModel {
                 #[name = "value_label"]
                 gtk::Label {
                     set_label: model.format_init_display_value(init.value_range).as_str(),
-                    #[watch]
                     set_visible: model.show_value,
                     set_halign: gtk::Align::End,
-                    set_hexpand: true,
                     set_css_classes: &["monospace", "dim-label"],
                 },
             },
@@ -137,6 +136,13 @@ impl Component for AdjustRowModel {
                         .output(AdjustRowOutput::ValueChanged(widgets.slider.value()))
                         .unwrap();
                 }
+            }
+            AdjustRowMsg::ResetSilent => {
+                widgets.slider.reset();
+
+                let display_value = widgets.slider.map_value_to_range(self.display_range);
+                let display_str = self.format_display_value(display_value);
+                widgets.value_label.set_label(display_str.as_str());
             }
         }
 
