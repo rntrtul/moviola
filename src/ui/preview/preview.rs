@@ -28,6 +28,7 @@ pub struct Preview {
     pub(crate) show_crop_box: Cell<bool>,
     pub(crate) show_zoom: Cell<bool>,
     pub(crate) orientation: Cell<crate::ui::preview::Orientation>,
+    pub(crate) straighten_angle: Cell<f64>,
     pub(crate) texture: RefCell<Option<gdk::Texture>>,
     pub(crate) _crop_scale: Cell<f32>,
     pub(crate) is_cropped: Cell<bool>,
@@ -56,6 +57,7 @@ impl Default for Preview {
                 angle: 0f32,
                 mirrored: false,
             }),
+            straighten_angle: Cell::new(0f64),
             texture: RefCell::new(None),
             _crop_scale: Cell::new(1.0),
             is_cropped: Cell::new(false),
@@ -106,14 +108,14 @@ impl WidgetImpl for Preview {
         snapshot.save();
 
         let (translate_x, translate_y) = if !self.show_crop_box.get() && self.is_cropped.get() {
-            let cropped_area = self.cropped_region_clip();
+            let cropped_area = self.cropped_region_box();
+            snapshot.push_clip(&cropped_area);
 
             let left = preview.width() * self.left_x.get();
             let top = preview.height() * self.top_y.get();
 
             let x = cropped_area.x() - left;
             let y = cropped_area.y() - top;
-            snapshot.push_clip(&cropped_area);
 
             (x, y)
         } else {
@@ -129,6 +131,22 @@ impl WidgetImpl for Preview {
         }
 
         if let Some(ref texture) = *self.texture.borrow() {
+            if self.straighten_angle.get().round() != 0f64 {
+                // todo: try and get higher res frame when straightend.
+                // todo: grey out outside region
+                // todo: use crop box instead of preview for determinig translate and scaling
+                // todo: show dense grid to line up properly
+                let (centering_x, centering_y) = self.straigtening_centering_translate(&preview);
+                let scale = self.scale_for_straightening(&preview);
+
+                snapshot.translate(&Point::new(preview.width() / 2.0, preview.height() / 2.0));
+                snapshot.rotate(self.straighten_angle.get() as f32);
+                snapshot.translate(&Point::new(-preview.width() / 2.0, -preview.height() / 2.0));
+
+                snapshot.translate(&Point::new(centering_x, centering_y));
+                snapshot.scale(scale, scale);
+            }
+
             texture.snapshot(snapshot, preview.width() as f64, preview.height() as f64);
         }
 
@@ -177,6 +195,34 @@ impl Preview {
         }
     }
 
+    fn scale_for_straightening(&self, preview: &graphene::Rect) -> f32 {
+        let angle = (self.straighten_angle.get() as f32).abs().to_radians();
+
+        let theta = (preview.height() / preview.width()).atan();
+        let phi = (preview.width() / preview.height()).atan();
+
+        let beta = phi - angle;
+        let gamma = theta - angle;
+
+        let diagonal = (preview.width().powi(2) + preview.height().powi(2)).sqrt();
+
+        diagonal * (beta.cos().abs() / preview.height()).max(gamma.cos().abs() / preview.width())
+    }
+
+    fn straigtening_centering_translate(&self, preview: &graphene::Rect) -> (f32, f32) {
+        let angle = (self.straighten_angle.get() as f32).abs().to_radians();
+
+        let half_width = preview.width() / 2.0;
+        let half_height = preview.height() / 2.0;
+
+        let cx = -half_width
+            + ((preview.width() * angle.cos()) + (preview.height() * angle.sin())) / 2.0;
+        let cy = -half_height
+            + ((preview.height() * angle.cos()) + (preview.width() * angle.sin())) / 2.0;
+
+        (-cx, -cy)
+    }
+
     fn centered_start(&self, width: f32, height: f32) -> (f32, f32) {
         let widget_width = self.obj().width() as f32;
         let widget_height = self.obj().height() as f32;
@@ -194,7 +240,7 @@ impl Preview {
         graphene::Rect::new(x, y, preview_width, preview_height)
     }
 
-    fn cropped_region_clip(&self) -> graphene::Rect {
+    fn cropped_region_box(&self) -> graphene::Rect {
         let preview = self.preview_rect();
         let width = preview.width() * (self.right_x.get() - self.left_x.get());
         let height = preview.height() * (self.bottom_y.get() - self.top_y.get());
@@ -226,6 +272,11 @@ impl crate::ui::preview::Preview {
 
     pub fn hide_crop_box(&self) {
         self.imp().show_crop_box.set(false);
+        self.queue_draw();
+    }
+
+    pub fn set_straigten_angle(&self, angle: f64) {
+        self.imp().straighten_angle.set(angle);
         self.queue_draw();
     }
 

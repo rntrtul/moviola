@@ -1,4 +1,4 @@
-use crate::ui::Range;
+use crate::range::Range;
 
 #[derive(Debug, Copy, Clone)]
 pub struct EffectParameters {

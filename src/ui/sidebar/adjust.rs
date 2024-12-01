@@ -2,14 +2,10 @@ use crate::renderer::EffectParameters;
 use crate::ui::sidebar::adjust::AdjustPageMsg::{
     BrightnessChange, ContrastChange, SaturationChange,
 };
-use crate::ui::slider::adjust_row::{AdjustRowInit, AdjustRowModel, AdjustRowOutput};
-use crate::ui::slider::SliderFillMode;
-use crate::ui::Range;
+use crate::ui::slider::adjust_row::{AdjustRowModel, AdjustRowOutput};
 use gtk4::prelude::{BoxExt, OrientableExt, WidgetExt};
-use relm4::component::Connector;
 use relm4::{
-    adw, gtk, Component, ComponentController, ComponentParts, ComponentSender, Controller,
-    SimpleComponent,
+    adw, gtk, ComponentController, ComponentParts, ComponentSender, Controller, SimpleComponent,
 };
 
 pub struct AdjustPageModel {
@@ -59,22 +55,25 @@ impl SimpleComponent for AdjustPageModel {
         root: Self::Root,
         sender: ComponentSender<Self>,
     ) -> ComponentParts<Self> {
-        let contrast_slider = build_slider("Contrast", EffectParameters::contrast_range()).forward(
-            sender.input_sender(),
-            |msg| match msg {
-                AdjustRowOutput::ValueChanged(val) => ContrastChange(val),
-            },
-        );
+        let contrast_slider = AdjustRowModel::build_slider(
+            "Contrast",
+            EffectParameters::contrast_range(),
+        )
+        .forward(sender.input_sender(), |msg| match msg {
+            AdjustRowOutput::ValueChanged(val) => ContrastChange(val),
+        });
 
-        let brigtness_slider = build_slider("Brightness", EffectParameters::brigntess_range())
-            .forward(sender.input_sender(), |msg| match msg {
-                AdjustRowOutput::ValueChanged(val) => BrightnessChange(val),
-            });
+        let brigtness_slider =
+            AdjustRowModel::build_slider("Brightness", EffectParameters::brigntess_range())
+                .forward(sender.input_sender(), |msg| match msg {
+                    AdjustRowOutput::ValueChanged(val) => BrightnessChange(val),
+                });
 
-        let saturation_slider = build_slider("Saturation", EffectParameters::saturation_range())
-            .forward(sender.input_sender(), |msg| match msg {
-                AdjustRowOutput::ValueChanged(val) => SaturationChange(val),
-            });
+        let saturation_slider =
+            AdjustRowModel::build_slider("Saturation", EffectParameters::saturation_range())
+                .forward(sender.input_sender(), |msg| match msg {
+                    AdjustRowOutput::ValueChanged(val) => SaturationChange(val),
+                });
 
         let model = AdjustPageModel {
             parameters: EffectParameters::new(),
@@ -110,18 +109,4 @@ impl SimpleComponent for AdjustPageModel {
             }
         }
     }
-}
-
-fn build_slider(
-    label: &str,
-    (val_range, display_range): (Range, Range),
-) -> Connector<AdjustRowModel> {
-    AdjustRowModel::builder().launch(AdjustRowInit::new(
-        label,
-        true,
-        true,
-        val_range,
-        display_range,
-        SliderFillMode::EdgeToEdge,
-    ))
 }

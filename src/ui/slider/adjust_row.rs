@@ -1,6 +1,8 @@
-use crate::ui::slider::slider::{Range, SliderFillMode};
+use crate::range::Range;
+use crate::ui::slider::slider::SliderFillMode;
 use crate::ui::slider::Slider;
 use gtk4::prelude::{GestureDragExt, WidgetExt};
+use relm4::component::Connector;
 use relm4::{gtk, Component, ComponentParts, ComponentSender};
 
 #[derive(Debug)]
@@ -152,5 +154,19 @@ impl AdjustRowModel {
             self.display_range
                 .map_value_from_range(value_range, value_range.default),
         )
+    }
+
+    pub fn build_slider(
+        label: &str,
+        (val_range, display_range): (Range, Range),
+    ) -> Connector<AdjustRowModel> {
+        AdjustRowModel::builder().launch(AdjustRowInit::new(
+            label,
+            true,
+            true,
+            val_range,
+            display_range,
+            SliderFillMode::CenterOut,
+        ))
     }
 }
