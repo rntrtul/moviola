@@ -324,10 +324,7 @@ impl Component for App {
                 self.player.borrow_mut().reset_pipeline();
                 main_application().quit()
             }
-            AppMsg::OpenFile => {
-                self.video_selected = false;
-                App::launch_file_opener(&sender)
-            }
+            AppMsg::OpenFile => App::launch_file_opener(&sender),
             AppMsg::SetVideo(uri) => {
                 self.video_selected = true;
                 self.show_video = false;
