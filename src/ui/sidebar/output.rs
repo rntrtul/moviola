@@ -168,7 +168,6 @@ impl Component for OutputPageModel {
                 if !self.video_info.audio_streams.is_empty() {
                     let first_stream_codec = self.video_info.audio_streams.first().unwrap().codec;
                     let audio_idx = first_stream_codec.to_string_list_index();
-                    println!("first stream idx is :{audio_idx}");
 
                     match first_stream_codec {
                         AudioCodec::NoAudio => {

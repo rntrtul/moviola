@@ -1,7 +1,7 @@
 use crate::range::Range;
 use crate::ui::slider::slider::SliderFillMode;
 use crate::ui::slider::Slider;
-use gtk4::prelude::{ButtonExt, GestureDragExt, WidgetExt};
+use gtk4::prelude::{GestureDragExt, WidgetExt};
 use relm4::component::Connector;
 use relm4::{gtk, Component, ComponentParts, ComponentSender};
 

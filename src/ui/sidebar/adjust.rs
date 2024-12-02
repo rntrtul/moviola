@@ -21,7 +21,7 @@ pub enum AdjustPageMsg {
     ContrastChange(f64),
     BrightnessChange(f64),
     SaturationChange(f64),
-    ResetAll,
+    Reset,
 }
 
 #[derive(Debug)]
@@ -58,7 +58,7 @@ impl SimpleComponent for AdjustPageModel {
                     set_title: "Reset",
                     add_css_class: "destructive-action",
 
-                    connect_activated => AdjustPageMsg::ResetAll,
+                    connect_activated => AdjustPageMsg::Reset,
                 }
             }
         }
@@ -121,7 +121,7 @@ impl SimpleComponent for AdjustPageModel {
                     .output(AdjustPageOutput::EffectUpdate(self.parameters))
                     .unwrap()
             }
-            AdjustPageMsg::ResetAll => {
+            AdjustPageMsg::Reset => {
                 self.parameters.reset();
                 self.saturation_slider.emit(AdjustRowMsg::ResetSilent);
                 self.contrast_slider.emit(AdjustRowMsg::ResetSilent);
