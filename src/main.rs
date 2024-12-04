@@ -3,8 +3,6 @@ use relm4::{adw, gtk, RelmApp, RELM_THREADS};
 
 use crate::app::App;
 
-use self::config::RESOURCES_FILE;
-
 mod app;
 mod config;
 mod range;
@@ -24,6 +22,13 @@ struct Cli {
     file_path: Option<std::path::PathBuf>,
 }
 
+fn initilaize_gresources() {
+    gio::resources_register_include!("resources.gresource").unwrap();
+
+    let theme = gtk::IconTheme::for_display(&gtk::gdk::Display::default().unwrap());
+    theme.add_resource_path("/org/fareedsh/Moviola/icons");
+}
+
 fn main() {
     let cli = Cli::parse();
 
@@ -35,11 +40,7 @@ fn main() {
     gst::init().unwrap();
     gtk::init().unwrap();
 
-    let res = gio::Resource::load(RESOURCES_FILE).unwrap();
-    gio::resources_register(&res);
-
-    let theme = gtk::IconTheme::for_display(&gtk::gdk::Display::default().unwrap());
-    theme.add_resource_path("/org/fareedsh/Moviola/icons");
+    initilaize_gresources();
 
     RELM_THREADS.set(4).unwrap();
     let style_manger = adw::StyleManager::default();

@@ -1,4 +1,6 @@
 /target
+/vendor
+.cargo/
 .idea/
 .flatpak-builder/
 builddir
