@@ -555,7 +555,10 @@ impl Renderer {
     }
 
     pub fn update_output_resolution(&mut self, width: u32, height: u32) {
-        self.update_output_texture_size(width, height);
+        // need to handle width and height when base orientation is non-zero as input width + heights
+        // are relative to the sample/frame which is always 0deg.
+        let (w, h) = self.orientation.oriented_size(width, height);
+        self.update_output_texture_size(w, h);
     }
 
     pub fn orient(&mut self, orientation: Orientation) {
@@ -569,7 +572,7 @@ impl Renderer {
                 usage: wgpu::BufferUsages::VERTEX,
             });
 
-        if self.orientation.is_vertical() != orientation.is_vertical() {
+        if self.orientation.is_width_flipped() != orientation.is_width_flipped() {
             self.update_output_texture_size(self.output_dimensions.1, self.output_dimensions.0);
         }
 

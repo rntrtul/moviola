@@ -53,10 +53,7 @@ impl Default for Preview {
             crop_mode: Cell::new(CropMode::Free),
             show_crop_box: Cell::new(false),
             show_zoom: Cell::new(true),
-            orientation: Cell::new(crate::ui::preview::Orientation {
-                angle: 0f32,
-                mirrored: false,
-            }),
+            orientation: Cell::new(crate::ui::preview::Orientation::default()),
             straighten_angle: Cell::new(0f64),
             texture: RefCell::new(None),
             _crop_scale: Cell::new(1.0),
@@ -173,7 +170,7 @@ impl Preview {
     }
 
     fn current_aspect_ratio(&self) -> f32 {
-        if self.orientation.get().is_vertical() {
+        if self.orientation.get().is_width_flipped() {
             self.native_frame_height.get() as f32 / self.native_frame_width.get() as f32
         } else {
             self.original_aspect_ratio.get()
@@ -320,9 +317,8 @@ impl crate::ui::preview::Preview {
         self.imp().bottom_y.set(1.0);
 
         self.imp().zoom.set(1.0);
-        self.imp().orientation.set(crate::ui::preview::Orientation {
-            angle: 0.0,
-            mirrored: false,
-        });
+        self.imp()
+            .orientation
+            .set(crate::ui::preview::Orientation::default());
     }
 }

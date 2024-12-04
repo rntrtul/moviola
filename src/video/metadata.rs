@@ -1,3 +1,4 @@
+use crate::ui::preview::Orientation;
 use gst::caps::{Builder, NoFeature};
 use gst::ClockTime;
 use relm4::gtk;
@@ -39,6 +40,7 @@ pub struct VideoInfo {
     pub(crate) height: u32,
     pub(crate) aspect_ratio: f64,
     pub(crate) container_info: VideoContainerInfo,
+    pub(crate) orientation: Orientation,
 }
 
 impl Default for VideoInfo {
@@ -50,6 +52,7 @@ impl Default for VideoInfo {
             height: 0,
             aspect_ratio: 0.,
             container_info: VideoContainerInfo::default(),
+            orientation: Orientation::default(),
         }
     }
 }

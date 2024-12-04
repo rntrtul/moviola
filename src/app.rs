@@ -443,9 +443,10 @@ impl Component for App {
 
                 player.discover_metadata();
 
-                self.sidebar_panel.emit(ControlsMsg::DefaultCodec(
+                self.sidebar_panel.emit(ControlsMsg::VideoLoaded((
                     player.info.container_info.clone(),
-                ));
+                    player.info.orientation,
+                )));
 
                 player.set_is_playing(true);
 

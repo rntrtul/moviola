@@ -74,8 +74,8 @@ impl FrameRect {
 
     pub fn orient(&mut self, orientation: Orientation) {
         self.reset();
-        if orientation.angle != 0.0 {
-            let rotations = (orientation.angle / 90.0) as usize;
+        if orientation.absolute_angle() != 0.0 {
+            let rotations = (orientation.absolute_angle() / 90.0) as usize;
             self.tex_coords.rotate_right(rotations);
         }
 

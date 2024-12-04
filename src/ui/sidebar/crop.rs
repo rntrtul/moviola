@@ -16,6 +16,7 @@ pub struct CropPageModel {
 #[derive(Debug)]
 pub enum CropPageMsg {
     SetCropMode(CropMode),
+    SetBaseOrientation(Orientation),
     Straighten(f64),
     RotateRight90,
     FlipHorizontally,
@@ -148,6 +149,12 @@ impl Component for CropPageModel {
                     .output(CropPageOutput::SetCropMode(self.crop_mode))
                     .unwrap();
             }
+            CropPageMsg::SetBaseOrientation(orientation) => {
+                self.orientation = orientation;
+                sender
+                    .output(CropPageOutput::OrientVideo(self.orientation))
+                    .unwrap()
+            }
             CropPageMsg::SetCropMode(mode) => {
                 self.crop_mode = mode;
                 sender.output(CropPageOutput::SetCropMode(mode)).unwrap();
@@ -162,14 +169,14 @@ impl Component for CropPageModel {
                     .unwrap()
             }
             CropPageMsg::FlipHorizontally => {
-                self.orientation.mirrored = !self.orientation.mirrored;
+                self.orientation.flip_mirrored();
                 sender
                     .output(CropPageOutput::OrientVideo(self.orientation))
                     .unwrap()
             }
             CropPageMsg::FlipVertically => {
                 self.orientation.angle = (self.orientation.angle + 180.0) % 360.0;
-                self.orientation.mirrored = !self.orientation.mirrored;
+                self.orientation.flip_mirrored();
 
                 sender
                     .output(CropPageOutput::OrientVideo(self.orientation))

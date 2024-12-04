@@ -1,5 +1,6 @@
 use crate::app::{App, AppMsg};
 use crate::renderer::RenderCmd;
+use crate::ui::preview::Orientation;
 use crate::video::metadata::{
     AudioCodec, AudioStreamInfo, ContainerFormat, VideoCodec, VideoContainerInfo, VideoInfo,
     AUDIO_BITRATE_DEFAULT, VIDEO_BITRATE_DEFAULT,
@@ -197,11 +198,22 @@ impl Player {
             .playbin
             .emit_by_name::<Option<gst::Pad>>("get-video-pad", &[&0])
             .expect("no pad availble for video stream");
+
         let caps = pad.current_caps().unwrap();
         let cap_struct = caps.structure(0).unwrap();
 
         let width = cap_struct.get::<i32>("width").unwrap() as u32;
         let height = cap_struct.get::<i32>("height").unwrap() as u32;
+
+        let orientation = if let Some(orientaiton) = video_tags.get::<gst::tags::ImageOrientation>()
+        {
+            // todo: generate orientation from tag
+            Orientation::new_with_base(90f32)
+        } else {
+            Orientation::default()
+        };
+
+        println!("width: {}, height: {}", width, height);
         let framerate = cap_struct.get::<gst::Fraction>("framerate").unwrap();
         let aspect_ratio = width as f64 / height as f64;
 
@@ -274,6 +286,7 @@ impl Player {
             height,
             aspect_ratio,
             container_info: codec_info,
+            orientation,
         };
         self.info = video_info.clone();
 

@@ -20,12 +20,12 @@ pub struct ControlsModel {
 
 #[derive(Debug)]
 pub enum ControlsMsg {
+    VideoLoaded((VideoContainerInfo, Orientation)),
     Rotate,
     ExportFrame,
     Orient(Orientation),
     Straigten(f64),
     SetCropMode(CropMode),
-    DefaultCodec(VideoContainerInfo),
     CropPageSelected,
     OutputPageSelected,
     AdjustPageSelected,
@@ -141,6 +141,12 @@ impl SimpleComponent for ControlsModel {
 
     fn update(&mut self, message: Self::Input, sender: ComponentSender<Self>) {
         match message {
+            ControlsMsg::VideoLoaded((default_codec, base_orientaiton)) => {
+                self.output_page
+                    .emit(OutputPageMsg::VideoInfo(default_codec));
+                self.crop_page
+                    .emit(CropPageMsg::SetBaseOrientation(base_orientaiton));
+            }
             ControlsMsg::SetCropMode(mode) => {
                 sender.output(ControlsOutput::SetCropMode(mode)).unwrap();
                 sender.output(ControlsOutput::ShowCropBox).unwrap();
@@ -153,9 +159,6 @@ impl SimpleComponent for ControlsModel {
             }
             ControlsMsg::ExportFrame => sender.output(ControlsOutput::ExportFrame).unwrap(),
             ControlsMsg::Rotate => self.crop_page.emit(CropPageMsg::RotateRight90),
-            ControlsMsg::DefaultCodec(defaults) => {
-                self.output_page.emit(OutputPageMsg::VideoInfo(defaults));
-            }
             ControlsMsg::CropPageSelected => {
                 sender.output(ControlsOutput::ShowCropBox).unwrap();
                 sender.output(ControlsOutput::TempResetZoom).unwrap();

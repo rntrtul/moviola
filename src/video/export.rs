@@ -67,9 +67,9 @@ impl Player {
         let orientation = crop_export_settings.orientation;
         let bounding_box = crop_export_settings.bounding_box;
 
-        let video_direction = orientation.to_direction();
+        let video_direction = orientation.to_gst_video_orientation();
 
-        let (source_width, source_height) = if orientation.is_vertical() {
+        let (source_width, source_height) = if orientation.is_width_flipped() {
             (self.info.height as i32, self.info.width as i32)
         } else {
             (self.info.width as i32, self.info.height as i32)
