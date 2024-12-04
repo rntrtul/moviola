@@ -133,3 +133,9 @@ impl SimpleComponent for AdjustPageModel {
         }
     }
 }
+
+impl AdjustPageModel {
+    pub fn export_settings(&self) -> EffectParameters {
+        self.parameters.clone()
+    }
+}

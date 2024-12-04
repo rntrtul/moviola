@@ -178,11 +178,13 @@ impl SimpleComponent for ControlsModel {
 impl ControlsModel {
     pub fn export_settings(&self) -> ControlsExportSettings {
         let export_container = self.output_page.model().export_settings();
+        let effect_parameters = self.adjust_page.model().export_settings();
 
         // fixme: actually get value, for if it is default
         ControlsExportSettings {
             container: export_container,
             container_is_default: true,
+            effect_parameters,
         }
     }
 

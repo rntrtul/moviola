@@ -2,7 +2,7 @@ use std::thread;
 use std::time::SystemTime;
 
 use ges::gst_pbutils::EncodingContainerProfile;
-use ges::prelude::{EncodingProfileBuilder, GESTrackExt, LayerExt};
+use ges::prelude::{EncodingProfileBuilder, GESContainerExt, GESTrackExt, LayerExt};
 use ges::prelude::{GESPipelineExt, TimelineElementExt, TimelineExt};
 use ges::{gst_pbutils, PipelineFlags};
 use gst::prelude::{ElementExt, GstObjectExt};
@@ -85,6 +85,7 @@ impl Player {
             (source_height as f32 * (bounding_box.bottom_y - bounding_box.top_y)) as i32;
 
         thread::spawn(move || {
+            // fixme: some videos are not exporting
             let timeline = ges::Timeline::new_audio_video();
             let layer = timeline.append_layer();
             let pipeline = ges::Pipeline::new();
@@ -127,6 +128,22 @@ impl Player {
             pipeline
                 .set_render_settings(&save_uri.as_str(), &container_profile)
                 .expect("unable to set render settings");
+
+            if !controls_export_settings.effect_parameters.is_default() {
+                let params = &controls_export_settings.effect_parameters;
+                // videobalance expects doubles
+                let color_balance_effect = ges::Effect::new(
+                    format! {"videobalance saturation={:.2} contrast={:.2} brightness={:.2}",
+                             params.saturation,
+                             params.contrast,
+                             params.brigthness,
+                    }
+                    .as_str(),
+                )
+                .unwrap();
+                clip.add(&color_balance_effect)
+                    .expect("could not add color balance");
+            }
 
             //todo: use smart_render? (only when using original container info?)
             let render_mode = PipelineFlags::RENDER;

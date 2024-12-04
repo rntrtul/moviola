@@ -2,9 +2,9 @@ use crate::range::Range;
 
 #[derive(Debug, Copy, Clone)]
 pub struct EffectParameters {
-    contrast: f32,
-    brigthness: f32,
-    saturation: f32,
+    pub contrast: f32,
+    pub brigthness: f32,
+    pub saturation: f32,
 }
 
 impl EffectParameters {
@@ -29,6 +29,10 @@ impl EffectParameters {
         self.contrast = 1f32;
         self.brigthness = 0f32;
         self.saturation = 1f32;
+    }
+
+    pub fn is_default(&self) -> bool {
+        self.saturation == 1f32 && self.contrast == 0f32 && self.brigthness == 1f32
     }
 
     pub fn populate_buffer(&self, buffer: &mut [f32]) {
