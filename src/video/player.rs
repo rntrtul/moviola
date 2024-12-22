@@ -178,7 +178,8 @@ impl Player {
     }
 
     pub fn play_uri(&mut self, uri: String) {
-        // fixme: why does this take 2 seconds
+        // fixme: why does this take 2 seconds.
+        //  1.5 seconds spend on loading/initing nvcodec plugin
         self.playbin.set_state(State::Null).unwrap();
         self.pipeline_ready = false;
         self.playbin.set_property("uri", uri.as_str());

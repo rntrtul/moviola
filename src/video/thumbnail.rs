@@ -58,8 +58,6 @@ impl Thumbnail {
             PixelType::U8x4,
         );
 
-        // todo: upgrade to resize 5.0 (has issue with building it right now)
-        //  for multithreaded single img
         let mut resizer = Resizer::new();
         resizer
             .resize(

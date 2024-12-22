@@ -1,4 +1,5 @@
 mod bounding_box;
+mod input;
 mod orient;
 mod pan;
 mod preview;

@@ -74,8 +74,7 @@ impl ObjectSubclass for Preview {
 
 impl ObjectImpl for Preview {
     fn constructed(&self) {
-        self.box_connect_gestures();
-        self.pan_connect_gestures();
+        self.connect_gestures();
     }
 }
 
@@ -244,6 +243,15 @@ impl Preview {
         let (x, y) = self.centered_start(width, height);
 
         graphene::Rect::new(x, y, width, height)
+    }
+
+    pub(crate) fn clamp_coords_to_preview(&self, x: f32, y: f32) -> (f32, f32) {
+        let preview = self.preview_rect();
+
+        (
+            x.clamp(0.0, preview.width()),
+            y.clamp(0.0, preview.height()),
+        )
     }
 
     pub(super) fn update_texture(&self, texture: gdk::Texture) {

@@ -1,10 +1,7 @@
 use crate::ui::preview::preview::Preview;
 use ges::subclass::prelude::ObjectSubclassExt;
-use gtk4::glib;
-use gtk4::glib::clone;
 use gtk4::graphene::Rect;
-use gtk4::prelude::{GestureDragExt, SnapshotExt, SnapshotExtManual, WidgetExt};
-use gtk4::subclass::prelude::ObjectSubclassIsExt;
+use gtk4::prelude::{SnapshotExt, SnapshotExtManual, WidgetExt};
 use gtk4::{gdk, gsk};
 use gtk4::{graphene, Snapshot};
 pub(crate) static BOX_HANDLE_WIDTH: f32 = 3f32;
@@ -74,73 +71,29 @@ impl Preview {
         self.draw_box_handles(snapshot, &rect);
     }
 
-    pub(crate) fn box_connect_gestures(&self) {
-        let obj = self.obj();
-        let drag_gesture = gtk4::GestureDrag::new();
+    pub(crate) fn box_handle_drag_begin(&self, x: f32, y: f32) {
+        let target_point = graphene::Point::new(x, y);
+        let box_rect = self.bounding_box_rect();
 
-        drag_gesture.connect_drag_begin(clone!(
-            #[weak]
-            obj,
-            move |_, x, y| {
-                let target_point = graphene::Point::new(x as f32, y as f32);
-                let box_rect = obj.imp().bounding_box_rect();
+        let handle_paths = self.box_handle_paths(&box_rect);
 
-                let handle_paths = obj.imp().box_handle_paths(&box_rect);
+        self.handle_drag_active.set(false);
+        self.active_handle.set(HandleType::None);
 
-                obj.imp().handle_drag_active.set(false);
-                obj.imp().active_handle.set(HandleType::None);
-
-                for (idx, handle_path) in handle_paths.iter().enumerate() {
-                    if handle_path.in_fill(&target_point, HANDLE_FILL_RULE) {
-                        let handle = match idx {
-                            0 => HandleType::TopLeft,
-                            1 => HandleType::BottomLeft,
-                            2 => HandleType::TopRight,
-                            3 => HandleType::BottomRight,
-                            _ => panic!("too many handle indicies"),
-                        };
-                        obj.imp().active_handle.set(handle);
-                        obj.imp().handle_drag_active.set(true);
-                        break;
-                    }
-                }
+        for (idx, handle_path) in handle_paths.iter().enumerate() {
+            if handle_path.in_fill(&target_point, HANDLE_FILL_RULE) {
+                let handle = match idx {
+                    0 => HandleType::TopLeft,
+                    1 => HandleType::BottomLeft,
+                    2 => HandleType::TopRight,
+                    3 => HandleType::BottomRight,
+                    _ => panic!("too many handle indicies"),
+                };
+                self.active_handle.set(handle);
+                self.handle_drag_active.set(true);
+                break;
             }
-        ));
-
-        drag_gesture.connect_drag_update(clone!(
-            #[weak]
-            obj,
-            move |drag, x_offset, y_offset| {
-                if obj.imp().handle_drag_active.get() {
-                    let (start_x, start_y) = drag.start_point().unwrap();
-
-                    let x = start_x + x_offset;
-                    let y = start_y + y_offset;
-                    obj.imp().update_drag_pos((x, y));
-                }
-            }
-        ));
-
-        drag_gesture.connect_drag_end(clone!(
-            #[weak]
-            obj,
-            move |_, _, _| {
-                if obj.imp().handle_drag_active.get() {
-                    obj.imp().is_cropped.set(
-                        obj.imp().right_x.get() != 1.0
-                            || obj.imp().left_x.get() != 0.0
-                            || obj.imp().bottom_y.get() != 1.0
-                            || obj.imp().top_y.get() != 0.0,
-                    );
-
-                    obj.queue_draw();
-                }
-
-                obj.imp().handle_drag_active.set(false);
-            }
-        ));
-
-        obj.add_controller(drag_gesture);
+        }
     }
 }
 
@@ -301,49 +254,85 @@ impl Preview {
         }
     }
 
-    fn get_cordinate_percent_from_drag(&self, x: f64, y: f64) -> (f64, f64) {
+    pub(crate) fn coords_as_percent(&self, x: f32, y: f32) -> (f32, f32) {
         let preview = self.preview_rect();
+        let (x_adj, y_adj) = self.clamp_coords_to_preview(x - preview.x(), y - preview.y());
 
-        let x_adj = (x - preview.x() as f64).clamp(0., preview.width() as f64);
-        let y_adj = (y - preview.y() as f64).clamp(0., preview.height() as f64);
-
-        (
-            x_adj / preview.width() as f64,
-            y_adj / preview.height() as f64,
-        )
+        (x_adj / preview.width(), y_adj / preview.height())
     }
 
-    fn update_drag_pos(&self, target: (f64, f64)) {
-        let (x_percent, y_percent) = self.get_cordinate_percent_from_drag(target.0, target.1);
-        let x = x_percent as f32;
-        let y = y_percent as f32;
-
+    pub(crate) fn update_handle_pos(&self, x: f32, y: f32) {
         match self.active_handle.get() {
             HandleType::TopLeft => {
                 self.left_x.set(x);
                 self.top_y.set(y);
-                self.maintain_aspect_ratio();
-                self.obj().queue_draw();
             }
             HandleType::BottomLeft => {
                 self.left_x.set(x);
                 self.bottom_y.set(y);
-                self.maintain_aspect_ratio();
-                self.obj().queue_draw();
             }
             HandleType::TopRight => {
                 self.right_x.set(x);
                 self.top_y.set(y);
-                self.maintain_aspect_ratio();
-                self.obj().queue_draw();
             }
             HandleType::BottomRight => {
                 self.right_x.set(x);
                 self.bottom_y.set(y);
-                self.maintain_aspect_ratio();
-                self.obj().queue_draw();
             }
-            HandleType::None => {}
+            HandleType::None => {
+                panic!("should not be trying to update handle position when no handle selected");
+            }
+        }
+
+        self.maintain_aspect_ratio();
+        self.obj().queue_draw();
+    }
+
+    pub(crate) fn translate_box(&self, x: f32, y: f32) {
+        let prev_drag = self.prev_drag.get();
+
+        let (prev_x_percent, prev_y_percent) = self.coords_as_percent(prev_drag.x(), prev_drag.y());
+
+        let offset_x = x - prev_x_percent;
+        let offset_y = y - prev_y_percent;
+
+        if offset_x == 0.0 && offset_y == 0.0 {
+            return;
+        }
+
+        // The edges are clamped from [0,1]. When the clamp activates it means the clamped edge will
+        // move a different amount compared to the trailing edge.
+        // To ensure they move same amount we check if the current offset will cause clamping and if
+        // it will, we take the max value that will not cause clamping.
+        let step_x = if offset_x < 0.0 && -offset_x > self.left_x.get() {
+            -self.left_x.get()
+        } else if offset_x > 0.0 && (1.0 - self.right_x.get()) < offset_x {
+            1.0 - self.right_x.get()
+        } else {
+            offset_x
+        };
+
+        let step_y = if offset_y < 0.0 && -offset_y > self.top_y.get() {
+            -self.top_y.get()
+        } else if offset_y > 0.0 && (1.0 - self.bottom_y.get()) < offset_y {
+            1.0 - self.bottom_y.get()
+        } else {
+            offset_y
+        };
+
+        // only translate if the leading edge can move
+        if (self.left_x.get() > 0.0 && step_x < 0.0) || (self.right_x.get() < 1.0 && step_x > 0.0) {
+            self.left_x
+                .set((self.left_x.get() + step_x).clamp(0.0, self.right_x.get()));
+            self.right_x
+                .set((self.right_x.get() + step_x).clamp(self.left_x.get(), 1.0));
+        }
+
+        if (self.bottom_y.get() < 1.0 && step_y > 0.0) || (self.top_y.get() > 0.0 && step_y < 0.0) {
+            self.bottom_y
+                .set((self.bottom_y.get() + step_y).clamp(self.top_y.get(), 1.0));
+            self.top_y
+                .set((self.top_y.get() + step_y).clamp(0.0, self.bottom_y.get()))
         }
     }
 }
