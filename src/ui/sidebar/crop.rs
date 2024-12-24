@@ -17,7 +17,9 @@ pub struct CropPageModel {
 pub enum CropPageMsg {
     SetCropMode(CropMode),
     SetBaseOrientation(Orientation),
+    StraightenBegin,
     Straighten(f64),
+    StraightenEnd,
     RotateRight90,
     FlipHorizontally,
     FlipVertically,
@@ -28,7 +30,9 @@ pub enum CropPageMsg {
 pub enum CropPageOutput {
     OrientVideo(Orientation),
     SetCropMode(CropMode),
+    StraigtenBegin,
     Straighten(f64),
+    StraightenEnd,
 }
 
 #[relm4::component(pub)]
@@ -111,7 +115,9 @@ impl Component for CropPageModel {
             (Range::new(-45.0, 45.0), Range::new(-45.0, 45.0)),
         )
         .forward(sender.input_sender(), |msg| match msg {
+            AdjustRowOutput::DragBegin => CropPageMsg::StraightenBegin,
             AdjustRowOutput::ValueChanged(val) => CropPageMsg::Straighten(val),
+            AdjustRowOutput::DragEnd => CropPageMsg::StraightenEnd,
         });
 
         let model = CropPageModel {
@@ -159,9 +165,11 @@ impl Component for CropPageModel {
                 self.crop_mode = mode;
                 sender.output(CropPageOutput::SetCropMode(mode)).unwrap();
             }
+            CropPageMsg::StraightenBegin => sender.output(CropPageOutput::StraigtenBegin).unwrap(),
             CropPageMsg::Straighten(angle) => {
                 sender.output(CropPageOutput::Straighten(angle)).unwrap();
             }
+            CropPageMsg::StraightenEnd => sender.output(CropPageOutput::StraightenEnd).unwrap(),
             CropPageMsg::RotateRight90 => {
                 self.orientation.angle = (self.orientation.angle + 90.0) % 360.0;
                 sender

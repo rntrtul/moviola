@@ -19,7 +19,9 @@ pub enum PreviewFrameMsg {
     VideoLoaded(u32, u32),
     FrameRendered(gdk::Texture),
     Orient(Orientation),
+    StraightenStart,
     Straighten(f64),
+    StraightenEnd,
     CropMode(CropMode),
     CropBoxShow,
     CropBoxHide,
@@ -110,11 +112,13 @@ impl Component for PreviewFrameModel {
                 }
             }
             PreviewFrameMsg::Orient(orientation) => self.preview.set_orientation(orientation),
+            PreviewFrameMsg::StraightenStart => self.preview.straigtening_begun(),
             PreviewFrameMsg::Straighten(angle) => {
                 self.preview.set_straigten_angle(angle);
                 // todo: get new frame width considering the zoom that has happened. So can get max
                 //  max resolution version possible.
             }
+            PreviewFrameMsg::StraightenEnd => self.preview.straigtening_finished(),
             PreviewFrameMsg::CropMode(mode) => self.preview.set_crop_mode(mode),
             PreviewFrameMsg::CropBoxShow => self.preview.show_crop_box(),
             PreviewFrameMsg::CropBoxHide => self.preview.hide_crop_box(),

@@ -38,7 +38,9 @@ pub(super) enum AppMsg {
     SaveFile,
     SetVideo(String),
     Orient(Orientation),
+    StraightenBegin,
     Straighten(f64),
+    StraightenEnd,
     ShowCropBox,
     HideCropBox,
     SetCropMode(CropMode),
@@ -249,7 +251,9 @@ impl Component for App {
             .launch(())
             .forward(sender.input_sender(), |msg| match msg {
                 ControlsOutput::OrientVideo(orientation) => AppMsg::Orient(orientation),
+                ControlsOutput::StraightenBegin => AppMsg::StraightenBegin,
                 ControlsOutput::Straigten(angle) => AppMsg::Straighten(angle),
+                ControlsOutput::StraightenEnd => AppMsg::StraightenEnd,
                 ControlsOutput::SetCropMode(mode) => AppMsg::SetCropMode(mode),
                 ControlsOutput::ExportFrame => AppMsg::ExportFrame,
                 ControlsOutput::ShowCropBox => AppMsg::ShowCropBox,
@@ -399,9 +403,11 @@ impl Component for App {
                     self.renderer.send_cmd(RenderCmd::RenderFrame);
                 }
             }
+            AppMsg::StraightenBegin => self.preview_frame.emit(PreviewFrameMsg::StraightenStart),
             AppMsg::Straighten(angle) => {
                 self.preview_frame.emit(PreviewFrameMsg::Straighten(angle))
             }
+            AppMsg::StraightenEnd => self.preview_frame.emit(PreviewFrameMsg::StraightenEnd),
             AppMsg::ShowCropBox => self.preview_frame.emit(PreviewFrameMsg::CropBoxShow),
             AppMsg::HideCropBox => self.preview_frame.emit(PreviewFrameMsg::CropBoxHide),
             AppMsg::SetCropMode(mode) => self.preview_frame.emit(PreviewFrameMsg::CropMode(mode)),

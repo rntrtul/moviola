@@ -24,7 +24,9 @@ pub enum ControlsMsg {
     Rotate,
     ExportFrame,
     Orient(Orientation),
-    Straigten(f64),
+    StraightenBegin,
+    Straighten(f64),
+    StraightenEnd,
     SetCropMode(CropMode),
     CropPageSelected,
     OutputPageSelected,
@@ -40,7 +42,9 @@ pub enum ControlsOutput {
     TempResetZoom,
     RestoreZoom,
     OrientVideo(Orientation),
+    StraightenBegin,
     Straigten(f64),
+    StraightenEnd,
     SetCropMode(CropMode),
     EffectsChanged(EffectParameters),
 }
@@ -87,7 +91,9 @@ impl SimpleComponent for ControlsModel {
                 .forward(sender.input_sender(), |msg| match msg {
                     CropPageOutput::SetCropMode(mode) => ControlsMsg::SetCropMode(mode),
                     CropPageOutput::OrientVideo(orientation) => ControlsMsg::Orient(orientation),
-                    CropPageOutput::Straighten(angle) => ControlsMsg::Straigten(angle),
+                    CropPageOutput::StraigtenBegin => ControlsMsg::StraightenBegin,
+                    CropPageOutput::Straighten(angle) => ControlsMsg::Straighten(angle),
+                    CropPageOutput::StraightenEnd => ControlsMsg::StraightenEnd,
                 });
 
         let output_page =
@@ -154,9 +160,11 @@ impl SimpleComponent for ControlsModel {
             ControlsMsg::Orient(orientation) => sender
                 .output(ControlsOutput::OrientVideo(orientation))
                 .unwrap(),
-            ControlsMsg::Straigten(angle) => {
+            ControlsMsg::StraightenBegin => sender.output(ControlsOutput::StraightenBegin).unwrap(),
+            ControlsMsg::Straighten(angle) => {
                 sender.output(ControlsOutput::Straigten(angle)).unwrap()
             }
+            ControlsMsg::StraightenEnd => sender.output(ControlsOutput::StraightenEnd).unwrap(),
             ControlsMsg::ExportFrame => sender.output(ControlsOutput::ExportFrame).unwrap(),
             ControlsMsg::Rotate => self.crop_page.emit(CropPageMsg::RotateRight90),
             ControlsMsg::CropPageSelected => {

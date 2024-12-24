@@ -1,9 +1,10 @@
-use crate::ui::preview::preview::Preview;
+use crate::ui::preview::preview::{DragType, Preview};
 use ges::subclass::prelude::ObjectSubclassExt;
 use gtk4::graphene::Rect;
 use gtk4::prelude::{SnapshotExt, SnapshotExtManual, WidgetExt};
 use gtk4::{gdk, gsk};
 use gtk4::{graphene, Snapshot};
+use std::cmp::PartialEq;
 pub(crate) static BOX_HANDLE_WIDTH: f32 = 3f32;
 static BOX_HANDLE_HEIGHT: f32 = 30f32;
 static BOX_COLOUR: gdk::RGBA = gdk::RGBA::WHITE;
@@ -65,8 +66,13 @@ impl Preview {
 
         snapshot.append_border(&border, &border_widths, &border_colours);
 
-        if self.handle_drag_active.get() {
-            self.draw_box_grid(snapshot, &rect, 3, 3);
+        if self.active_drag_type.get().is_active() {
+            let grid_size = match self.active_drag_type.get() {
+                DragType::Handle => 3,
+                DragType::Straighten => 10,
+                _ => 0,
+            };
+            self.draw_box_grid(snapshot, &rect, grid_size, grid_size);
         }
         self.draw_box_handles(snapshot, &rect);
     }
@@ -77,7 +83,7 @@ impl Preview {
 
         let handle_paths = self.box_handle_paths(&box_rect);
 
-        self.handle_drag_active.set(false);
+        self.active_drag_type.set(DragType::None);
         self.active_handle.set(HandleType::None);
 
         for (idx, handle_path) in handle_paths.iter().enumerate() {
@@ -90,7 +96,7 @@ impl Preview {
                     _ => panic!("too many handle indicies"),
                 };
                 self.active_handle.set(handle);
-                self.handle_drag_active.set(true);
+                self.active_drag_type.set(DragType::Handle);
                 break;
             }
         }
@@ -198,7 +204,7 @@ impl Preview {
             self.crop_mode.get().value()
         };
 
-        let crop_rect = if self.handle_drag_active.get() {
+        let crop_rect = if self.active_drag_type.get().is_active() {
             self.bounding_box_rect()
         } else {
             self.preview_rect()

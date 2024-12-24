@@ -15,14 +15,18 @@ pub struct AdjustRowModel {
 
 #[derive(Debug)]
 pub enum AdjustRowMsg {
+    DragBegin,
     DragUpdate(f64),
+    DragEnd,
     Reset,
     SilentReset,
 }
 
 #[derive(Debug)]
 pub enum AdjustRowOutput {
+    DragBegin,
     ValueChanged(f64),
+    DragEnd,
 }
 
 #[derive(Debug)]
@@ -68,11 +72,17 @@ impl Component for AdjustRowModel {
             #[wrap(Some)]
             set_child: slider = &Slider::new_with_range(init.value_range, init.fill_mode) {
                 add_controller = gtk::GestureDrag {
+                    connect_drag_begin[sender] => move |_,_,_| {
+                        sender.input(AdjustRowMsg::DragBegin);
+                    },
                     connect_drag_update[sender] => move |drag,x_offset,_| {
                         let (start_x, _) = drag.start_point().unwrap();
                         let target = start_x + x_offset;
                         sender.input(AdjustRowMsg::DragUpdate(target))
-                    }
+                    },
+                    connect_drag_end[sender] => move |_,_,_| {
+                        sender.input(AdjustRowMsg::DragEnd);
+                    },
                 },
                 add_controller = gtk::GestureClick {
                     connect_released[sender] => move |_, presses,_, _| {
@@ -131,6 +141,7 @@ impl Component for AdjustRowModel {
         _root: &Self::Root,
     ) {
         match message {
+            AdjustRowMsg::DragBegin => sender.output(AdjustRowOutput::DragBegin).unwrap(),
             AdjustRowMsg::DragUpdate(target) => {
                 let old_value = widgets.slider.value_as_range_percent();
                 widgets.slider.drag_update(target);
@@ -145,6 +156,7 @@ impl Component for AdjustRowModel {
                         .unwrap();
                 }
             }
+            AdjustRowMsg::DragEnd => sender.output(AdjustRowOutput::DragEnd).unwrap(),
             AdjustRowMsg::Reset => {
                 widgets.slider.reset();
                 self.update_label_from_slider(&widgets.slider, &widgets.value_label);

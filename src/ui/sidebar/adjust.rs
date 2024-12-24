@@ -1,6 +1,6 @@
 use crate::renderer::EffectParameters;
 use crate::ui::sidebar::adjust::AdjustPageMsg::{
-    BrightnessChange, ContrastChange, SaturationChange,
+    BrightnessChange, ContrastChange, SaturationChange, NOP,
 };
 use crate::ui::slider::adjust_row::{AdjustRowModel, AdjustRowMsg, AdjustRowOutput};
 use gtk4::prelude::{BoxExt, OrientableExt, WidgetExt};
@@ -22,6 +22,8 @@ pub enum AdjustPageMsg {
     BrightnessChange(f64),
     SaturationChange(f64),
     Reset,
+    // fixme: should be some way to disacrd msg's without pointing to a "nop" msg that does nothing
+    NOP,
 }
 
 #[derive(Debug)]
@@ -75,18 +77,21 @@ impl SimpleComponent for AdjustPageModel {
         )
         .forward(sender.input_sender(), |msg| match msg {
             AdjustRowOutput::ValueChanged(val) => ContrastChange(val),
+            _ => NOP,
         });
 
         let brigtness_slider =
             AdjustRowModel::build_slider("Brightness", EffectParameters::brigntess_range())
                 .forward(sender.input_sender(), |msg| match msg {
                     AdjustRowOutput::ValueChanged(val) => BrightnessChange(val),
+                    _ => NOP,
                 });
 
         let saturation_slider =
             AdjustRowModel::build_slider("Saturation", EffectParameters::saturation_range())
                 .forward(sender.input_sender(), |msg| match msg {
                     AdjustRowOutput::ValueChanged(val) => SaturationChange(val),
+                    _ => NOP,
                 });
 
         let model = AdjustPageModel {
@@ -130,6 +135,7 @@ impl SimpleComponent for AdjustPageModel {
                     .output(AdjustPageOutput::EffectUpdate(self.parameters))
                     .unwrap()
             }
+            NOP => {}
         }
     }
 }

@@ -1,4 +1,4 @@
-use crate::ui::preview::preview::Preview;
+use crate::ui::preview::preview::{DragType, Preview};
 use ges::subclass::prelude::ObjectSubclassExt;
 use gtk4::prelude::{GestureDragExt, WidgetExt};
 use gtk4::subclass::prelude::ObjectSubclassIsExt;
@@ -41,7 +41,7 @@ impl Preview {
                 let offset_y = target_y - prev_drag.y();
 
                 if obj.imp().show_crop_box.get() {
-                    if obj.imp().handle_drag_active.get() {
+                    if obj.imp().active_drag_type.get().is_handle() {
                         obj.imp()
                             .update_handle_pos(target_x_percent, target_y_percent);
                     } else {
@@ -63,7 +63,7 @@ impl Preview {
             #[weak]
             obj,
             move |_, _, _| {
-                if obj.imp().handle_drag_active.get() {
+                if obj.imp().active_drag_type.get().is_handle() {
                     obj.imp().is_cropped.set(
                         obj.imp().right_x.get() != 1.0
                             || obj.imp().left_x.get() != 0.0
@@ -74,7 +74,7 @@ impl Preview {
                     obj.queue_draw();
                 }
 
-                obj.imp().handle_drag_active.set(false);
+                obj.imp().active_drag_type.set(DragType::None);
                 obj.imp().prev_drag.set(graphene::Point::zero());
             }
         ));

@@ -14,6 +14,32 @@ use std::cell::{Cell, RefCell};
 static DEFAULT_WIDTH: f64 = 640f64;
 static DEFAULT_HEIGHT: f64 = 360f64;
 
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+pub enum DragType {
+    Handle,
+    Straighten,
+    None,
+}
+
+impl DragType {
+    pub fn is_handle(&self) -> bool {
+        matches!(self, DragType::Handle)
+    }
+
+    pub fn is_straighten(&self) -> bool {
+        matches!(self, DragType::Straighten)
+    }
+
+    pub fn is_none(&self) -> bool {
+        matches!(self, DragType::None)
+    }
+
+    /// All types are active except for None.
+    pub fn is_active(&self) -> bool {
+        !self.is_none()
+    }
+}
+
 pub struct Preview {
     pub(crate) left_x: Cell<f32>,
     pub(crate) top_y: Cell<f32>,
@@ -22,7 +48,7 @@ pub struct Preview {
     pub(crate) prev_drag: Cell<Point>,
     pub(crate) translate: Cell<Point>,
     pub(crate) active_handle: Cell<HandleType>,
-    pub(crate) handle_drag_active: Cell<bool>,
+    pub(crate) active_drag_type: Cell<DragType>,
     pub(crate) zoom: Cell<f64>,
     pub(crate) crop_mode: Cell<CropMode>,
     pub(crate) show_crop_box: Cell<bool>,
@@ -48,7 +74,7 @@ impl Default for Preview {
             right_x: Cell::new(1f32),
             bottom_y: Cell::new(1f32),
             active_handle: Cell::new(HandleType::None),
-            handle_drag_active: Cell::new(false),
+            active_drag_type: Cell::new(DragType::None),
             zoom: Cell::new(1f64),
             crop_mode: Cell::new(CropMode::Free),
             show_crop_box: Cell::new(false),
@@ -280,8 +306,17 @@ impl crate::ui::preview::Preview {
         self.queue_draw();
     }
 
+    pub fn straigtening_begun(&self) {
+        self.imp().active_drag_type.set(DragType::Straighten)
+    }
+
     pub fn set_straigten_angle(&self, angle: f64) {
         self.imp().straighten_angle.set(angle);
+        self.queue_draw();
+    }
+
+    pub fn straigtening_finished(&self) {
+        self.imp().active_drag_type.set(DragType::None);
         self.queue_draw();
     }
 
