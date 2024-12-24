@@ -214,7 +214,6 @@ impl Player {
             Orientation::default()
         };
 
-        println!("width: {}, height: {}", width, height);
         let framerate = cap_struct.get::<gst::Fraction>("framerate").unwrap();
         let aspect_ratio = width as f64 / height as f64;
 

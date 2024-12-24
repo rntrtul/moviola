@@ -123,9 +123,9 @@ impl SimpleComponent for AdjustPageModel {
             }
             AdjustPageMsg::Reset => {
                 self.parameters.reset();
-                self.saturation_slider.emit(AdjustRowMsg::ResetSilent);
-                self.contrast_slider.emit(AdjustRowMsg::ResetSilent);
-                self.brigtness_slider.emit(AdjustRowMsg::ResetSilent);
+                self.saturation_slider.emit(AdjustRowMsg::SilentReset);
+                self.contrast_slider.emit(AdjustRowMsg::SilentReset);
+                self.brigtness_slider.emit(AdjustRowMsg::SilentReset);
                 sender
                     .output(AdjustPageOutput::EffectUpdate(self.parameters))
                     .unwrap()

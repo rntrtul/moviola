@@ -51,7 +51,9 @@ impl ObjectSubclass for Slider {
     type ParentType = gtk4::Widget;
 }
 
-impl ObjectImpl for Slider {}
+impl ObjectImpl for Slider {
+    fn constructed(&self) {}
+}
 
 impl WidgetImpl for Slider {
     fn measure(&self, _orientation: Orientation, _for_size: i32) -> (i32, i32, i32, i32) {

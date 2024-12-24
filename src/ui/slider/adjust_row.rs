@@ -15,8 +15,9 @@ pub struct AdjustRowModel {
 
 #[derive(Debug)]
 pub enum AdjustRowMsg {
-    ResetSilent,
     DragUpdate(f64),
+    Reset,
+    SilentReset,
 }
 
 #[derive(Debug)]
@@ -72,7 +73,14 @@ impl Component for AdjustRowModel {
                         let target = start_x + x_offset;
                         sender.input(AdjustRowMsg::DragUpdate(target))
                     }
-                }
+                },
+                add_controller = gtk::GestureClick {
+                    connect_released[sender] => move |_, presses,_, _| {
+                        if presses == 2 {
+                            sender.input(AdjustRowMsg::Reset);
+                        }
+                    },
+                },
             },
 
             add_overlay = &gtk::Box {
@@ -137,12 +145,16 @@ impl Component for AdjustRowModel {
                         .unwrap();
                 }
             }
-            AdjustRowMsg::ResetSilent => {
+            AdjustRowMsg::Reset => {
                 widgets.slider.reset();
-
-                let display_value = widgets.slider.map_value_to_range(self.display_range);
-                let display_str = self.format_display_value(display_value);
-                widgets.value_label.set_label(display_str.as_str());
+                self.update_label_from_slider(&widgets.slider, &widgets.value_label);
+                sender
+                    .output(AdjustRowOutput::ValueChanged(widgets.slider.value()))
+                    .unwrap();
+            }
+            AdjustRowMsg::SilentReset => {
+                widgets.slider.reset();
+                self.update_label_from_slider(&widgets.slider, &widgets.value_label);
             }
         }
 
@@ -151,6 +163,12 @@ impl Component for AdjustRowModel {
 }
 
 impl AdjustRowModel {
+    fn update_label_from_slider(&self, slider: &Slider, label: &gtk4::Label) {
+        let display_value = slider.map_value_to_range(self.display_range);
+        let display_str = self.format_display_value(display_value);
+        label.set_label(display_str.as_str());
+    }
+
     fn format_display_value(&self, value: f64) -> String {
         format!("{:.0}", value)
     }

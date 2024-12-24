@@ -67,20 +67,23 @@ impl Player {
         let orientation = crop_export_settings.orientation;
         let bounding_box = crop_export_settings.bounding_box;
 
-        let (source_width, source_height) = if orientation.is_width_flipped() {
-            (self.info.height as i32, self.info.width as i32)
+        let (native_width, native_height) = (self.info.width as i32, self.info.height as i32);
+
+        // Need to translate cropped regions top left corner to be at 0,0 (top left of new video),
+        // so we translate using negative coordinates of top left corner.
+        let pos_x = -(bounding_box.left_x * native_width as f32) as i32;
+        let pos_y = -(bounding_box.top_y * native_height as f32) as i32;
+
+        let (transformed_width, transformed_height) = if orientation.is_width_flipped() {
+            (native_height, native_width)
         } else {
-            (self.info.width as i32, self.info.height as i32)
+            (native_width, native_height)
         };
 
-        // offset is to place coordinate at 0,0. So use negative values
-        let pos_x = -(bounding_box.left_x * source_width as f32) as i32;
-        let pos_y = -(bounding_box.top_y * source_height as f32) as i32;
-
         let output_width =
-            (source_width as f32 * (bounding_box.right_x - bounding_box.left_x)) as i32;
+            (transformed_width as f32 * (bounding_box.right_x - bounding_box.left_x)) as i32;
         let output_height =
-            (source_height as f32 * (bounding_box.bottom_y - bounding_box.top_y)) as i32;
+            (transformed_height as f32 * (bounding_box.bottom_y - bounding_box.top_y)) as i32;
 
         thread::spawn(move || {
             // fixme: some videos are not exporting
@@ -102,7 +105,7 @@ impl Player {
                 .field("height", output_height)
                 .field("pixel-aspect-ratio", gst::Fraction::new(1, 1))
                 .build();
-            track.set_restriction_caps(&caps);
+            track.update_restriction_caps(&caps);
 
             track.elements().into_iter().for_each(|track_element| {
                 // fixme: squished video when direction is changed. auto frame positioner kicks in.
@@ -113,10 +116,10 @@ impl Player {
                     )
                     .unwrap();
                 track_element
-                    .set_child_property("width", &(source_width.to_value()))
+                    .set_child_property("width", &(native_width.to_value()))
                     .unwrap();
                 track_element
-                    .set_child_property("height", &(source_height.to_value()))
+                    .set_child_property("height", &(native_height.to_value()))
                     .unwrap();
                 track_element
                     .set_child_property("posx", &(pos_x.to_value()))

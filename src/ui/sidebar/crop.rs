@@ -139,7 +139,7 @@ impl Component for CropPageModel {
                 self.crop_mode = CropMode::Free;
 
                 widgets.crop_mode_row.set_selected(0);
-                self.straighten_slider.emit(AdjustRowMsg::ResetSilent);
+                self.straighten_slider.emit(AdjustRowMsg::SilentReset);
 
                 sender.output(CropPageOutput::Straighten(0f64)).unwrap();
                 sender
