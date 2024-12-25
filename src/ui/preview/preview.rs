@@ -33,8 +33,9 @@ pub struct Preview {
     pub(crate) texture: RefCell<Option<gdk::Texture>>,
     pub(crate) _crop_scale: Cell<f32>,
     pub(crate) is_cropped: Cell<bool>,
-    //todo: accept orignal dimensions as struct?
+    pub(crate) is_new_drag: Cell<bool>,
     pub(crate) original_aspect_ratio: Cell<f32>,
+    //todo: only using native frame to calc aspect ratio
     pub(crate) native_frame_width: Cell<u32>,
     pub(crate) native_frame_height: Cell<u32>,
 }
@@ -59,6 +60,7 @@ impl Default for Preview {
             texture: RefCell::new(None),
             _crop_scale: Cell::new(1.0),
             is_cropped: Cell::new(false),
+            is_new_drag: Cell::new(true),
             original_aspect_ratio: Cell::new(1.77f32),
             native_frame_width: Cell::new(0),
             native_frame_height: Cell::new(0),
@@ -121,6 +123,19 @@ impl WidgetImpl for Preview {
 
         snapshot.translate(&Point::new(translate_x, translate_y));
 
+        if self.show_crop_box.get() {
+            let bounding_rect = self.bounding_box_rect();
+
+            // these are the coordinates of the box if it wasn't centered.
+            let box_left_x = (preview.width() * self.left_x.get()) + preview.x();
+            let box_top_y = (preview.height() * self.top_y.get()) + preview.y();
+
+            let x_dist = bounding_rect.x() - box_left_x;
+            let y_dist = bounding_rect.y() - box_top_y;
+
+            snapshot.translate(&Point::new(x_dist, y_dist));
+        }
+
         if self.show_zoom.get() {
             snapshot.scale(self.zoom.get() as f32, self.zoom.get() as f32);
             let translate = self.translate.get();
@@ -153,7 +168,7 @@ impl WidgetImpl for Preview {
         }
 
         if !self.show_crop_box.get() && self.is_cropped.get() {
-            snapshot.pop();
+            snapshot.pop(); // popping crop region clip
         }
 
         snapshot.restore();
@@ -225,7 +240,7 @@ impl Preview {
         (-cx, -cy)
     }
 
-    fn centered_start(&self, width: f32, height: f32) -> (f32, f32) {
+    pub(crate) fn centered_start(&self, width: f32, height: f32) -> (f32, f32) {
         let widget_width = self.obj().width() as f32;
         let widget_height = self.obj().height() as f32;
 

@@ -45,6 +45,7 @@ impl Preview {
             #[weak]
             obj,
             move |_, x, y| {
+                obj.imp().is_new_drag.set(true);
                 obj.imp().box_handle_drag_begin(x as f32, y as f32);
             }
         ));
@@ -58,41 +59,45 @@ impl Preview {
 
                 let target_x = (start_x + x_offset) as f32; // graphene uses f32, so not using f64
                 let target_y = (start_y + y_offset) as f32;
-                let (clamped_x, clamped_y) = preview.clamp_coords_to_preview(target_x, target_y);
-
-                let (target_x_percent, target_y_percent) =
-                    preview.coords_as_percent(target_x, target_y);
 
                 let mut prev_drag = preview.prev_drag.get();
-
-                if prev_drag.x() == 0. && prev_drag.y() == 0. {
-                    prev_drag = graphene::Point::new(clamped_x, clamped_y);
+                if preview.is_new_drag.get() {
+                    preview.is_new_drag.set(false);
+                    prev_drag = graphene::Point::new(target_x, target_y);
                     preview.prev_drag.set(prev_drag);
                 }
 
-                let offset_x = target_x - prev_drag.x();
-                let offset_y = target_y - prev_drag.y();
+                let (target_percent_x, target_percent_y) =
+                    preview.coords_as_percent(target_x, target_y);
+
+                let offset_from_prev_x = target_x - prev_drag.x();
+                let offset_from_prev_y = target_y - prev_drag.y();
+
+                let (prev_percent_x, prev_percent_y) =
+                    preview.coords_as_percent(prev_drag.x(), prev_drag.y());
+                let offset_prev_percent_x = target_percent_x - prev_percent_x;
+                let offset_prev_percent_y = target_percent_y - prev_percent_y;
 
                 if preview.show_crop_box.get() {
                     match preview.active_drag_type.get() {
                         DragType::Handle => {
-                            preview.update_handle_pos(target_x_percent, target_y_percent)
+                            preview.update_handle_pos(offset_prev_percent_x, offset_prev_percent_y);
                         }
                         DragType::BoxTranslate => {
-                            preview.translate_box(target_x_percent, target_y_percent)
+                            preview.translate_box(offset_prev_percent_x, offset_prev_percent_y)
                         }
                         _ => {}
                     }
 
                     obj.queue_draw();
                 } else if preview.zoom.get() != 1f64 {
-                    preview.pan_preview(offset_x, offset_y);
+                    preview.pan_preview(offset_from_prev_x, offset_from_prev_y);
                     obj.queue_draw();
                 }
 
                 preview
                     .prev_drag
-                    .set(graphene::Point::new(clamped_x, clamped_y));
+                    .set(graphene::Point::new(target_x, target_y));
             }
         ));
 

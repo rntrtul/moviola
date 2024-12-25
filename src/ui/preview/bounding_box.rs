@@ -110,16 +110,13 @@ impl Preview {
 }
 
 impl Preview {
-    fn bounding_box_rect(&self) -> Rect {
+    pub(crate) fn bounding_box_rect(&self) -> Rect {
         let preview = self.preview_rect();
+        let width = preview.width() * (self.right_x.get() - self.left_x.get());
+        let height = preview.height() * (self.bottom_y.get() - self.top_y.get());
+        let (x, y) = self.centered_start(width, height);
 
-        let left_x = (preview.width() * self.left_x.get()) + preview.x();
-        let top_y = (preview.height() * self.top_y.get()) + preview.y();
-
-        let right_x = ((preview.width()) * self.right_x.get()) + preview.x();
-        let bottom_y = ((preview.height()) * self.bottom_y.get()) + preview.y();
-
-        Rect::new(left_x, top_y, right_x - left_x, bottom_y - top_y)
+        Rect::new(x, y, width, height)
     }
 
     fn draw_box_grid(&self, snapshot: &Snapshot, rect: &Rect, rows: u32, columns: u32) {
@@ -270,28 +267,34 @@ impl Preview {
 
     pub(crate) fn coords_as_percent(&self, x: f32, y: f32) -> (f32, f32) {
         let preview = self.preview_rect();
-        let (x_adj, y_adj) = self.clamp_coords_to_preview(x - preview.x(), y - preview.y());
-
-        (x_adj / preview.width(), y_adj / preview.height())
+        (
+            (x - preview.x()) / preview.width(),
+            (y - preview.y()) / preview.height(),
+        )
     }
 
-    pub(crate) fn update_handle_pos(&self, x: f32, y: f32) {
+    pub(crate) fn update_handle_pos(&self, x_offset: f32, y_offset: f32) {
+        let left_x = (self.left_x.get() + x_offset).clamp(0.0, self.right_x.get());
+        let top_y = (self.top_y.get() + y_offset).clamp(0.0, self.bottom_y.get());
+        let right_x = (self.right_x.get() + x_offset).clamp(self.left_x.get(), 1.0);
+        let bottom_y = (self.bottom_y.get() + y_offset).clamp(self.top_y.get(), 1.0);
+
         match self.active_handle.get() {
             HandleType::TopLeft => {
-                self.left_x.set(x);
-                self.top_y.set(y);
+                self.left_x.set(left_x);
+                self.top_y.set(top_y);
             }
             HandleType::BottomLeft => {
-                self.left_x.set(x);
-                self.bottom_y.set(y);
+                self.left_x.set(left_x);
+                self.bottom_y.set(bottom_y);
             }
             HandleType::TopRight => {
-                self.right_x.set(x);
-                self.top_y.set(y);
+                self.right_x.set(right_x);
+                self.top_y.set(top_y);
             }
             HandleType::BottomRight => {
-                self.right_x.set(x);
-                self.bottom_y.set(y);
+                self.right_x.set(right_x);
+                self.bottom_y.set(bottom_y);
             }
             HandleType::None => {
                 panic!("should not be trying to update handle position when no handle selected");
@@ -302,14 +305,7 @@ impl Preview {
         self.obj().queue_draw();
     }
 
-    pub(crate) fn translate_box(&self, x: f32, y: f32) {
-        let prev_drag = self.prev_drag.get();
-
-        let (prev_x_percent, prev_y_percent) = self.coords_as_percent(prev_drag.x(), prev_drag.y());
-
-        let offset_x = x - prev_x_percent;
-        let offset_y = y - prev_y_percent;
-
+    pub(crate) fn translate_box(&self, offset_x: f32, offset_y: f32) {
         if offset_x == 0.0 && offset_y == 0.0 {
             return;
         }
