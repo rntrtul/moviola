@@ -1,4 +1,5 @@
 use crate::ui::preview::bounding_box::{HandleType, BOX_HANDLE_WIDTH};
+use crate::ui::preview::input::DragType;
 use crate::ui::preview::{BoundingBoxDimensions, CropMode};
 use crate::ui::sidebar::CropExportSettings;
 use ges::subclass::prelude::ObjectSubclassIsExt;
@@ -13,32 +14,6 @@ use std::cell::{Cell, RefCell};
 
 static DEFAULT_WIDTH: f64 = 640f64;
 static DEFAULT_HEIGHT: f64 = 360f64;
-
-#[derive(Debug, Copy, Clone, Eq, PartialEq)]
-pub enum DragType {
-    Handle,
-    Straighten,
-    None,
-}
-
-impl DragType {
-    pub fn is_handle(&self) -> bool {
-        matches!(self, DragType::Handle)
-    }
-
-    pub fn is_straighten(&self) -> bool {
-        matches!(self, DragType::Straighten)
-    }
-
-    pub fn is_none(&self) -> bool {
-        matches!(self, DragType::None)
-    }
-
-    /// All types are active except for None.
-    pub fn is_active(&self) -> bool {
-        !self.is_none()
-    }
-}
 
 pub struct Preview {
     pub(crate) left_x: Cell<f32>,
@@ -158,6 +133,7 @@ impl WidgetImpl for Preview {
                 // todo: grey out outside region
                 // todo: use crop box instead of preview for determinig translate and scaling
                 // todo: show dense grid to line up properly
+                snapshot.save();
                 let (centering_x, centering_y) = self.straigtening_centering_translate(&preview);
                 let scale = self.scale_for_straightening(&preview);
 
@@ -170,6 +146,10 @@ impl WidgetImpl for Preview {
             }
 
             texture.snapshot(snapshot, preview.width() as f64, preview.height() as f64);
+
+            if self.straighten_angle.get().round() != 0f64 {
+                snapshot.restore();
+            }
         }
 
         if !self.show_crop_box.get() && self.is_cropped.get() {

@@ -1,10 +1,12 @@
-use crate::ui::preview::preview::{DragType, Preview};
+use crate::ui::preview::input::DragType;
+use crate::ui::preview::preview::Preview;
 use ges::subclass::prelude::ObjectSubclassExt;
 use gtk4::graphene::Rect;
 use gtk4::prelude::{SnapshotExt, SnapshotExtManual, WidgetExt};
 use gtk4::{gdk, gsk};
 use gtk4::{graphene, Snapshot};
 use std::cmp::PartialEq;
+
 pub(crate) static BOX_HANDLE_WIDTH: f32 = 3f32;
 static BOX_HANDLE_HEIGHT: f32 = 30f32;
 static BOX_COLOUR: gdk::RGBA = gdk::RGBA::WHITE;
@@ -100,6 +102,10 @@ impl Preview {
                 break;
             }
         }
+
+        if self.active_drag_type.get().is_none() && box_rect.contains_point(&target_point) {
+            self.active_drag_type.set(DragType::BoxTranslate);
+        }
     }
 }
 
@@ -163,16 +169,18 @@ impl Preview {
 
         for (center, direction) in handle_center.iter().zip(DIRECTIONS.iter()) {
             let path_builder = gsk::PathBuilder::new();
+            let x = center.x() - (BOX_HANDLE_WIDTH * direction.0);
+            let y = center.y() - (BOX_HANDLE_WIDTH * direction.1);
 
             path_builder.add_rect(&Rect::new(
-                center.x() - (BOX_HANDLE_WIDTH * direction.0),
-                center.y() - (BOX_HANDLE_WIDTH * direction.1),
+                x,
+                y,
                 BOX_HANDLE_WIDTH * direction.0,
                 BOX_HANDLE_HEIGHT * direction.1,
             ));
             path_builder.add_rect(&Rect::new(
-                center.x() - (BOX_HANDLE_WIDTH * direction.0),
-                center.y() - (BOX_HANDLE_WIDTH * direction.1),
+                x,
+                y,
                 BOX_HANDLE_HEIGHT * direction.0,
                 BOX_HANDLE_WIDTH * direction.1,
             ));
