@@ -67,16 +67,11 @@ impl Preview {
                     preview.prev_drag.set(prev_drag);
                 }
 
-                let (target_percent_x, target_percent_y) =
-                    preview.coords_as_percent(target_x, target_y);
-
                 let offset_from_prev_x = target_x - prev_drag.x();
                 let offset_from_prev_y = target_y - prev_drag.y();
 
-                let (prev_percent_x, prev_percent_y) =
-                    preview.coords_as_percent(prev_drag.x(), prev_drag.y());
-                let offset_prev_percent_x = target_percent_x - prev_percent_x;
-                let offset_prev_percent_y = target_percent_y - prev_percent_y;
+                let (offset_prev_percent_x, offset_prev_percent_y) =
+                    preview.size_as_percent(offset_from_prev_x, offset_from_prev_y);
 
                 if preview.show_crop_box.get() {
                     match preview.active_drag_type.get() {
@@ -125,5 +120,20 @@ impl Preview {
         ));
 
         obj.add_controller(drag_gesture);
+    }
+
+    pub(crate) fn size_as_percent(&self, x: f32, y: f32) -> (f32, f32) {
+        let preview = self.display_preview_rect();
+
+        (x / preview.width(), y / preview.height())
+    }
+
+    pub(crate) fn point_as_percent(&self, point: graphene::Point) -> (f32, f32) {
+        let preview = self.display_preview_rect();
+
+        (
+            (point.x() - preview.x()) / preview.width(),
+            (point.y() - preview.y()) / preview.height(),
+        )
     }
 }

@@ -6,7 +6,7 @@ use ges::subclass::prelude::ObjectSubclassIsExt;
 use gst::glib;
 use gst::subclass::prelude::{ObjectImpl, ObjectSubclass};
 use gtk4::graphene::Point;
-use gtk4::prelude::{PaintableExt, SnapshotExt, WidgetExt};
+use gtk4::prelude::{GestureExt, PaintableExt, SnapshotExt, WidgetExt};
 use gtk4::subclass::prelude::ObjectSubclassExt;
 use gtk4::subclass::widget::WidgetImpl;
 use gtk4::{gdk, graphene, Orientation};
@@ -38,6 +38,14 @@ pub struct Preview {
     //todo: only using native frame to calc aspect ratio
     pub(crate) native_frame_width: Cell<u32>,
     pub(crate) native_frame_height: Cell<u32>,
+}
+
+// todo: move somewhere else
+pub struct Rectangle {
+    pub(crate) top_left: Point,
+    pub(crate) top_right: Point,
+    pub(crate) bottom_left: Point,
+    pub(crate) bottom_right: Point,
 }
 
 impl Default for Preview {
@@ -103,38 +111,14 @@ impl WidgetImpl for Preview {
     }
 
     fn snapshot(&self, snapshot: &gtk4::Snapshot) {
-        let preview = self.preview_rect();
+        let preview = self.display_preview_rect();
         snapshot.save();
 
-        let (translate_x, translate_y) = if !self.show_crop_box.get() && self.is_cropped.get() {
-            let cropped_area = self.cropped_region_box();
+        if !self.show_crop_box.get() && self.is_cropped.get() {
+            let cropped_area = self.bounding_box_rect();
             snapshot.push_clip(&cropped_area);
-
-            let left = preview.width() * self.left_x.get();
-            let top = preview.height() * self.top_y.get();
-
-            let x = cropped_area.x() - left;
-            let y = cropped_area.y() - top;
-
-            (x, y)
-        } else {
-            (preview.x(), preview.y())
-        };
-
-        snapshot.translate(&Point::new(translate_x, translate_y));
-
-        if self.show_crop_box.get() {
-            let bounding_rect = self.bounding_box_rect();
-
-            // these are the coordinates of the box if it wasn't centered.
-            let box_left_x = (preview.width() * self.left_x.get()) + preview.x();
-            let box_top_y = (preview.height() * self.top_y.get()) + preview.y();
-
-            let x_dist = bounding_rect.x() - box_left_x;
-            let y_dist = bounding_rect.y() - box_top_y;
-
-            snapshot.translate(&Point::new(x_dist, y_dist));
         }
+        snapshot.translate(&Point::new(preview.x(), preview.y()));
 
         if self.show_zoom.get() {
             snapshot.scale(self.zoom.get() as f32, self.zoom.get() as f32);
@@ -143,26 +127,19 @@ impl WidgetImpl for Preview {
         }
 
         if let Some(ref texture) = *self.texture.borrow() {
-            if self.straighten_angle.get().round() != 0f64 {
+            if self.is_straightened() {
                 // todo: try and get higher res frame when straightend.
                 // todo: grey out outside region
                 // todo: use crop box instead of preview for determinig translate and scaling
-                // todo: show dense grid to line up properly
                 snapshot.save();
-                let (centering_x, centering_y) = self.straigtening_centering_translate(&preview);
-                let scale = self.scale_for_straightening(&preview);
-
                 snapshot.translate(&Point::new(preview.width() / 2.0, preview.height() / 2.0));
                 snapshot.rotate(self.straighten_angle.get() as f32);
                 snapshot.translate(&Point::new(-preview.width() / 2.0, -preview.height() / 2.0));
-
-                snapshot.translate(&Point::new(centering_x, centering_y));
-                snapshot.scale(scale, scale);
             }
 
             texture.snapshot(snapshot, preview.width() as f64, preview.height() as f64);
 
-            if self.straighten_angle.get().round() != 0f64 {
+            if self.is_straightened() {
                 snapshot.restore();
             }
         }
@@ -212,7 +189,7 @@ impl Preview {
         }
     }
 
-    fn scale_for_straightening(&self, preview: &graphene::Rect) -> f32 {
+    pub(crate) fn scale_for_straightening(&self, preview: &graphene::Rect) -> f32 {
         let angle = (self.straighten_angle.get() as f32).abs().to_radians();
 
         let theta = (preview.height() / preview.width()).atan();
@@ -226,7 +203,7 @@ impl Preview {
         diagonal * (beta.cos().abs() / preview.height()).max(gamma.cos().abs() / preview.width())
     }
 
-    fn straigtening_centering_translate(&self, preview: &graphene::Rect) -> (f32, f32) {
+    pub(crate) fn translate_rotated_rect_to_center(&self, preview: &graphene::Rect) -> (f32, f32) {
         let angle = (self.straighten_angle.get() as f32).abs().to_radians();
 
         let half_width = preview.width() / 2.0;
@@ -257,6 +234,93 @@ impl Preview {
         graphene::Rect::new(x, y, preview_width, preview_height)
     }
 
+    pub(crate) fn display_preview_rect(&self) -> graphene::Rect {
+        let mut preview = self.preview_rect();
+
+        if self.show_crop_box.get() || self.is_cropped.get() {
+            let bounding_rect = self.bounding_box_rect();
+
+            // these are the coordinates of the box if it wasn't centered.
+            let box_left_x = (preview.width() * self.left_x.get()) + preview.x();
+            let box_top_y = (preview.height() * self.top_y.get()) + preview.y();
+
+            let x_dist = bounding_rect.x() - box_left_x;
+            let y_dist = bounding_rect.y() - box_top_y;
+            preview.offset(x_dist, y_dist);
+        }
+
+        preview
+    }
+
+    fn visible_preview_center(&self) -> Point {
+        let display = self.display_preview_rect();
+        let angle = self.straighten_angle.get() as f32;
+
+        let scale = self.scale_for_straightening(&display);
+        let scaled_width = display.width() * scale;
+        let scaled_height = display.height() * scale;
+
+        let (sin, cos) = angle.to_radians().sin_cos();
+
+        let horizontal_run = scaled_width * cos;
+        let horizontal_rise = scaled_width * sin;
+        let vertical_run = scaled_height * sin;
+        let vertical_rise = scaled_height * cos;
+
+        let top_left = Self::rotate_point_around(display.top_left(), display.center(), angle);
+        let center_x = top_left.x() + ((horizontal_run - vertical_run) / 2.0);
+        let center_y = top_left.y() + ((horizontal_rise + vertical_rise) / 2.0);
+
+        Point::new(center_x, center_y)
+    }
+
+    fn translate_point(point: &Point, translate: &Point) -> Point {
+        Point::new(point.x() + translate.x(), point.y() + translate.y())
+    }
+
+    fn subtract_points(a: &Point, b: &Point) -> Point {
+        Point::new(a.x() - b.x(), a.y() - b.y())
+    }
+
+    pub(crate) fn visible_preview_rect(&self) -> Rectangle {
+        let display = self.display_preview_rect();
+        let angle = self.straighten_angle.get() as f32;
+
+        let (sin, cos) = angle.to_radians().sin_cos();
+
+        let horizontal_run = display.width() * cos;
+        let horizontal_rise = display.width() * sin;
+        let vertical_run = display.height() * sin;
+        let vertical_rise = display.height() * cos;
+
+        let top_left = Self::rotate_point_around(display.top_left(), display.center(), angle);
+
+        // These corners are built relative to top_left. Do not need to translate for centering since
+        // top_left already adjusted.
+        let top_right = Point::new(
+            top_left.x() + horizontal_run,
+            top_left.y() + horizontal_rise,
+        );
+
+        let bottom_left = Point::new(top_left.x() - vertical_run, top_left.y() + vertical_rise);
+
+        let bottom_right = Point::new(
+            bottom_left.x() + horizontal_run,
+            bottom_left.y() + horizontal_rise,
+        );
+
+        Rectangle {
+            top_left,
+            top_right,
+            bottom_left,
+            bottom_right,
+        }
+    }
+
+    fn is_straightened(&self) -> bool {
+        self.straighten_angle.get().round() != 0f64
+    }
+
     fn cropped_region_box(&self) -> graphene::Rect {
         let preview = self.preview_rect();
         let width = preview.width() * (self.right_x.get() - self.left_x.get());
@@ -264,15 +328,6 @@ impl Preview {
         let (x, y) = self.centered_start(width, height);
 
         graphene::Rect::new(x, y, width, height)
-    }
-
-    pub(crate) fn clamp_coords_to_preview(&self, x: f32, y: f32) -> (f32, f32) {
-        let preview = self.preview_rect();
-
-        (
-            x.clamp(0.0, preview.width()),
-            y.clamp(0.0, preview.height()),
-        )
     }
 
     pub(super) fn update_texture(&self, texture: gdk::Texture) {
@@ -307,6 +362,7 @@ impl crate::ui::preview::Preview {
 
     pub fn set_straigten_angle(&self, angle: f64) {
         self.imp().straighten_angle.set(angle);
+        self.imp().update_to_fit_in_visible_frame();
         self.queue_draw();
     }
 

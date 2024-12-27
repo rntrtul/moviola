@@ -1,8 +1,8 @@
 use crate::ui::preview::input::DragType;
 use crate::ui::preview::preview::Preview;
 use ges::subclass::prelude::ObjectSubclassExt;
-use gtk4::graphene::Rect;
-use gtk4::prelude::{SnapshotExt, SnapshotExtManual, WidgetExt};
+use gtk4::graphene::{Point, Rect};
+use gtk4::prelude::{GestureExt, SnapshotExt, SnapshotExtManual, WidgetExt};
 use gtk4::{gdk, gsk};
 use gtk4::{graphene, Snapshot};
 use std::cmp::PartialEq;
@@ -265,19 +265,167 @@ impl Preview {
         }
     }
 
-    pub(crate) fn coords_as_percent(&self, x: f32, y: f32) -> (f32, f32) {
-        let preview = self.preview_rect();
-        (
-            (x - preview.x()) / preview.width(),
-            (y - preview.y()) / preview.height(),
-        )
+    // fixme: move all point geometry/2d math into own file
+    pub(crate) fn rotate_point(point: graphene::Point, degrees: f32) -> graphene::Point {
+        let angle = degrees.to_radians();
+
+        let rotated_x = (point.x() * angle.cos()) - (point.y() * angle.sin());
+        let rotated_y = (point.y() * angle.cos()) + (point.x() * angle.sin());
+
+        graphene::Point::new(rotated_x, rotated_y)
+    }
+
+    pub(crate) fn rotate_point_around(
+        point: graphene::Point,
+        origin: Point,
+        degrees: f32,
+    ) -> graphene::Point {
+        let rotated = Self::rotate_point(
+            Point::new(point.x() - origin.x(), point.y() - origin.y()),
+            degrees,
+        );
+
+        Point::new(rotated.x() + origin.x(), rotated.y() + origin.y())
+    }
+
+    fn is_left_of_line(line_a: Point, line_b: Point, point: Point) -> f32 {
+        (line_b.x() - line_a.x()) * (point.y() - line_a.y())
+            - (point.x() - line_a.x()) * (line_b.y() - line_a.y())
+    }
+
+    pub(crate) fn point_distance(a: Point, b: Point) -> f32 {
+        ((b.x() - a.x()).powi(2) + (b.y() - a.y()).powi(2)).sqrt()
+    }
+
+    pub(crate) fn closest_point_on_edge_from_point(
+        line_a: Point,
+        line_b: Point,
+        point: Point,
+    ) -> Point {
+        let a = line_a.y() - line_b.y();
+        let b = line_b.x() - line_a.x();
+        let c = (line_a.x() * line_b.y()) - (line_b.x() * line_a.y());
+
+        let denom = a.powi(2) + b.powi(2);
+
+        let x = ((b * ((b * point.x()) - (a * point.y()))) - (a * c)) / denom;
+        let y = ((a * ((-b * point.x()) + (a * point.y()))) - (b * c)) / denom;
+
+        // Need to ensure the point is within line bounds
+        let min_x = line_a.x().min(line_b.x());
+        let max_x = line_a.x().max(line_b.x());
+
+        let min_y = line_a.y().min(line_b.y());
+        let max_y = line_a.y().max(line_b.y());
+
+        Point::new(x.clamp(min_x, max_x), y.clamp(min_y, max_y))
+    }
+
+    pub(crate) fn is_point_in_rotated_frame(&self, point: graphene::Point) -> bool {
+        let visible = self.visible_preview_rect();
+
+        Self::is_left_of_line(visible.top_left, visible.top_right, point) >= 0.0
+            && Self::is_left_of_line(visible.top_right, visible.bottom_right, point) >= 0.0
+            && Self::is_left_of_line(visible.bottom_right, visible.bottom_left, point) >= 0.0
+            && Self::is_left_of_line(visible.bottom_left, visible.top_left, point) >= 0.0
+    }
+
+    pub(crate) fn constrain_in_visible_frame(&self, x: f32, y: f32) -> bool {
+        self.is_point_in_rotated_frame(Point::new(x, y))
+    }
+
+    pub(crate) fn bounding_point_on_edges(a: Point, b: Point, c: Point, point: Point) -> Point {
+        let ab_closest = Self::closest_point_on_edge_from_point(a, b, point);
+        let ac_closest = Self::closest_point_on_edge_from_point(a, c, point);
+
+        if Self::point_distance(ab_closest, point) > Self::point_distance(ac_closest, point) {
+            ac_closest
+        } else {
+            ab_closest
+        }
+    }
+
+    pub(crate) fn update_to_fit_in_visible_frame(&self) {
+        let visible = self.visible_preview_rect();
+        let rect = self.bounding_box_rect();
+
+        let mut left = -f32::INFINITY;
+        let mut top = -f32::INFINITY;
+        let mut right = f32::INFINITY;
+        let mut bottom = f32::INFINITY;
+
+        if !self.is_point_in_rotated_frame(rect.top_left()) {
+            let bounder = Self::bounding_point_on_edges(
+                visible.top_left,
+                visible.top_right,
+                visible.bottom_left,
+                rect.top_left(),
+            );
+
+            let (left_x, top_y) = self.point_as_percent(bounder);
+            left = left_x;
+            top = top_y;
+        }
+
+        if !self.is_point_in_rotated_frame(rect.top_right()) {
+            let bounder = Self::bounding_point_on_edges(
+                visible.top_right,
+                visible.top_left,
+                visible.bottom_right,
+                rect.top_right(),
+            );
+
+            let (x, y) = self.point_as_percent(bounder);
+            right = x;
+            top = top.max(y);
+        }
+
+        if !self.is_point_in_rotated_frame(rect.bottom_left()) {
+            let bounder = Self::bounding_point_on_edges(
+                visible.bottom_left,
+                visible.top_left,
+                visible.bottom_right,
+                rect.bottom_left(),
+            );
+
+            let (x, y) = self.point_as_percent(bounder);
+            left = left.max(x);
+            bottom = y;
+        }
+
+        if !self.is_point_in_rotated_frame(rect.bottom_right()) {
+            let bounder = Self::bounding_point_on_edges(
+                visible.bottom_right,
+                visible.top_right,
+                visible.bottom_left,
+                rect.bottom_right(),
+            );
+
+            let (x, y) = self.point_as_percent(bounder);
+            right = right.min(x);
+            bottom = bottom.min(y);
+        }
+
+        if left != -f32::INFINITY {
+            self.left_x.set(left);
+        }
+        if top != -f32::INFINITY {
+            self.top_y.set(top);
+        }
+        if right != f32::INFINITY {
+            self.right_x.set(right);
+        }
+        if bottom != f32::INFINITY {
+            self.bottom_y.set(bottom);
+        }
     }
 
     pub(crate) fn update_handle_pos(&self, x_offset: f32, y_offset: f32) {
-        let left_x = (self.left_x.get() + x_offset).clamp(0.0, self.right_x.get());
-        let top_y = (self.top_y.get() + y_offset).clamp(0.0, self.bottom_y.get());
-        let right_x = (self.right_x.get() + x_offset).clamp(self.left_x.get(), 1.0);
-        let bottom_y = (self.bottom_y.get() + y_offset).clamp(self.top_y.get(), 1.0);
+        // fixme: cleanup handling of bounds
+        let left_x = (self.left_x.get() + x_offset).min(self.right_x.get());
+        let top_y = (self.top_y.get() + y_offset).min(self.bottom_y.get());
+        let right_x = (self.right_x.get() + x_offset).max(self.left_x.get());
+        let bottom_y = (self.bottom_y.get() + y_offset).max(self.top_y.get());
 
         match self.active_handle.get() {
             HandleType::TopLeft => {
@@ -302,6 +450,7 @@ impl Preview {
         }
 
         self.maintain_aspect_ratio();
+        self.update_to_fit_in_visible_frame();
         self.obj().queue_draw();
     }
 
