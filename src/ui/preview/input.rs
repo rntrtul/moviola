@@ -46,6 +46,9 @@ impl Preview {
             obj,
             move |_, x, y| {
                 obj.imp().is_new_drag.set(true);
+                obj.imp()
+                    .prev_drag
+                    .set(graphene::Point::new(x as f32, y as f32));
                 obj.imp().box_handle_drag_begin(x as f32, y as f32);
             }
         ));
@@ -59,13 +62,9 @@ impl Preview {
 
                 let target_x = (start_x + x_offset) as f32; // graphene uses f32, so not using f64
                 let target_y = (start_y + y_offset) as f32;
+                // println!("target: ({target_x}, {target_y})");
 
-                let mut prev_drag = preview.prev_drag.get();
-                if preview.is_new_drag.get() {
-                    preview.is_new_drag.set(false);
-                    prev_drag = graphene::Point::new(target_x, target_y);
-                    preview.prev_drag.set(prev_drag);
-                }
+                let prev_drag = preview.prev_drag.get();
 
                 let offset_from_prev_x = target_x - prev_drag.x();
                 let offset_from_prev_y = target_y - prev_drag.y();
@@ -76,7 +75,11 @@ impl Preview {
                 if preview.show_crop_box.get() {
                     match preview.active_drag_type.get() {
                         DragType::Handle => {
-                            preview.update_handle_pos(offset_prev_percent_x, offset_prev_percent_y);
+                            preview.update_handle_pos(
+                                offset_prev_percent_x,
+                                offset_prev_percent_y,
+                                graphene::Point::new(offset_from_prev_x, offset_from_prev_y),
+                            );
                         }
                         DragType::BoxTranslate => {
                             preview.translate_box(offset_prev_percent_x, offset_prev_percent_y)
@@ -135,5 +138,13 @@ impl Preview {
             (point.x() - preview.x()) / preview.width(),
             (point.y() - preview.y()) / preview.height(),
         )
+    }
+
+    pub(crate) fn x_as_percent(&self, x: f32) -> f32 {
+        self.size_as_percent(x, 0.0).0
+    }
+
+    pub(crate) fn y_as_percent(&self, y: f32) -> f32 {
+        self.size_as_percent(0.0, y).1
     }
 }

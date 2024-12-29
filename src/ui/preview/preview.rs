@@ -1,3 +1,4 @@
+use crate::geometry::{rotate_point_around, Rectangle};
 use crate::ui::preview::bounding_box::{HandleType, BOX_HANDLE_WIDTH};
 use crate::ui::preview::input::DragType;
 use crate::ui::preview::{BoundingBoxDimensions, CropMode};
@@ -6,7 +7,7 @@ use ges::subclass::prelude::ObjectSubclassIsExt;
 use gst::glib;
 use gst::subclass::prelude::{ObjectImpl, ObjectSubclass};
 use gtk4::graphene::Point;
-use gtk4::prelude::{GestureExt, PaintableExt, SnapshotExt, WidgetExt};
+use gtk4::prelude::{PaintableExt, SnapshotExt, WidgetExt};
 use gtk4::subclass::prelude::ObjectSubclassExt;
 use gtk4::subclass::widget::WidgetImpl;
 use gtk4::{gdk, graphene, Orientation};
@@ -31,21 +32,12 @@ pub struct Preview {
     pub(crate) orientation: Cell<crate::ui::preview::Orientation>,
     pub(crate) straighten_angle: Cell<f64>,
     pub(crate) texture: RefCell<Option<gdk::Texture>>,
-    pub(crate) _crop_scale: Cell<f32>,
     pub(crate) is_cropped: Cell<bool>,
     pub(crate) is_new_drag: Cell<bool>,
     pub(crate) original_aspect_ratio: Cell<f32>,
     //todo: only using native frame to calc aspect ratio
     pub(crate) native_frame_width: Cell<u32>,
     pub(crate) native_frame_height: Cell<u32>,
-}
-
-// todo: move somewhere else
-pub struct Rectangle {
-    pub(crate) top_left: Point,
-    pub(crate) top_right: Point,
-    pub(crate) bottom_left: Point,
-    pub(crate) bottom_right: Point,
 }
 
 impl Default for Preview {
@@ -66,7 +58,6 @@ impl Default for Preview {
             orientation: Cell::new(crate::ui::preview::Orientation::default()),
             straighten_angle: Cell::new(0f64),
             texture: RefCell::new(None),
-            _crop_scale: Cell::new(1.0),
             is_cropped: Cell::new(false),
             is_new_drag: Cell::new(true),
             original_aspect_ratio: Cell::new(1.77f32),
@@ -130,7 +121,6 @@ impl WidgetImpl for Preview {
             if self.is_straightened() {
                 // todo: try and get higher res frame when straightend.
                 // todo: grey out outside region
-                // todo: use crop box instead of preview for determinig translate and scaling
                 snapshot.save();
                 snapshot.translate(&Point::new(preview.width() / 2.0, preview.height() / 2.0));
                 snapshot.rotate(self.straighten_angle.get() as f32);
@@ -189,34 +179,6 @@ impl Preview {
         }
     }
 
-    pub(crate) fn scale_for_straightening(&self, preview: &graphene::Rect) -> f32 {
-        let angle = (self.straighten_angle.get() as f32).abs().to_radians();
-
-        let theta = (preview.height() / preview.width()).atan();
-        let phi = (preview.width() / preview.height()).atan();
-
-        let beta = phi - angle;
-        let gamma = theta - angle;
-
-        let diagonal = (preview.width().powi(2) + preview.height().powi(2)).sqrt();
-
-        diagonal * (beta.cos().abs() / preview.height()).max(gamma.cos().abs() / preview.width())
-    }
-
-    pub(crate) fn translate_rotated_rect_to_center(&self, preview: &graphene::Rect) -> (f32, f32) {
-        let angle = (self.straighten_angle.get() as f32).abs().to_radians();
-
-        let half_width = preview.width() / 2.0;
-        let half_height = preview.height() / 2.0;
-
-        let cx = -half_width
-            + ((preview.width() * angle.cos()) + (preview.height() * angle.sin())) / 2.0;
-        let cy = -half_height
-            + ((preview.height() * angle.cos()) + (preview.width() * angle.sin())) / 2.0;
-
-        (-cx, -cy)
-    }
-
     pub(crate) fn centered_start(&self, width: f32, height: f32) -> (f32, f32) {
         let widget_width = self.obj().width() as f32;
         let widget_height = self.obj().height() as f32;
@@ -252,36 +214,6 @@ impl Preview {
         preview
     }
 
-    fn visible_preview_center(&self) -> Point {
-        let display = self.display_preview_rect();
-        let angle = self.straighten_angle.get() as f32;
-
-        let scale = self.scale_for_straightening(&display);
-        let scaled_width = display.width() * scale;
-        let scaled_height = display.height() * scale;
-
-        let (sin, cos) = angle.to_radians().sin_cos();
-
-        let horizontal_run = scaled_width * cos;
-        let horizontal_rise = scaled_width * sin;
-        let vertical_run = scaled_height * sin;
-        let vertical_rise = scaled_height * cos;
-
-        let top_left = Self::rotate_point_around(display.top_left(), display.center(), angle);
-        let center_x = top_left.x() + ((horizontal_run - vertical_run) / 2.0);
-        let center_y = top_left.y() + ((horizontal_rise + vertical_rise) / 2.0);
-
-        Point::new(center_x, center_y)
-    }
-
-    fn translate_point(point: &Point, translate: &Point) -> Point {
-        Point::new(point.x() + translate.x(), point.y() + translate.y())
-    }
-
-    fn subtract_points(a: &Point, b: &Point) -> Point {
-        Point::new(a.x() - b.x(), a.y() - b.y())
-    }
-
     pub(crate) fn visible_preview_rect(&self) -> Rectangle {
         let display = self.display_preview_rect();
         let angle = self.straighten_angle.get() as f32;
@@ -293,7 +225,7 @@ impl Preview {
         let vertical_run = display.height() * sin;
         let vertical_rise = display.height() * cos;
 
-        let top_left = Self::rotate_point_around(display.top_left(), display.center(), angle);
+        let top_left = rotate_point_around(display.top_left(), display.center(), angle);
 
         // These corners are built relative to top_left. Do not need to translate for centering since
         // top_left already adjusted.
@@ -319,15 +251,6 @@ impl Preview {
 
     fn is_straightened(&self) -> bool {
         self.straighten_angle.get().round() != 0f64
-    }
-
-    fn cropped_region_box(&self) -> graphene::Rect {
-        let preview = self.preview_rect();
-        let width = preview.width() * (self.right_x.get() - self.left_x.get());
-        let height = preview.height() * (self.bottom_y.get() - self.top_y.get());
-        let (x, y) = self.centered_start(width, height);
-
-        graphene::Rect::new(x, y, width, height)
     }
 
     pub(super) fn update_texture(&self, texture: gdk::Texture) {

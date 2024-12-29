@@ -5,6 +5,7 @@ use crate::app::App;
 
 mod app;
 mod config;
+mod geometry;
 mod range;
 mod renderer;
 mod ui;
