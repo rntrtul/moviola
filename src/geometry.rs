@@ -15,6 +15,7 @@ pub enum CornerType {
     BottomRight,
 }
 
+#[derive(Debug)]
 pub struct Rectangle {
     pub(crate) top_left: Point,
     pub(crate) top_right: Point,

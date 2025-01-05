@@ -1,6 +1,4 @@
-use crate::geometry::{
-    bounding_point_on_edges, x_y_distance_to_edge_from_point, CornerType, EdgeType, Rectangle,
-};
+use crate::geometry::{bounding_point_on_edges, Rectangle};
 use crate::ui::preview::input::DragType;
 use crate::ui::preview::preview::Preview;
 use ges::subclass::prelude::ObjectSubclassExt;
@@ -322,163 +320,6 @@ impl Preview {
         }
     }
 
-    fn find_constrainig_bound(bounds: &[f32], offset: f32) -> f32 {
-        let constraining_idx = bounds
-            .iter()
-            .enumerate()
-            .filter(|(_, num)| {
-                (offset > 0.0) == (num > &&0.0)
-                    && (**num != f32::INFINITY)
-                    && (**num != f32::NEG_INFINITY)
-            })
-            .min_by(|(_, a), (_, b)| a.abs().total_cmp(&b.abs()))
-            .map(|(index, _)| index);
-
-        if constraining_idx.is_some() {
-            bounds[constraining_idx.unwrap()]
-        } else {
-            offset
-        }
-    }
-
-    fn corner_bounds(
-        rect: &Rectangle,
-        point: Point,
-        corner: CornerType,
-    ) -> ((f32, f32), (f32, f32)) {
-        match corner {
-            CornerType::TopLeft => (
-                x_y_distance_to_edge_from_point(rect.top_left, rect.top_right, point),
-                x_y_distance_to_edge_from_point(rect.top_left, rect.bottom_left, point),
-            ),
-            CornerType::TopRight => (
-                x_y_distance_to_edge_from_point(rect.top_right, rect.top_left, point),
-                x_y_distance_to_edge_from_point(rect.top_right, rect.bottom_right, point),
-            ),
-            CornerType::BottomLeft => (
-                x_y_distance_to_edge_from_point(rect.bottom_left, rect.bottom_right, point),
-                x_y_distance_to_edge_from_point(rect.bottom_left, rect.top_left, point),
-            ),
-            CornerType::BottomRight => (
-                x_y_distance_to_edge_from_point(rect.bottom_right, rect.bottom_right, point),
-                x_y_distance_to_edge_from_point(rect.bottom_right, rect.top_right, point),
-            ),
-        }
-    }
-
-    fn allowable_offset_for_edge(&self, moving_edge: EdgeType, offset: f32) -> f32 {
-        if offset == 0.0 {
-            return 0.0;
-        }
-
-        let bound_box = self.bounding_box_rect();
-        let visible = self.visible_preview_rect();
-
-        match moving_edge {
-            EdgeType::Left => {
-                if (visible.is_point_on_boundary(bound_box.top_left())
-                    || visible.is_point_on_boundary(bound_box.bottom_left()))
-                    && offset < 0.0
-                {
-                    return 0.0;
-                }
-
-                let (tl_left_dist, tl_top_dist) =
-                    Self::corner_bounds(&visible, bound_box.top_left(), CornerType::TopLeft);
-
-                let (bl_left_dist, bl_bot_dist) =
-                    Self::corner_bounds(&visible, bound_box.bottom_left(), CornerType::BottomLeft);
-
-                let bounds = [tl_top_dist, tl_left_dist, bl_bot_dist, bl_left_dist].map(|(x, y)| x);
-                let max_allowable = Self::find_constrainig_bound(&bounds, offset);
-
-                if max_allowable.abs() < offset.abs() {
-                    self.x_as_percent(max_allowable)
-                } else {
-                    self.x_as_percent(offset)
-                }
-            }
-            EdgeType::Top => {
-                if (visible.is_point_on_boundary(bound_box.top_left())
-                    || visible.is_point_on_boundary(bound_box.top_right()))
-                    && offset < 0.0
-                {
-                    return 0.0;
-                }
-
-                let (tl_left_dist, tl_top_dist) =
-                    Self::corner_bounds(&visible, bound_box.top_left(), CornerType::TopLeft);
-
-                let (tr_right_dist, tr_top_dist) =
-                    Self::corner_bounds(&visible, bound_box.top_right(), CornerType::TopRight);
-
-                let bounds =
-                    [tl_top_dist, tl_left_dist, tr_top_dist, tr_right_dist].map(|(_, y)| y);
-                let max_allowable = Self::find_constrainig_bound(&bounds, offset);
-
-                if max_allowable.abs() < offset.abs() {
-                    self.y_as_percent(max_allowable)
-                } else {
-                    self.y_as_percent(offset)
-                }
-            }
-            EdgeType::Right => {
-                if (visible.is_point_on_boundary(bound_box.top_right())
-                    || visible.is_point_on_boundary(bound_box.bottom_right()))
-                    && offset > 0.0
-                {
-                    return 0.0;
-                }
-
-                let (tr_right_dist, tr_top_dist) =
-                    Self::corner_bounds(&visible, bound_box.top_right(), CornerType::TopRight);
-
-                let (br_right_dist, br_bottom_dist) = Self::corner_bounds(
-                    &visible,
-                    bound_box.bottom_right(),
-                    CornerType::BottomRight,
-                );
-
-                let bounds =
-                    [tr_top_dist, tr_right_dist, br_right_dist, br_bottom_dist].map(|(x, _)| x);
-                let max_allowable = Self::find_constrainig_bound(&bounds, offset);
-
-                if max_allowable.abs() < offset.abs() {
-                    self.x_as_percent(max_allowable)
-                } else {
-                    self.x_as_percent(offset)
-                }
-            }
-            EdgeType::Bottom => {
-                if (visible.is_point_on_boundary(bound_box.bottom_left())
-                    || visible.is_point_on_boundary(bound_box.bottom_right()))
-                    && offset > 0.0
-                {
-                    return 0.0;
-                }
-
-                let (bl_left_dist, bl_bot_dist) =
-                    Self::corner_bounds(&visible, bound_box.bottom_left(), CornerType::BottomLeft);
-
-                let (br_right_dist, br_bottom_dist) = Self::corner_bounds(
-                    &visible,
-                    bound_box.bottom_right(),
-                    CornerType::BottomRight,
-                );
-
-                let bounds =
-                    [bl_left_dist, bl_bot_dist, br_right_dist, br_bottom_dist].map(|(_, y)| y);
-                let max_allowable = Self::find_constrainig_bound(&bounds, offset);
-
-                if max_allowable.abs() < offset.abs() {
-                    self.y_as_percent(max_allowable)
-                } else {
-                    self.y_as_percent(offset)
-                }
-            }
-        }
-    }
-
     pub(crate) fn update_to_fit_in_visible_frame(&self) {
         let rect = self.bounding_box_rect();
         let visible = self.visible_preview_rect();
@@ -529,21 +370,10 @@ impl Preview {
     }
 
     pub(crate) fn update_handle_pos(&self, x_offset: f32, y_offset: f32, offset_coords: Point) {
-        let left_x = (self.left_x.get()
-            + self.allowable_offset_for_edge(EdgeType::Left, offset_coords.x()))
-        .min(self.right_x.get());
-
-        let top_y = (self.top_y.get()
-            + self.allowable_offset_for_edge(EdgeType::Top, offset_coords.y()))
-        .min(self.bottom_y.get());
-
-        let right_x = (self.right_x.get()
-            + self.allowable_offset_for_edge(EdgeType::Right, offset_coords.x()))
-        .max(self.left_x.get());
-
-        let bottom_y = (self.bottom_y.get()
-            + self.allowable_offset_for_edge(EdgeType::Bottom, offset_coords.y()))
-        .max(self.top_y.get());
+        let left_x = (self.left_x.get() + x_offset).min(self.right_x.get());
+        let top_y = (self.top_y.get() + y_offset).min(self.bottom_y.get());
+        let right_x = (self.right_x.get() + x_offset).max(self.left_x.get());
+        let bottom_y = (self.bottom_y.get() + y_offset).max(self.top_y.get());
 
         match self.active_handle.get() {
             HandleType::TopLeft => {
@@ -567,8 +397,8 @@ impl Preview {
             }
         }
 
+        self.update_to_fit_in_visible_frame();
         self.maintain_aspect_ratio();
-        // self.update_to_fit_in_visible_frame();
         self.obj().queue_draw();
     }
 
@@ -577,6 +407,7 @@ impl Preview {
             return;
         }
 
+        // fixme: stop using 0,1 and use distance to visible rect on x and y from point
         // The edges are clamped from [0,1]. When the clamp activates it means the clamped edge will
         // move a different amount compared to the trailing edge.
         // To ensure they move same amount we check if the current offset will cause clamping and if
