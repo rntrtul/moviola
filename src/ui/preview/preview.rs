@@ -253,6 +253,14 @@ impl Preview {
         self.straighten_angle.get().round() != 0f64
     }
 
+    pub(crate) fn crop_aspect_ratio(&self) -> f32 {
+        if self.crop_mode.get() == CropMode::Original {
+            self.original_aspect_ratio.get()
+        } else {
+            self.crop_mode.get().value()
+        }
+    }
+
     pub(super) fn update_texture(&self, texture: gdk::Texture) {
         self.texture.borrow_mut().replace(texture);
     }

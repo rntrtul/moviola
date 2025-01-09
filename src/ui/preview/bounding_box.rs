@@ -1,4 +1,4 @@
-use crate::geometry::{bounding_point_on_edges, Rectangle};
+use crate::geometry::{bounding_point_on_edges, Corner, CornerType, EdgeType, Rectangle};
 use crate::ui::preview::input::DragType;
 use crate::ui::preview::preview::Preview;
 use ges::subclass::prelude::ObjectSubclassExt;
@@ -28,7 +28,7 @@ pub enum CropMode {
 }
 
 impl CropMode {
-    fn value(&self) -> f32 {
+    pub(crate) fn value(&self) -> f32 {
         match *self {
             CropMode::Free => 0.,
             CropMode::Original => 0.,
@@ -369,11 +369,214 @@ impl Preview {
         }
     }
 
-    pub(crate) fn update_handle_pos(&self, x_offset: f32, y_offset: f32, offset_coords: Point) {
-        let left_x = (self.left_x.get() + x_offset).min(self.right_x.get());
-        let top_y = (self.top_y.get() + y_offset).min(self.bottom_y.get());
-        let right_x = (self.right_x.get() + x_offset).max(self.left_x.get());
-        let bottom_y = (self.bottom_y.get() + y_offset).max(self.top_y.get());
+    pub fn aspect_ratio_respecting_offset(&self, offset: Point) -> (f32, f32) {
+        if self.crop_mode.get() == CropMode::Free {
+            return (offset.x(), offset.y());
+        }
+
+        let aspect_ratio = self.crop_aspect_ratio();
+
+        let x_sign = if offset.x() >= 0.0 { 1.0 } else { -1.0 };
+        let y_sign = if offset.y() >= 0.0 { 1.0 } else { -1.0 };
+
+        if aspect_ratio > 1.0 {
+            let corrected_y = (offset.x().abs() / aspect_ratio) * y_sign;
+            (offset.x(), corrected_y)
+        } else {
+            let corrected_x = (offset.y().abs() * aspect_ratio) * x_sign;
+            (corrected_x, offset.y())
+        }
+    }
+
+    fn corner_constraining_edge(&self, corner: Corner) -> EdgeType {
+        if self.straighten_angle.get() <= 0.0 {
+            match corner.corner_type {
+                CornerType::TopLeft => EdgeType::Top,
+                CornerType::TopRight => EdgeType::Right,
+                CornerType::BottomLeft => EdgeType::Left,
+                CornerType::BottomRight => EdgeType::Bottom,
+            }
+        } else {
+            match corner.corner_type {
+                CornerType::TopLeft => EdgeType::Left,
+                CornerType::TopRight => EdgeType::Top,
+                CornerType::BottomLeft => EdgeType::Bottom,
+                CornerType::BottomRight => EdgeType::Right,
+            }
+        }
+    }
+
+    fn corner_constraints(&self, rect: &Rectangle, corner: Corner) -> (f32, f32) {
+        let edge = self.corner_constraining_edge(corner);
+        rect.distance_to_edge(corner.point, edge)
+    }
+
+    fn corner_drag_edge_intersection(
+        &self,
+        rect: &Rectangle,
+        corner: Corner,
+        target: Point,
+    ) -> Option<Point> {
+        let edge = self.corner_constraining_edge(corner);
+        rect.line_intersection_to_edge(corner.point, target, edge)
+    }
+
+    fn corner_x_y_allowance(&self, rect: &Rectangle, corner: Corner) -> (f32, f32) {
+        let (vertical_edge, horizontal_edge) = match corner.corner_type {
+            CornerType::TopLeft => (EdgeType::Left, EdgeType::Top),
+            CornerType::TopRight => (EdgeType::Right, EdgeType::Top),
+            CornerType::BottomLeft => (EdgeType::Left, EdgeType::Bottom),
+            CornerType::BottomRight => (EdgeType::Right, EdgeType::Bottom),
+        };
+
+        let (x_1, y_1) = rect.distance_to_edge(corner.point, vertical_edge);
+        let (x_2, y_2) = rect.distance_to_edge(corner.point, horizontal_edge);
+
+        let binding_x = if x_1.abs() > x_2.abs() { x_2 } else { x_1 };
+        let binding_y = if y_1.abs() > y_2.abs() { y_2 } else { y_1 };
+
+        (binding_x, binding_y)
+    }
+
+    fn shrink_direction_from_corner(corner: Corner) -> (f32, f32) {
+        match corner.corner_type {
+            CornerType::TopLeft => (1.0, 1.0),
+            CornerType::TopRight => (-1.0, 1.0),
+            CornerType::BottomLeft => (1.0, -1.0),
+            CornerType::BottomRight => (-1.0, -1.0),
+        }
+    }
+
+    fn is_same_sign(a: f32, b: f32) -> bool {
+        (a == 0.0) || b == 0.0 || ((a >= 0.0) == (b >= 0.0))
+    }
+
+    fn contain_offset_to_visible(&self, offset: Point) -> (f32, f32) {
+        let visible = self.visible_preview_rect();
+        let bound = self.bounding_box_rect();
+
+        let top_left = Corner::new(bound.top_left(), CornerType::TopLeft);
+        let top_right = Corner::new(bound.top_right(), CornerType::TopRight);
+        let bottom_left = Corner::new(bound.bottom_left(), CornerType::BottomLeft);
+        let bottom_right = Corner::new(bound.bottom_right(), CornerType::BottomRight);
+
+        let active_corner = match self.active_handle.get() {
+            HandleType::TopLeft => top_left,
+            HandleType::BottomLeft => bottom_left,
+            HandleType::TopRight => top_right,
+            HandleType::BottomRight => bottom_right,
+            HandleType::None => {
+                panic!("Cant make Corner");
+            }
+        };
+        let (shrink_direction_x, shrink_direction_y) =
+            Self::shrink_direction_from_corner(active_corner);
+
+        if Self::is_same_sign(shrink_direction_x, offset.x())
+            && Self::is_same_sign(shrink_direction_y, offset.y())
+        {
+            return (offset.x(), offset.y()); // Box is being shrunk, so can't hit borders
+        }
+
+        let target = Point::new(
+            active_corner.point.x() + offset.x(),
+            active_corner.point.y() + offset.y(),
+        );
+
+        if visible.is_point_on_boundary(active_corner.point) && !visible.contains(target) {
+            return (0.0, 0.0); // trying to move out of rect, but at border for active corner
+        }
+
+        let vertically_adjacent_corner = match active_corner.corner_type {
+            CornerType::TopLeft => bottom_left,
+            CornerType::TopRight => bottom_right,
+            CornerType::BottomLeft => top_left,
+            CornerType::BottomRight => top_right,
+        };
+
+        let horizontally_adjacent_corner = match active_corner.corner_type {
+            CornerType::TopLeft => top_right,
+            CornerType::TopRight => top_left,
+            CornerType::BottomLeft => bottom_right,
+            CornerType::BottomRight => bottom_left,
+        };
+
+        let x_constraint = self
+            .corner_constraints(&visible, vertically_adjacent_corner)
+            .0;
+        let y_constraint = self
+            .corner_constraints(&visible, horizontally_adjacent_corner)
+            .1;
+        let active_constraints = self.corner_x_y_allowance(&visible, active_corner);
+
+        let x_bounds = [x_constraint, active_constraints.0]
+            .into_iter()
+            .filter(|x| x.is_finite() && Self::is_same_sign(*x, offset.x()))
+            .min_by(|a, b| a.abs().total_cmp(&b.abs()));
+
+        let y_bounds = [y_constraint, active_constraints.1]
+            .into_iter()
+            .filter(|y| y.is_finite() && Self::is_same_sign(*y, offset.y()))
+            .min_by(|a, b| a.abs().total_cmp(&b.abs()));
+
+        let x_sign = if offset.x() >= 0.0 { 1.0 } else { -1.0 };
+        let y_sign = if offset.y() >= 0.0 { 1.0 } else { -1.0 };
+
+        let aspect_ratio = if self.crop_mode.get() == CropMode::Free {
+            offset.x() / offset.y()
+        } else {
+            self.crop_aspect_ratio()
+        };
+
+        let mut constraints: Vec<(f32, f32)> = Vec::with_capacity(4);
+
+        // only worry about bounding if moving in that direction. Also avoids cases in free crop mode
+        // where the aspect ratio could be 0.0 or inf and mess up the bounds
+        if x_bounds.is_some() && offset.x() != 0.0 {
+            let x = x_bounds.unwrap();
+            let y = (x.abs() / aspect_ratio) * y_sign;
+            constraints.push((x, y));
+        }
+
+        if y_bounds.is_some() && offset.y() != 0.0 {
+            let y = y_bounds.unwrap();
+            let x = (y.abs() * aspect_ratio) * x_sign;
+            constraints.push((x, y));
+        }
+
+        let active_boundary_constraint =
+            self.corner_drag_edge_intersection(&visible, active_corner, target);
+
+        if let Some(boundary_constraint) = active_boundary_constraint {
+            if visible.is_point_on_boundary(boundary_constraint) {
+                let x = boundary_constraint.x() - active_corner.point.x();
+                let y = boundary_constraint.y() - active_corner.point.y();
+
+                constraints.push((x, y));
+            }
+        }
+
+        constraints.push((offset.x(), offset.y()));
+
+        let (x, y) = *constraints
+            .iter()
+            .min_by(|a, b| (a.0.powi(2) + a.1.powi(2)).total_cmp(&(b.0.powi(2) + b.1.powi(2))))
+            .unwrap();
+
+        (x, y)
+    }
+
+    pub(crate) fn update_handle_pos(&self, offset_coords: Point) {
+        let (x_offset, y_offset) = self.aspect_ratio_respecting_offset(offset_coords);
+        let (x_offset, y_offset) = self.contain_offset_to_visible(Point::new(x_offset, y_offset));
+
+        let x_offset_percent = self.x_as_percent(x_offset);
+        let y_offset_percent = self.y_as_percent(y_offset);
+
+        let left_x = (self.left_x.get() + x_offset_percent).min(self.right_x.get());
+        let top_y = (self.top_y.get() + y_offset_percent).min(self.bottom_y.get());
+        let right_x = (self.right_x.get() + x_offset_percent).max(self.left_x.get());
+        let bottom_y = (self.bottom_y.get() + y_offset_percent).max(self.top_y.get());
 
         match self.active_handle.get() {
             HandleType::TopLeft => {
@@ -397,8 +600,6 @@ impl Preview {
             }
         }
 
-        self.update_to_fit_in_visible_frame();
-        self.maintain_aspect_ratio();
         self.obj().queue_draw();
     }
 
@@ -408,6 +609,9 @@ impl Preview {
         }
 
         // fixme: stop using 0,1 and use distance to visible rect on x and y from point
+        //  function similair to corner_x_yallowance. except for edges. Will test each edge with
+        //  2 corners and choose min. (eg. Top will be abs min of topleft and topright distance to edge)
+
         // The edges are clamped from [0,1]. When the clamp activates it means the clamped edge will
         // move a different amount compared to the trailing edge.
         // To ensure they move same amount we check if the current offset will cause clamping and if

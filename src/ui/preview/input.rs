@@ -62,7 +62,6 @@ impl Preview {
 
                 let target_x = (start_x + x_offset) as f32; // graphene uses f32, so not using f64
                 let target_y = (start_y + y_offset) as f32;
-                // println!("target: ({target_x}, {target_y})");
 
                 let prev_drag = preview.prev_drag.get();
 
@@ -75,11 +74,10 @@ impl Preview {
                 if preview.show_crop_box.get() {
                     match preview.active_drag_type.get() {
                         DragType::Handle => {
-                            preview.update_handle_pos(
-                                offset_prev_percent_x,
-                                offset_prev_percent_y,
-                                graphene::Point::new(offset_from_prev_x, offset_from_prev_y),
-                            );
+                            preview.update_handle_pos(graphene::Point::new(
+                                offset_from_prev_x,
+                                offset_from_prev_y,
+                            ));
                         }
                         DragType::BoxTranslate => {
                             preview.translate_box(offset_prev_percent_x, offset_prev_percent_y)
@@ -119,6 +117,7 @@ impl Preview {
 
                 preview.active_drag_type.set(DragType::None);
                 preview.prev_drag.set(graphene::Point::zero());
+                println!("_________DRAG DONE_________");
             }
         ));
 
