@@ -68,20 +68,14 @@ impl Preview {
                 let offset_from_prev_x = target_x - prev_drag.x();
                 let offset_from_prev_y = target_y - prev_drag.y();
 
-                let (offset_prev_percent_x, offset_prev_percent_y) =
-                    preview.size_as_percent(offset_from_prev_x, offset_from_prev_y);
+                let offset_as_point = graphene::Point::new(offset_from_prev_x, offset_from_prev_y);
 
                 if preview.show_crop_box.get() {
                     match preview.active_drag_type.get() {
                         DragType::Handle => {
-                            preview.update_handle_pos(graphene::Point::new(
-                                offset_from_prev_x,
-                                offset_from_prev_y,
-                            ));
+                            preview.update_handle_pos(offset_as_point);
                         }
-                        DragType::BoxTranslate => {
-                            preview.translate_box(offset_prev_percent_x, offset_prev_percent_y)
-                        }
+                        DragType::BoxTranslate => preview.translate_box(offset_as_point),
                         _ => {}
                     }
 
@@ -117,7 +111,6 @@ impl Preview {
 
                 preview.active_drag_type.set(DragType::None);
                 preview.prev_drag.set(graphene::Point::zero());
-                println!("_________DRAG DONE_________");
             }
         ));
 

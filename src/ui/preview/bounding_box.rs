@@ -432,10 +432,18 @@ impl Preview {
         let (x_1, y_1) = rect.distance_to_edge(corner.point, vertical_edge);
         let (x_2, y_2) = rect.distance_to_edge(corner.point, horizontal_edge);
 
-        let binding_x = if x_1.abs() > x_2.abs() { x_2 } else { x_1 };
-        let binding_y = if y_1.abs() > y_2.abs() { y_2 } else { y_1 };
+        let binding_x = Self::min_by_abs(x_1, x_2);
+        let binding_y = Self::min_by_abs(y_1, y_2);
 
         (binding_x, binding_y)
+    }
+
+    fn min_by_abs(a: f32, b: f32) -> f32 {
+        if a.abs() > b.abs() {
+            b
+        } else {
+            a
+        }
     }
 
     fn shrink_direction_from_corner(corner: Corner) -> (f32, f32) {
@@ -603,48 +611,77 @@ impl Preview {
         self.obj().queue_draw();
     }
 
-    pub(crate) fn translate_box(&self, offset_x: f32, offset_y: f32) {
-        if offset_x == 0.0 && offset_y == 0.0 {
+    fn finite_abs_min(arr: &[f32]) -> Option<f32> {
+        let a = arr
+            .iter()
+            .filter(|val| val.is_finite())
+            .min_by(|a, b| a.abs().partial_cmp(&b.abs()).unwrap());
+
+        if a.is_some() {
+            Some(*a.unwrap())
+        } else {
+            None
+        }
+    }
+
+    pub(crate) fn translate_box(&self, offset: Point) {
+        if offset.x() == 0.0 && offset.y() == 0.0 {
             return;
         }
 
-        // fixme: stop using 0,1 and use distance to visible rect on x and y from point
-        //  function similair to corner_x_yallowance. except for edges. Will test each edge with
-        //  2 corners and choose min. (eg. Top will be abs min of topleft and topright distance to edge)
+        let visible = self.visible_preview_rect();
+        let bound = self.bounding_box_rect();
 
-        // The edges are clamped from [0,1]. When the clamp activates it means the clamped edge will
-        // move a different amount compared to the trailing edge.
+        let top_left = Corner::new(bound.top_left(), CornerType::TopLeft);
+        let top_right = Corner::new(bound.top_right(), CornerType::TopRight);
+        let bottom_left = Corner::new(bound.bottom_left(), CornerType::BottomLeft);
+        let bottom_right = Corner::new(bound.bottom_right(), CornerType::BottomRight);
+
+        let (left_1, top_1) = self.corner_x_y_allowance(&visible, top_left);
+        let (right_1, top_2) = self.corner_x_y_allowance(&visible, top_right);
+        let (left_2, bottom_1) = self.corner_x_y_allowance(&visible, bottom_left);
+        let (right_2, bottom_2) = self.corner_x_y_allowance(&visible, bottom_right);
+
+        // fixme: don't unwrap here
+        let top_constraint = Self::finite_abs_min(&[top_1, top_2]).unwrap();
+        let bottom_constraint = Self::finite_abs_min(&[bottom_1, bottom_2]).unwrap();
+        let left_constraint = Self::finite_abs_min(&[left_1, left_2]).unwrap();
+        let right_constraint = Self::finite_abs_min(&[right_1, right_2]).unwrap();
+
         // To ensure they move same amount we check if the current offset will cause clamping and if
         // it will, we take the max value that will not cause clamping.
-        let step_x = if offset_x < 0.0 && -offset_x > self.left_x.get() {
-            -self.left_x.get()
-        } else if offset_x > 0.0 && (1.0 - self.right_x.get()) < offset_x {
-            1.0 - self.right_x.get()
+        let step_x = if offset.x() < 0.0 && offset.x() < left_constraint {
+            left_constraint
+        } else if offset.x() > 0.0 && right_constraint < offset.x() {
+            right_constraint
         } else {
-            offset_x
+            offset.x()
         };
 
-        let step_y = if offset_y < 0.0 && -offset_y > self.top_y.get() {
-            -self.top_y.get()
-        } else if offset_y > 0.0 && (1.0 - self.bottom_y.get()) < offset_y {
-            1.0 - self.bottom_y.get()
+        let step_y = if offset.y() < 0.0 && offset.y() < top_constraint {
+            top_constraint
+        } else if offset.y() > 0.0 && bottom_constraint < offset.y() {
+            bottom_constraint
         } else {
-            offset_y
+            offset.y()
         };
+
+        let step_x = self.x_as_percent(step_x);
+        let step_y = self.y_as_percent(step_y);
 
         // only translate if the leading edge can move
-        if (self.left_x.get() > 0.0 && step_x < 0.0) || (self.right_x.get() < 1.0 && step_x > 0.0) {
+        if (left_constraint < 0.0 && step_x < 0.0) || (right_constraint > 0.0 && step_x > 0.0) {
             self.left_x
-                .set((self.left_x.get() + step_x).clamp(0.0, self.right_x.get()));
+                .set((self.left_x.get() + step_x).min(self.right_x.get()));
             self.right_x
-                .set((self.right_x.get() + step_x).clamp(self.left_x.get(), 1.0));
+                .set((self.right_x.get() + step_x).max(self.left_x.get()));
         }
 
-        if (self.bottom_y.get() < 1.0 && step_y > 0.0) || (self.top_y.get() > 0.0 && step_y < 0.0) {
-            self.bottom_y
-                .set((self.bottom_y.get() + step_y).clamp(self.top_y.get(), 1.0));
+        if (bottom_constraint > 0.0 && step_y > 0.0) || (top_constraint < 0.0 && step_y < 0.0) {
             self.top_y
-                .set((self.top_y.get() + step_y).clamp(0.0, self.bottom_y.get()))
+                .set((self.top_y.get() + step_y).min(self.bottom_y.get()));
+            self.bottom_y
+                .set((self.bottom_y.get() + step_y).max(self.top_y.get()));
         }
     }
 }
