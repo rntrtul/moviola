@@ -1,7 +1,8 @@
-use crate::geometry::line::{distance_from_point_to_edge, Line};
+use crate::geometry::line;
+use crate::geometry::line::{component_distance_from_point_to_edge, Line};
 use gtk4::graphene::Point;
 
-#[derive(Debug)]
+#[derive(Clone, Copy, Debug)]
 pub enum EdgeType {
     Left,
     Top,
@@ -37,23 +38,30 @@ pub struct Rectangle {
     pub(crate) bottom_right: Point,
 }
 
-// todo: move into line
-fn is_point_on_line(line_a: Point, line_b: Point, point: Point) -> bool {
-    let line = Line::from_points(line_a, line_b);
-    let y_from_x = match line.y_at_x(point.x()) {
-        Err(_e) => return false,
-        Ok(y) => y,
-    };
-
-    (point.y() - y_from_x).abs() <= 0.1
-}
-
 fn is_left_of_line(line_a: Point, line_b: Point, point: Point) -> f32 {
     (line_b.x() - line_a.x()) * (point.y() - line_a.y())
         - (point.x() - line_a.x()) * (line_b.y() - line_a.y())
 }
 
 impl Rectangle {
+    fn vertices_for_edge(&self, edge_type: EdgeType) -> (Point, Point) {
+        match edge_type {
+            EdgeType::Left => (self.bottom_left, self.top_left),
+            EdgeType::Top => (self.top_left, self.top_right),
+            EdgeType::Right => (self.top_right, self.bottom_right),
+            EdgeType::Bottom => (self.bottom_right, self.bottom_left),
+        }
+    }
+
+    fn edge_line(&self, edge_type: EdgeType) -> Line {
+        let (a, b) = self.vertices_for_edge(edge_type);
+        Line::from_points(a, b)
+    }
+
+    fn is_point_on_edge(&self, point: Point, edge_type: EdgeType) -> bool {
+        self.edge_line(edge_type).is_point_on_line(point)
+    }
+
     pub fn contains(&self, point: Point) -> bool {
         is_left_of_line(self.top_left, self.top_right, point) >= 0.0
             && is_left_of_line(self.top_right, self.bottom_right, point) >= 0.0
@@ -62,28 +70,29 @@ impl Rectangle {
     }
 
     pub fn is_point_on_boundary(&self, point: Point) -> bool {
-        is_point_on_line(self.top_left, self.top_right, point)
-            || is_point_on_line(self.top_right, self.bottom_right, point)
-            || is_point_on_line(self.bottom_right, self.bottom_left, point)
-            || is_point_on_line(self.bottom_left, self.top_left, point)
+        self.is_point_on_edge(point, EdgeType::Left)
+            || self.is_point_on_edge(point, EdgeType::Right)
+            || self.is_point_on_edge(point, EdgeType::Bottom)
+            || self.is_point_on_edge(point, EdgeType::Top)
     }
 
     pub fn distance_to_edge(&self, point: Point, edge: EdgeType) -> (f32, f32) {
-        let (x, y) = match edge {
-            EdgeType::Left => distance_from_point_to_edge(self.bottom_left, self.top_left, point),
-            EdgeType::Top => distance_from_point_to_edge(self.top_left, self.top_right, point),
-            EdgeType::Right => {
-                distance_from_point_to_edge(self.top_right, self.bottom_right, point)
-            }
-            EdgeType::Bottom => {
-                distance_from_point_to_edge(self.bottom_left, self.bottom_right, point)
-            }
-        };
+        let (vertex_a, vertex_b) = self.vertices_for_edge(edge);
+        let (x, y) = component_distance_from_point_to_edge(vertex_a, vertex_b, point);
 
         let x = if x.abs() <= 0.001 { 0.0 } else { x };
         let y = if y.abs() <= 0.001 { 0.0 } else { y };
 
         (x, y)
+    }
+
+    pub fn closest_point_on_edge(&self, edge: EdgeType, point: Point) -> Point {
+        let (start, end) = self.vertices_for_edge(edge);
+        let edge_line = self.edge_line(edge);
+
+        // todo: what to do if no point found (parallel lines)
+        let closest = edge_line.closest_point(point).unwrap();
+        line::clamp_point_to_line_segment(start, end, closest)
     }
 
     pub fn line_intersection_to_edge(
@@ -93,20 +102,11 @@ impl Rectangle {
         edge: EdgeType,
     ) -> Option<Point> {
         let line = Line::from_points(start, end);
+        let edge_line = self.edge_line(edge);
 
-        let edge_line = match edge {
-            EdgeType::Left => Line::from_points(self.bottom_left, self.top_left),
-            EdgeType::Top => Line::from_points(self.top_left, self.top_right),
-            EdgeType::Right => Line::from_points(self.top_right, self.bottom_right),
-            EdgeType::Bottom => Line::from_points(self.bottom_left, self.bottom_right),
-        };
-
-        let intersection = line.intersect_point(edge_line);
-
-        if intersection.is_ok() {
-            Some(intersection.unwrap())
-        } else {
-            None
+        match line.intersect_point(edge_line) {
+            Ok(point) => Some(point),
+            Err(_) => None,
         }
     }
 }

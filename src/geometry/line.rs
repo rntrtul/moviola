@@ -1,30 +1,19 @@
-use crate::geometry::point::point_distance;
 use gtk4::graphene::Point;
 
-// todo: refactor to accept Line or a Line Segment
-//  (a wrapper around line which just binds between start and x)
-pub(crate) fn closest_point_on_edge_from_point(
-    line_a: Point,
-    line_b: Point,
-    point: Point,
-) -> Point {
-    let a = line_a.y() - line_b.y();
-    let b = line_b.x() - line_a.x();
-    let c = (line_a.x() * line_b.y()) - (line_b.x() * line_a.y());
+const SIMILARITY_THRESHOLD: f32 = 0.1; // for pixel values, so fairly loose. might tighten.
 
-    let denom = a.powi(2) + b.powi(2);
+/// Returns the closest point on specified line segment.
+/// Assumes given point already on unbounded line between a and b
+pub(crate) fn clamp_point_to_line_segment(a: Point, b: Point, point: Point) -> Point {
+    let (min, max) = if a.x() < b.x() { (a, b) } else { (b, a) };
 
-    let x = ((b * ((b * point.x()) - (a * point.y()))) - (a * c)) / denom;
-    let y = ((a * ((-b * point.x()) + (a * point.y()))) - (b * c)) / denom;
-
-    // Need to ensure the point is within line bounds
-    let min_x = line_a.x().min(line_b.x());
-    let max_x = line_a.x().max(line_b.x());
-
-    let min_y = line_a.y().min(line_b.y());
-    let max_y = line_a.y().max(line_b.y());
-
-    Point::new(x.clamp(min_x, max_x), y.clamp(min_y, max_y))
+    if point.x() < min.x() {
+        min
+    } else if point.x() > max.x() {
+        max
+    } else {
+        point
+    }
 }
 
 fn num_in_unordered_range(a: f32, b: f32, num: f32) -> bool {
@@ -35,7 +24,7 @@ fn num_in_unordered_range(a: f32, b: f32, num: f32) -> bool {
     }
 }
 
-pub(crate) fn distance_from_point_to_edge(
+pub(crate) fn component_distance_from_point_to_edge(
     line_a: Point,
     line_b: Point,
     point: Point,
@@ -45,55 +34,23 @@ pub(crate) fn distance_from_point_to_edge(
     let x = line.x_at_y(point.y()).unwrap_or(f32::INFINITY);
     let y = line.y_at_x(point.x()).unwrap_or(f32::INFINITY);
 
-    // fixme: cleanup the if statements
     let x_dist = if num_in_unordered_range(line_a.y(), line_b.y(), point.y()) {
         x - point.x()
     } else {
-        if point.y() < line_a.y() {
-            if line.slope > 0.0 {
-                f32::NEG_INFINITY
-            } else {
-                f32::INFINITY
-            }
-        } else {
-            if line.slope > 0.0 {
-                f32::INFINITY
-            } else {
-                f32::NEG_INFINITY
-            }
-        }
+        let point_direction = if point.y() < line_a.y() { -1.0 } else { 1.0 };
+        let slope_direction = line.slope.signum();
+        f32::INFINITY * point_direction * slope_direction
     };
+
     let y_dist = if num_in_unordered_range(line_b.x(), line_a.x(), point.x()) {
         y - point.y()
     } else {
-        if point.x() < line_a.x() {
-            if line.slope > 0.0 {
-                f32::NEG_INFINITY
-            } else {
-                f32::INFINITY
-            }
-        } else {
-            if line.slope > 0.0 {
-                f32::INFINITY
-            } else {
-                f32::NEG_INFINITY
-            }
-        }
+        let point_direction = if point.x() < line_a.x() { -1.0 } else { 1.0 };
+        let slope_direction = line.slope.signum();
+        f32::INFINITY * point_direction * slope_direction
     };
 
     (x_dist, y_dist)
-}
-
-// todo: move into rectangle and take edge enum as parameter
-pub fn bounding_point_on_edges(a: Point, b: Point, c: Point, point: Point) -> Point {
-    let ab_closest = closest_point_on_edge_from_point(a, b, point);
-    let ac_closest = closest_point_on_edge_from_point(a, c, point);
-
-    if point_distance(ab_closest, point) > point_distance(ac_closest, point) {
-        ac_closest
-    } else {
-        ab_closest
-    }
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -113,16 +70,21 @@ pub enum LineError {
     IdenticalLine,
 }
 
-fn line_slope_and_intercept(a: Point, b: Point) -> (f32, f32) {
-    let slope = (b.y() - a.y()) / (b.x() - a.x());
-    let intercept = (-slope * a.x()) + a.y();
-
-    (slope, intercept)
-}
-
 impl Line {
+    /// Accepts line in form of y = mx + b.
+    /// Note only non-vertical lines can be represnted in this format
+    pub fn from_slope_intercept(slope: f32, intercept: f32) -> Line {
+        Line {
+            is_vertical: false,
+            is_horizontal: slope == 0.0,
+            slope,
+            y_intercept: Some(intercept),
+            x_intercept: Some(-intercept / slope),
+        }
+    }
     pub fn from_points(start: Point, end: Point) -> Self {
-        let (slope, y_intercept) = line_slope_and_intercept(start, end);
+        let slope = (end.y() - start.y()) / (end.x() - start.x());
+        let y_intercept = (-slope * start.x()) + start.y();
 
         let is_vertical = start.x() == end.x();
         let is_horizontal = start.y() == end.y();
@@ -222,6 +184,31 @@ impl Line {
 
         Ok(Point::new(x, y))
     }
+
+    pub fn closest_point(&self, point: Point) -> Result<Point, LineError> {
+        if self.is_vertical {
+            return Ok(Point::new(self.x_intercept.unwrap(), point.y()));
+        }
+
+        if self.is_horizontal {
+            return Ok(Point::new(point.x(), self.y_intercept.unwrap()));
+        }
+
+        let perpendicular_slope = -(1.0 / self.slope);
+        let y_intercept = point.y() - (perpendicular_slope * point.x());
+        let perpendicualar_line = Line::from_slope_intercept(perpendicular_slope, y_intercept);
+
+        self.intersect_point(perpendicualar_line)
+    }
+
+    pub fn is_point_on_line(&self, point: Point) -> bool {
+        let y_from_x = match self.y_at_x(point.x()) {
+            Err(_) => return false,
+            Ok(y) => y,
+        };
+
+        (point.y() - y_from_x).abs() <= SIMILARITY_THRESHOLD
+    }
 }
 
 #[cfg(test)]
@@ -236,6 +223,16 @@ mod tests {
         a.0.abs() - b.0.abs() < threshold && a.1.abs() - b.1.abs() < threshold
     }
 
+    fn new_vertical_line(x_intercept: f32) -> Line {
+        Line {
+            is_vertical: true,
+            is_horizontal: false,
+            y_intercept: None,
+            slope: f32::INFINITY,
+            x_intercept: Some(x_intercept),
+        }
+    }
+
     #[test]
     fn x_y_distance_to_edge() {
         let a = Point::new(1.0, 0.0);
@@ -243,28 +240,33 @@ mod tests {
         let c = Point::new(1.0, 10.0);
 
         assert!(tuple_relatively_same(
-            distance_from_point_to_edge(a, b, Point::new(8.0, 0.0)),
+            component_distance_from_point_to_edge(a, b, Point::new(8.0, 0.0)),
             (-7.0, 7.777),
             0.1
         ));
         assert!(tuple_relatively_same(
-            distance_from_point_to_edge(a, b, Point::new(2.0, 2.0)),
+            component_distance_from_point_to_edge(b, a, Point::new(8.0, 0.0)),
+            (-7.0, 7.777),
+            0.1
+        ));
+        assert!(tuple_relatively_same(
+            component_distance_from_point_to_edge(a, b, Point::new(2.0, 2.0)),
             (0.8, -0.88),
             0.1
         ));
 
         assert!(tuple_relatively_same(
-            distance_from_point_to_edge(a, b, Point::new(1.0, 0.0)),
+            component_distance_from_point_to_edge(a, b, Point::new(1.0, 0.0)),
             (0.0, 0.0),
             0.1
         ));
 
         // vertical line
-        let (dist_x, dist_y) = distance_from_point_to_edge(a, c, Point::new(0.0, 0.0));
+        let (dist_x, dist_y) = component_distance_from_point_to_edge(a, c, Point::new(0.0, 0.0));
         assert!(dist_x - 1.0 < 0.1);
         assert_eq!(dist_y, f32::NEG_INFINITY);
 
-        let (dist_x, dist_y) = distance_from_point_to_edge(b, c, Point::new(1.0, 0.0));
+        let (dist_x, dist_y) = component_distance_from_point_to_edge(b, c, Point::new(1.0, 0.0));
         assert_eq!(dist_x, f32::INFINITY);
         assert!(dist_y - 10.0 < 0.1);
     }
@@ -281,25 +283,25 @@ mod tests {
 
         //
         assert_eq!(
-            distance_from_point_to_edge(a, b, Point::new(12.0, 2.0)),
+            component_distance_from_point_to_edge(a, b, Point::new(12.0, 2.0)),
             (-9.2, f32::INFINITY)
         );
         assert_eq!(
-            distance_from_point_to_edge(a, b, above_right),
+            component_distance_from_point_to_edge(a, b, above_right),
             (f32::INFINITY, f32::INFINITY)
         );
         assert_eq!(
-            distance_from_point_to_edge(a, b, above_left),
+            component_distance_from_point_to_edge(a, b, above_left),
             (f32::INFINITY, f32::NEG_INFINITY)
         );
 
         assert_eq!(
-            distance_from_point_to_edge(a, b, below_left),
+            component_distance_from_point_to_edge(a, b, below_left),
             (f32::NEG_INFINITY, f32::NEG_INFINITY)
         );
 
         assert_eq!(
-            distance_from_point_to_edge(a, b, below_right),
+            component_distance_from_point_to_edge(a, b, below_right),
             (f32::NEG_INFINITY, f32::INFINITY)
         );
     }
@@ -436,5 +438,38 @@ mod tests {
             horizontal_a.intersect_point(horizontal_a),
             Err(LineError::IdenticalLine)
         );
+    }
+
+    #[test]
+    fn line_nearest_point() {
+        let line = Line::from_slope_intercept(10.0, 5.0);
+
+        assert!(line.closest_point(Point::new(8.0, 10.0)).is_ok());
+        assert!(points_relatively_same(
+            line.closest_point(Point::new(8.0, 10.0)).unwrap(),
+            Point::new(0.574, 10.742),
+            0.1
+        ));
+        assert!(points_relatively_same(
+            line.closest_point(Point::new(0.0, 5.0)).unwrap(),
+            Point::new(0.0, 5.0),
+            0.1
+        ));
+
+        let vertical = new_vertical_line(10.0);
+        assert!(vertical.closest_point(Point::new(8.0, 20.0)).is_ok());
+        assert!(points_relatively_same(
+            vertical.closest_point(Point::new(8.0, 20.0)).unwrap(),
+            Point::new(10.0, 20.0),
+            0.1
+        ));
+
+        let horizontal = Line::from_slope_intercept(0.0, -5.0);
+        assert!(horizontal.closest_point(Point::new(0.5, 10.0)).is_ok());
+        assert!(points_relatively_same(
+            horizontal.closest_point(Point::new(0.5, 10.0)).unwrap(),
+            Point::new(0.5, -5.0),
+            0.1
+        ));
     }
 }

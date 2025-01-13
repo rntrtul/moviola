@@ -18,6 +18,6 @@ pub fn rotate_point_around(point: Point, origin: Point, degrees: f32) -> Point {
     Point::new(rotated.x() + origin.x(), rotated.y() + origin.y())
 }
 
-pub(crate) fn point_distance(a: Point, b: Point) -> f32 {
+pub fn point_distance(a: Point, b: Point) -> f32 {
     ((b.x() - a.x()).powi(2) + (b.y() - a.y()).powi(2)).sqrt()
 }

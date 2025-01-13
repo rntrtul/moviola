@@ -1,4 +1,4 @@
-use crate::geometry::{bounding_point_on_edges, Corner, CornerType, EdgeType, Rectangle};
+use crate::geometry::{point_distance, Corner, CornerType, EdgeType, Rectangle};
 use crate::ui::preview::input::DragType;
 use crate::ui::preview::preview::Preview;
 use ges::subclass::prelude::ObjectSubclassExt;
@@ -266,27 +266,28 @@ impl Preview {
         }
     }
 
-    // todo: make a corner enum. Since handle type will get edges added evnetually
+    fn corner_edges(corner_type: CornerType) -> (EdgeType, EdgeType) {
+        match corner_type {
+            CornerType::TopLeft => (EdgeType::Left, EdgeType::Top),
+            CornerType::TopRight => (EdgeType::Right, EdgeType::Top),
+            CornerType::BottomLeft => (EdgeType::Left, EdgeType::Bottom),
+            CornerType::BottomRight => (EdgeType::Right, EdgeType::Bottom),
+        }
+    }
+
     fn nearest_point_on_rect_form_point(
         rect: &Rectangle,
         point: Point,
-        handle_type: HandleType,
+        corner_type: CornerType,
     ) -> Point {
-        match handle_type {
-            HandleType::TopLeft => {
-                bounding_point_on_edges(rect.top_left, rect.top_right, rect.bottom_left, point)
-            }
-            HandleType::TopRight => {
-                bounding_point_on_edges(rect.top_right, rect.top_left, rect.bottom_right, point)
-            }
-            HandleType::BottomLeft => {
-                bounding_point_on_edges(rect.bottom_left, rect.top_left, rect.bottom_right, point)
-            }
-            HandleType::BottomRight => {
-                bounding_point_on_edges(rect.bottom_right, rect.top_right, rect.bottom_left, point)
-            }
-            // should not be called
-            HandleType::None => Point::zero(),
+        let (vertical_edge, horizontal_edge) = Self::corner_edges(corner_type);
+        let vertical_point = rect.closest_point_on_edge(vertical_edge, point);
+        let horizontal_point = rect.closest_point_on_edge(horizontal_edge, point);
+
+        if point_distance(vertical_point, point) > point_distance(horizontal_point, point) {
+            horizontal_point
+        } else {
+            vertical_point
         }
     }
 
@@ -295,21 +296,21 @@ impl Preview {
         let rect = self.bounding_box_rect();
 
         let top_left =
-            Self::nearest_point_on_rect_form_point(&visible, rect.top_left(), HandleType::TopLeft);
+            Self::nearest_point_on_rect_form_point(&visible, rect.top_left(), CornerType::TopLeft);
         let bottom_left = Self::nearest_point_on_rect_form_point(
             &visible,
             rect.bottom_left(),
-            HandleType::BottomLeft,
+            CornerType::BottomLeft,
         );
         let top_right = Self::nearest_point_on_rect_form_point(
             &visible,
             rect.top_right(),
-            HandleType::TopRight,
+            CornerType::TopRight,
         );
         let bottom_right = Self::nearest_point_on_rect_form_point(
             &visible,
             rect.bottom_right(),
-            HandleType::BottomRight,
+            CornerType::BottomRight,
         );
 
         Rectangle {
@@ -422,12 +423,7 @@ impl Preview {
     }
 
     fn corner_x_y_allowance(&self, rect: &Rectangle, corner: Corner) -> (f32, f32) {
-        let (vertical_edge, horizontal_edge) = match corner.corner_type {
-            CornerType::TopLeft => (EdgeType::Left, EdgeType::Top),
-            CornerType::TopRight => (EdgeType::Right, EdgeType::Top),
-            CornerType::BottomLeft => (EdgeType::Left, EdgeType::Bottom),
-            CornerType::BottomRight => (EdgeType::Right, EdgeType::Bottom),
-        };
+        let (vertical_edge, horizontal_edge) = Self::corner_edges(corner.corner_type);
 
         let (x_1, y_1) = rect.distance_to_edge(corner.point, vertical_edge);
         let (x_2, y_2) = rect.distance_to_edge(corner.point, horizontal_edge);
@@ -527,9 +523,6 @@ impl Preview {
             .filter(|y| y.is_finite() && Self::is_same_sign(*y, offset.y()))
             .min_by(|a, b| a.abs().total_cmp(&b.abs()));
 
-        let x_sign = if offset.x() >= 0.0 { 1.0 } else { -1.0 };
-        let y_sign = if offset.y() >= 0.0 { 1.0 } else { -1.0 };
-
         let aspect_ratio = if self.crop_mode.get() == CropMode::Free {
             offset.x() / offset.y()
         } else {
@@ -542,13 +535,13 @@ impl Preview {
         // where the aspect ratio could be 0.0 or inf and mess up the bounds
         if x_bounds.is_some() && offset.x() != 0.0 {
             let x = x_bounds.unwrap();
-            let y = (x.abs() / aspect_ratio) * y_sign;
+            let y = (x.abs() / aspect_ratio).copysign(offset.y());
             constraints.push((x, y));
         }
 
         if y_bounds.is_some() && offset.y() != 0.0 {
             let y = y_bounds.unwrap();
-            let x = (y.abs() * aspect_ratio) * x_sign;
+            let x = (y.abs() * aspect_ratio).copysign(offset.x());
             constraints.push((x, y));
         }
 
