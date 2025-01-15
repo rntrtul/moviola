@@ -1,4 +1,5 @@
-use crate::geometry::{point_distance, Corner, CornerType, EdgeType, Rectangle};
+use crate::geometry;
+use crate::geometry::{point_distance, Corner, CornerType, Rectangle};
 use crate::ui::preview::input::DragType;
 use crate::ui::preview::preview::Preview;
 use ges::subclass::prelude::ObjectSubclassExt;
@@ -108,9 +109,7 @@ impl Preview {
             self.active_drag_type.set(DragType::BoxTranslate);
         }
     }
-}
 
-impl Preview {
     pub(crate) fn bounding_box_rect(&self) -> Rect {
         let preview = self.preview_rect();
         let width = preview.width() * (self.right_x.get() - self.left_x.get());
@@ -266,21 +265,12 @@ impl Preview {
         }
     }
 
-    fn corner_edges(corner_type: CornerType) -> (EdgeType, EdgeType) {
-        match corner_type {
-            CornerType::TopLeft => (EdgeType::Left, EdgeType::Top),
-            CornerType::TopRight => (EdgeType::Right, EdgeType::Top),
-            CornerType::BottomLeft => (EdgeType::Left, EdgeType::Bottom),
-            CornerType::BottomRight => (EdgeType::Right, EdgeType::Bottom),
-        }
-    }
-
     fn nearest_point_on_rect_form_point(
         rect: &Rectangle,
         point: Point,
         corner_type: CornerType,
     ) -> Point {
-        let (vertical_edge, horizontal_edge) = Self::corner_edges(corner_type);
+        let (vertical_edge, horizontal_edge) = corner_type.edges();
         let vertical_point = rect.closest_point_on_edge(vertical_edge, point);
         let horizontal_point = rect.closest_point_on_edge(horizontal_edge, point);
 
@@ -291,7 +281,7 @@ impl Preview {
         }
     }
 
-    pub fn nearest_point_rect(&self) -> Rectangle {
+    fn nearest_point_rect(&self) -> Rectangle {
         let visible = self.visible_preview_rect();
         let rect = self.bounding_box_rect();
 
@@ -318,10 +308,12 @@ impl Preview {
             top_right,
             bottom_left,
             bottom_right,
+            angle: 0.0,
         }
     }
 
     pub(crate) fn update_to_fit_in_visible_frame(&self) {
+        // fixme: respect aspect ratio
         let rect = self.bounding_box_rect();
         let visible = self.visible_preview_rect();
 
@@ -376,83 +368,7 @@ impl Preview {
         }
 
         let aspect_ratio = self.crop_aspect_ratio();
-
-        let x_sign = if offset.x() >= 0.0 { 1.0 } else { -1.0 };
-        let y_sign = if offset.y() >= 0.0 { 1.0 } else { -1.0 };
-
-        if aspect_ratio > 1.0 {
-            let corrected_y = (offset.x().abs() / aspect_ratio) * y_sign;
-            (offset.x(), corrected_y)
-        } else {
-            let corrected_x = (offset.y().abs() * aspect_ratio) * x_sign;
-            (corrected_x, offset.y())
-        }
-    }
-
-    fn corner_constraining_edge(&self, corner: Corner) -> EdgeType {
-        if self.straighten_angle.get() <= 0.0 {
-            match corner.corner_type {
-                CornerType::TopLeft => EdgeType::Top,
-                CornerType::TopRight => EdgeType::Right,
-                CornerType::BottomLeft => EdgeType::Left,
-                CornerType::BottomRight => EdgeType::Bottom,
-            }
-        } else {
-            match corner.corner_type {
-                CornerType::TopLeft => EdgeType::Left,
-                CornerType::TopRight => EdgeType::Top,
-                CornerType::BottomLeft => EdgeType::Bottom,
-                CornerType::BottomRight => EdgeType::Right,
-            }
-        }
-    }
-
-    fn corner_constraints(&self, rect: &Rectangle, corner: Corner) -> (f32, f32) {
-        let edge = self.corner_constraining_edge(corner);
-        rect.distance_to_edge(corner.point, edge)
-    }
-
-    fn corner_drag_edge_intersection(
-        &self,
-        rect: &Rectangle,
-        corner: Corner,
-        target: Point,
-    ) -> Option<Point> {
-        let edge = self.corner_constraining_edge(corner);
-        rect.line_intersection_to_edge(corner.point, target, edge)
-    }
-
-    fn corner_x_y_allowance(&self, rect: &Rectangle, corner: Corner) -> (f32, f32) {
-        let (vertical_edge, horizontal_edge) = Self::corner_edges(corner.corner_type);
-
-        let (x_1, y_1) = rect.distance_to_edge(corner.point, vertical_edge);
-        let (x_2, y_2) = rect.distance_to_edge(corner.point, horizontal_edge);
-
-        let binding_x = Self::min_by_abs(x_1, x_2);
-        let binding_y = Self::min_by_abs(y_1, y_2);
-
-        (binding_x, binding_y)
-    }
-
-    fn min_by_abs(a: f32, b: f32) -> f32 {
-        if a.abs() > b.abs() {
-            b
-        } else {
-            a
-        }
-    }
-
-    fn shrink_direction_from_corner(corner: Corner) -> (f32, f32) {
-        match corner.corner_type {
-            CornerType::TopLeft => (1.0, 1.0),
-            CornerType::TopRight => (-1.0, 1.0),
-            CornerType::BottomLeft => (1.0, -1.0),
-            CornerType::BottomRight => (-1.0, -1.0),
-        }
-    }
-
-    fn is_same_sign(a: f32, b: f32) -> bool {
-        (a == 0.0) || b == 0.0 || ((a >= 0.0) == (b >= 0.0))
+        adjust_offset_to_aspect_ratio(aspect_ratio, offset)
     }
 
     fn contain_offset_to_visible(&self, offset: Point) -> (f32, f32) {
@@ -473,19 +389,15 @@ impl Preview {
                 panic!("Cant make Corner");
             }
         };
-        let (shrink_direction_x, shrink_direction_y) =
-            Self::shrink_direction_from_corner(active_corner);
+        let (shrink_direction_x, shrink_direction_y) = shrink_direction_from_corner(active_corner);
 
-        if Self::is_same_sign(shrink_direction_x, offset.x())
-            && Self::is_same_sign(shrink_direction_y, offset.y())
+        if is_same_sign(shrink_direction_x, offset.x())
+            && is_same_sign(shrink_direction_y, offset.y())
         {
             return (offset.x(), offset.y()); // Box is being shrunk, so can't hit borders
         }
 
-        let target = Point::new(
-            active_corner.point.x() + offset.x(),
-            active_corner.point.y() + offset.y(),
-        );
+        let target = geometry::point_add(&active_corner.point, &offset);
 
         if visible.is_point_on_boundary(active_corner.point) && !visible.contains(target) {
             return (0.0, 0.0); // trying to move out of rect, but at border for active corner
@@ -505,70 +417,26 @@ impl Preview {
             CornerType::BottomRight => bottom_left,
         };
 
-        let x_constraint = self
-            .corner_constraints(&visible, vertically_adjacent_corner)
-            .0;
-        let y_constraint = self
-            .corner_constraints(&visible, horizontally_adjacent_corner)
-            .1;
-        let active_constraints = self.corner_x_y_allowance(&visible, active_corner);
-
-        let x_bounds = [x_constraint, active_constraints.0]
-            .into_iter()
-            .filter(|x| x.is_finite() && Self::is_same_sign(*x, offset.x()))
-            .min_by(|a, b| a.abs().total_cmp(&b.abs()));
-
-        let y_bounds = [y_constraint, active_constraints.1]
-            .into_iter()
-            .filter(|y| y.is_finite() && Self::is_same_sign(*y, offset.y()))
-            .min_by(|a, b| a.abs().total_cmp(&b.abs()));
-
         let aspect_ratio = if self.crop_mode.get() == CropMode::Free {
             offset.x() / offset.y()
         } else {
             self.crop_aspect_ratio()
         };
 
-        let mut constraints: Vec<(f32, f32)> = Vec::with_capacity(4);
-
-        // only worry about bounding if moving in that direction. Also avoids cases in free crop mode
-        // where the aspect ratio could be 0.0 or inf and mess up the bounds
-        if x_bounds.is_some() && offset.x() != 0.0 {
-            let x = x_bounds.unwrap();
-            let y = (x.abs() / aspect_ratio).copysign(offset.y());
-            constraints.push((x, y));
-        }
-
-        if y_bounds.is_some() && offset.y() != 0.0 {
-            let y = y_bounds.unwrap();
-            let x = (y.abs() * aspect_ratio).copysign(offset.x());
-            constraints.push((x, y));
-        }
-
-        let active_boundary_constraint =
-            self.corner_drag_edge_intersection(&visible, active_corner, target);
-
-        if let Some(boundary_constraint) = active_boundary_constraint {
-            if visible.is_point_on_boundary(boundary_constraint) {
-                let x = boundary_constraint.x() - active_corner.point.x();
-                let y = boundary_constraint.y() - active_corner.point.y();
-
-                constraints.push((x, y));
-            }
-        }
-
-        constraints.push((offset.x(), offset.y()));
-
-        let (x, y) = *constraints
-            .iter()
-            .min_by(|a, b| (a.0.powi(2) + a.1.powi(2)).total_cmp(&(b.0.powi(2) + b.1.powi(2))))
-            .unwrap();
+        let (x, y) = corner_x_y_bounds(
+            &visible,
+            active_corner,
+            vertically_adjacent_corner,
+            horizontally_adjacent_corner,
+            offset,
+            aspect_ratio,
+        );
 
         (x, y)
     }
 
-    pub(crate) fn update_handle_pos(&self, offset_coords: Point) {
-        let (x_offset, y_offset) = self.aspect_ratio_respecting_offset(offset_coords);
+    pub(crate) fn update_handle_pos(&self, offset: Point) {
+        let (x_offset, y_offset) = self.aspect_ratio_respecting_offset(offset);
         let (x_offset, y_offset) = self.contain_offset_to_visible(Point::new(x_offset, y_offset));
 
         let x_offset_percent = self.x_as_percent(x_offset);
@@ -604,19 +472,6 @@ impl Preview {
         self.obj().queue_draw();
     }
 
-    fn finite_abs_min(arr: &[f32]) -> Option<f32> {
-        let a = arr
-            .iter()
-            .filter(|val| val.is_finite())
-            .min_by(|a, b| a.abs().partial_cmp(&b.abs()).unwrap());
-
-        if a.is_some() {
-            Some(*a.unwrap())
-        } else {
-            None
-        }
-    }
-
     pub(crate) fn translate_box(&self, offset: Point) {
         if offset.x() == 0.0 && offset.y() == 0.0 {
             return;
@@ -630,16 +485,16 @@ impl Preview {
         let bottom_left = Corner::new(bound.bottom_left(), CornerType::BottomLeft);
         let bottom_right = Corner::new(bound.bottom_right(), CornerType::BottomRight);
 
-        let (left_1, top_1) = self.corner_x_y_allowance(&visible, top_left);
-        let (right_1, top_2) = self.corner_x_y_allowance(&visible, top_right);
-        let (left_2, bottom_1) = self.corner_x_y_allowance(&visible, bottom_left);
-        let (right_2, bottom_2) = self.corner_x_y_allowance(&visible, bottom_right);
+        let (left_1, top_1) = corner_x_y_allowance(&visible, top_left);
+        let (right_1, top_2) = corner_x_y_allowance(&visible, top_right);
+        let (left_2, bottom_1) = corner_x_y_allowance(&visible, bottom_left);
+        let (right_2, bottom_2) = corner_x_y_allowance(&visible, bottom_right);
 
         // fixme: don't unwrap here
-        let top_constraint = Self::finite_abs_min(&[top_1, top_2]).unwrap();
-        let bottom_constraint = Self::finite_abs_min(&[bottom_1, bottom_2]).unwrap();
-        let left_constraint = Self::finite_abs_min(&[left_1, left_2]).unwrap();
-        let right_constraint = Self::finite_abs_min(&[right_1, right_2]).unwrap();
+        let top_constraint = finite_abs_min(&[top_1, top_2]).unwrap();
+        let bottom_constraint = finite_abs_min(&[bottom_1, bottom_2]).unwrap();
+        let left_constraint = finite_abs_min(&[left_1, left_2]).unwrap();
+        let right_constraint = finite_abs_min(&[right_1, right_2]).unwrap();
 
         // To ensure they move same amount we check if the current offset will cause clamping and if
         // it will, we take the max value that will not cause clamping.
@@ -676,5 +531,217 @@ impl Preview {
             self.bottom_y
                 .set((self.bottom_y.get() + step_y).max(self.top_y.get()));
         }
+    }
+}
+
+fn min_by_abs(a: f32, b: f32) -> f32 {
+    if a.abs() > b.abs() {
+        b
+    } else {
+        a
+    }
+}
+
+fn is_same_sign(a: f32, b: f32) -> bool {
+    (a == 0.0) || b == 0.0 || ((a >= 0.0) == (b >= 0.0))
+}
+
+fn finite_abs_min(arr: &[f32]) -> Option<f32> {
+    let a = arr
+        .iter()
+        .filter(|val| val.is_finite())
+        .min_by(|a, b| a.abs().partial_cmp(&b.abs()).unwrap());
+
+    if a.is_some() {
+        Some(*a.unwrap())
+    } else {
+        None
+    }
+}
+
+fn shrink_direction_from_corner(corner: Corner) -> (f32, f32) {
+    match corner.corner_type {
+        CornerType::TopLeft => (1.0, 1.0),
+        CornerType::TopRight => (-1.0, 1.0),
+        CornerType::BottomLeft => (1.0, -1.0),
+        CornerType::BottomRight => (-1.0, -1.0),
+    }
+}
+
+fn corner_x_y_allowance(rect: &Rectangle, corner: Corner) -> (f32, f32) {
+    let (vertical_edge, horizontal_edge) = corner.corner_type.edges();
+
+    let (x_1, y_1) = rect.distance_to_edge(corner.point, vertical_edge);
+    let (x_2, y_2) = rect.distance_to_edge(corner.point, horizontal_edge);
+
+    let binding_x = min_by_abs(x_1, x_2);
+    let binding_y = min_by_abs(y_1, y_2);
+
+    (binding_x, binding_y)
+}
+
+fn adjust_offset_to_aspect_ratio(aspect_ratio: f32, offset: Point) -> (f32, f32) {
+    if aspect_ratio > 1.0 {
+        if offset.x().abs() == 0.0 {
+            (offset.y() * aspect_ratio, offset.y())
+        } else {
+            (offset.x(), offset.x() / aspect_ratio)
+        }
+    } else {
+        if offset.y() == 0.0 {
+            (offset.x(), offset.x() / aspect_ratio)
+        } else {
+            (offset.y() * aspect_ratio, offset.y())
+        }
+    }
+}
+
+fn corner_constraints(rect: &Rectangle, corner: Corner) -> (f32, f32) {
+    let edge = rect.corner_constraining_edge(corner.corner_type);
+    rect.distance_to_edge(corner.point, edge)
+}
+
+fn corner_drag_edge_intersection(rect: &Rectangle, corner: Corner, target: Point) -> Option<Point> {
+    let edge = rect.corner_constraining_edge(corner.corner_type);
+    rect.line_intersection_to_edge(corner.point, target, edge)
+}
+
+// expects offset to be aspect_ratio corrected
+fn corner_x_y_bounds(
+    bounding_rect: &Rectangle,
+    active: Corner,
+    vertically_adjacent: Corner,
+    horizontally_adjacent: Corner,
+    offset: Point,
+    aspect_ratio: f32,
+) -> (f32, f32) {
+    let x_constraint = corner_constraints(&bounding_rect, vertically_adjacent).0;
+    let y_constraint = corner_constraints(&bounding_rect, horizontally_adjacent).1;
+    let active_constraints = corner_x_y_allowance(&bounding_rect, active);
+
+    let x_bounds = [x_constraint, active_constraints.0]
+        .into_iter()
+        .filter(|x| x.is_finite() && is_same_sign(*x, offset.x()))
+        .min_by(|a, b| a.abs().total_cmp(&b.abs()));
+
+    let y_bounds = [y_constraint, active_constraints.1]
+        .into_iter()
+        .filter(|y| y.is_finite() && is_same_sign(*y, offset.y()))
+        .min_by(|a, b| a.abs().total_cmp(&b.abs()));
+
+    let mut constraints: Vec<(f32, f32)> = Vec::with_capacity(4);
+
+    // only worry about bounding if moving in that direction. Also avoids cases in free crop mode
+    // where the aspect ratio could be 0.0 or inf and mess up the bounds
+    if x_bounds.is_some() && offset.x() != 0.0 {
+        let x = x_bounds.unwrap();
+        let y = (x.abs() / aspect_ratio).copysign(offset.y());
+        constraints.push((x, y));
+    }
+
+    if y_bounds.is_some() && offset.y() != 0.0 {
+        let y = y_bounds.unwrap();
+        let x = (y.abs() * aspect_ratio).copysign(offset.x());
+        constraints.push((x, y));
+    }
+
+    let target = geometry::point_add(&active.point, &offset);
+    let active_boundary_constraint = corner_drag_edge_intersection(&bounding_rect, active, target);
+
+    if let Some(boundary_constraint) = active_boundary_constraint {
+        if bounding_rect.is_point_on_boundary(boundary_constraint) {
+            let x = boundary_constraint.x() - active.point.x();
+            let y = boundary_constraint.y() - active.point.y();
+
+            constraints.push((x, y));
+        }
+    }
+
+    constraints.push((offset.x(), offset.y()));
+
+    *constraints
+        .iter()
+        .min_by(|a, b| (a.0.powi(2) + a.1.powi(2)).total_cmp(&(b.0.powi(2) + b.1.powi(2))))
+        .unwrap()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn offset_aspect_ratio_does_not_change_zero() {
+        assert_eq!(
+            adjust_offset_to_aspect_ratio(2.0, Point::zero()),
+            (0.0, 0.0)
+        );
+        assert_eq!(
+            adjust_offset_to_aspect_ratio(0.5, Point::zero()),
+            (0.0, 0.0)
+        );
+    }
+
+    #[test]
+    fn offset_aspect_ratio_adjust_correct_axis() {
+        assert_eq!(
+            adjust_offset_to_aspect_ratio(2.0, Point::new(1.0, 1.0)),
+            (1.0, 0.5)
+        );
+        assert_eq!(
+            adjust_offset_to_aspect_ratio(0.5, Point::new(1.0, 1.0)),
+            (0.5, 1.0)
+        );
+    }
+
+    #[test]
+    fn offset_aspect_ratio_maintain_direction() {
+        assert_eq!(
+            adjust_offset_to_aspect_ratio(2.0, Point::new(-10.0, 1.0)),
+            (-10.0, -5.0)
+        );
+        assert_eq!(
+            adjust_offset_to_aspect_ratio(2.0, Point::new(8.0, -2.0)),
+            (8.0, 4.0)
+        );
+        assert_eq!(
+            adjust_offset_to_aspect_ratio(0.5, Point::new(10.0, -16.0)),
+            (-8.0, -16.0)
+        );
+        assert_eq!(
+            adjust_offset_to_aspect_ratio(0.5, Point::new(-100.0, 4.0)),
+            (2.0, 4.0)
+        );
+    }
+
+    #[test]
+    fn offset_aspect_ratio_1_axis_zero() {
+        assert_eq!(
+            adjust_offset_to_aspect_ratio(2.0, Point::new(1.0, 0.0)),
+            (1.0, 0.5)
+        );
+        assert_eq!(
+            adjust_offset_to_aspect_ratio(2.0, Point::new(0.0, 1.0)),
+            (2.0, 1.0)
+        );
+        assert_eq!(
+            adjust_offset_to_aspect_ratio(0.5, Point::new(1.0, 0.0)),
+            (1.0, 2.0)
+        );
+        assert_eq!(
+            adjust_offset_to_aspect_ratio(0.5, Point::new(-0.0, 1.0)),
+            (0.5, 1.0)
+        );
+    }
+
+    #[test]
+    fn offset_aspect_ratio_1_axis_zero_override_direction() {
+        assert_eq!(
+            adjust_offset_to_aspect_ratio(2.0, Point::new(0.0, -1.0)),
+            (-2.0, -1.0)
+        );
+        assert_eq!(
+            adjust_offset_to_aspect_ratio(0.5, Point::new(1.0, -0.0)),
+            (1.0, 2.0)
+        );
     }
 }

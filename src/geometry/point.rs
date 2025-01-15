@@ -21,3 +21,7 @@ pub fn rotate_point_around(point: Point, origin: Point, degrees: f32) -> Point {
 pub fn point_distance(a: Point, b: Point) -> f32 {
     ((b.x() - a.x()).powi(2) + (b.y() - a.y()).powi(2)).sqrt()
 }
+
+pub fn point_add(a: &Point, b: &Point) -> Point {
+    Point::new(a.x() + b.x(), a.y() + b.y())
+}

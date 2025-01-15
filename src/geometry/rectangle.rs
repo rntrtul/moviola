@@ -1,5 +1,6 @@
-use crate::geometry::line;
 use crate::geometry::line::{component_distance_from_point_to_edge, Line};
+use crate::geometry::{line, rotate_point_around};
+use gtk4::graphene;
 use gtk4::graphene::Point;
 
 #[derive(Clone, Copy, Debug)]
@@ -16,6 +17,17 @@ pub enum CornerType {
     TopRight,
     BottomLeft,
     BottomRight,
+}
+
+impl CornerType {
+    pub fn edges(&self) -> (EdgeType, EdgeType) {
+        match self {
+            CornerType::TopLeft => (EdgeType::Left, EdgeType::Top),
+            CornerType::TopRight => (EdgeType::Right, EdgeType::Top),
+            CornerType::BottomLeft => (EdgeType::Left, EdgeType::Bottom),
+            CornerType::BottomRight => (EdgeType::Right, EdgeType::Bottom),
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -36,6 +48,7 @@ pub struct Rectangle {
     pub(crate) top_right: Point,
     pub(crate) bottom_left: Point,
     pub(crate) bottom_right: Point,
+    pub(crate) angle: f32,
 }
 
 fn is_left_of_line(line_a: Point, line_b: Point, point: Point) -> f32 {
@@ -44,6 +57,39 @@ fn is_left_of_line(line_a: Point, line_b: Point, point: Point) -> f32 {
 }
 
 impl Rectangle {
+    pub fn new(base_rectangle: graphene::Rect, angle: f32) -> Self {
+        // todo: if angle 0 skip this maybe. just rotate all 4 corners?
+        let (sin, cos) = angle.to_radians().sin_cos();
+
+        let horizontal_run = base_rectangle.width() * cos;
+        let horizontal_rise = base_rectangle.width() * sin;
+        let vertical_run = base_rectangle.height() * sin;
+        let vertical_rise = base_rectangle.height() * cos;
+
+        let top_left =
+            rotate_point_around(base_rectangle.top_left(), base_rectangle.center(), angle);
+
+        let top_right = Point::new(
+            top_left.x() + horizontal_run,
+            top_left.y() + horizontal_rise,
+        );
+
+        let bottom_left = Point::new(top_left.x() - vertical_run, top_left.y() + vertical_rise);
+
+        let bottom_right = Point::new(
+            bottom_left.x() + horizontal_run,
+            bottom_left.y() + horizontal_rise,
+        );
+
+        Self {
+            top_left,
+            top_right,
+            bottom_left,
+            bottom_right,
+            angle,
+        }
+    }
+
     fn vertices_for_edge(&self, edge_type: EdgeType) -> (Point, Point) {
         match edge_type {
             EdgeType::Left => (self.bottom_left, self.top_left),
@@ -90,7 +136,7 @@ impl Rectangle {
         let (start, end) = self.vertices_for_edge(edge);
         let edge_line = self.edge_line(edge);
 
-        // todo: what to do if no point found (parallel lines)
+        // guranteed to find a point on the line.
         let closest = edge_line.closest_point(point).unwrap();
         line::clamp_point_to_line_segment(start, end, closest)
     }
@@ -109,24 +155,33 @@ impl Rectangle {
             Err(_) => None,
         }
     }
+
+    pub fn corner_constraining_edge(&self, corner: CornerType) -> EdgeType {
+        if self.angle <= 0.0 {
+            match corner {
+                CornerType::TopLeft => EdgeType::Top,
+                CornerType::TopRight => EdgeType::Right,
+                CornerType::BottomLeft => EdgeType::Left,
+                CornerType::BottomRight => EdgeType::Bottom,
+            }
+        } else {
+            match corner {
+                CornerType::TopLeft => EdgeType::Left,
+                CornerType::TopRight => EdgeType::Top,
+                CornerType::BottomLeft => EdgeType::Bottom,
+                CornerType::BottomRight => EdgeType::Right,
+            }
+        }
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    fn fixed_rotated_rectangle() -> Rectangle {
-        Rectangle {
-            top_left: Point::new(10.1726, -14.2273),
-            top_right: Point::new(105.278, 16.674),
-            bottom_left: Point::new(-5.278, 33.326),
-            bottom_right: Point::new(89.827, 64.227),
-        }
-    }
-
     #[test]
     fn rectangle_contains_points_inside() {
-        let rect = fixed_rotated_rectangle();
+        let rect = Rectangle::new(graphene::Rect::new(0.0, 0.0, 100.0, 50.0), 22.0);
 
         assert!(rect.contains(Point::new(20.0, 20.0)));
         assert!(rect.contains(Point::new(20.0, -2.0)));
@@ -141,31 +196,27 @@ mod tests {
 
     #[test]
     fn rectangle_contains_points_outside() {
-        let rect = fixed_rotated_rectangle();
+        let rect = Rectangle::new(graphene::Rect::new(0.0, -10.0, 100.0, 50.0), 35.0);
 
         assert!(!rect.contains(Point::new(106.0, 16.674)));
         assert!(!rect.contains(Point::new(-6.278, 33.326)));
         assert!(!rect.contains(Point::new(89.827, 65.227)));
-        assert!(!rect.contains(Point::new(10.1726, -15.1)));
+        assert!(!rect.contains(Point::new(10.1726, -25.1)));
     }
 
     #[test]
     fn rectangle_check_point_on_boundary() {
-        let rect = fixed_rotated_rectangle();
+        let rect = Rectangle::new(graphene::Rect::new(5.0, 0.0, 60.0, 50.0), 32.0);
 
-        assert!(rect.is_point_on_boundary(Point::new(-5.278, 33.326)));
-        assert!(rect.is_point_on_boundary(Point::new(30.0, -7.7848)));
-        assert!(!rect.is_point_on_boundary(Point::new(20.0, 20.0)));
+        assert!(rect.is_point_on_boundary(Point::new(42.186, 0.0))); // bottom edge
+        assert!(rect.is_point_on_boundary(Point::new(60.0, 41.6043))); // right edge
+        assert!(rect.is_point_on_boundary(Point::new(10.0, 8.3963))); // left edge
+        assert!(rect.is_point_on_boundary(Point::new(20.0, 45.10643))); // top edge
     }
 
     #[test]
     fn rectangle_line_edge_intersection() {
-        let rect = Rectangle {
-            top_left: Point::new(10.0, 10.0),
-            top_right: Point::new(110.0, 10.0),
-            bottom_left: Point::new(10.0, 60.0),
-            bottom_right: Point::new(110.0, 60.0),
-        };
+        let rect = Rectangle::new(graphene::Rect::new(10.0, 10.0, 100.0, 50.0), 0.0);
 
         assert_eq!(
             rect.line_intersection_to_edge(

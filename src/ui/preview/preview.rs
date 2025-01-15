@@ -1,4 +1,4 @@
-use crate::geometry::{rotate_point_around, Rectangle};
+use crate::geometry::Rectangle;
 use crate::ui::preview::bounding_box::{HandleType, BOX_HANDLE_WIDTH};
 use crate::ui::preview::input::DragType;
 use crate::ui::preview::{BoundingBoxDimensions, CropMode};
@@ -217,36 +217,7 @@ impl Preview {
     pub(crate) fn visible_preview_rect(&self) -> Rectangle {
         let display = self.display_preview_rect();
         let angle = self.straighten_angle.get() as f32;
-
-        let (sin, cos) = angle.to_radians().sin_cos();
-
-        let horizontal_run = display.width() * cos;
-        let horizontal_rise = display.width() * sin;
-        let vertical_run = display.height() * sin;
-        let vertical_rise = display.height() * cos;
-
-        let top_left = rotate_point_around(display.top_left(), display.center(), angle);
-
-        // These corners are built relative to top_left. Do not need to translate for centering since
-        // top_left already adjusted.
-        let top_right = Point::new(
-            top_left.x() + horizontal_run,
-            top_left.y() + horizontal_rise,
-        );
-
-        let bottom_left = Point::new(top_left.x() - vertical_run, top_left.y() + vertical_rise);
-
-        let bottom_right = Point::new(
-            bottom_left.x() + horizontal_run,
-            bottom_left.y() + horizontal_rise,
-        );
-
-        Rectangle {
-            top_left,
-            top_right,
-            bottom_left,
-            bottom_right,
-        }
+        Rectangle::new(display, angle)
     }
 
     fn is_straightened(&self) -> bool {
