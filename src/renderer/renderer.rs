@@ -6,15 +6,13 @@ use ges::glib;
 use gst::Sample;
 use gtk4::gdk;
 use gtk4::prelude::Cast;
-use lazy_static::lazy_static;
 use std::cell::{Cell, RefCell};
 use std::default::Default;
+use std::sync::mpsc;
 use wgpu::include_wgsl;
 use wgpu::util::DeviceExt;
 
-lazy_static! {
-    static ref U32_SIZE: u32 = std::mem::size_of::<u32>() as u32;
-}
+static U32_SIZE: u32 = size_of::<u32>() as u32;
 
 pub struct Renderer {
     device: wgpu::Device,
@@ -303,7 +301,7 @@ impl Renderer {
             view_formats: &[wgpu::TextureFormat::Rgba8Unorm],
         });
 
-        let output_texture_size = (width * height * *U32_SIZE) as u64;
+        let output_texture_size = (width * height * U32_SIZE) as u64;
 
         let output_staging_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("Output staging Buffer"),
@@ -498,14 +496,14 @@ impl Renderer {
         let gdk_texture: gdk::Texture;
 
         {
-            let (sender, receiver) = flume::bounded(1);
+            let (sender, receiver) = mpsc::channel();
             let slice = self.output_staging_buffer.slice(..);
 
             self.timer.start_time(BUFF_MAP_IDX);
 
             slice.map_async(wgpu::MapMode::Read, move |r| sender.send(r).unwrap());
             self.device.poll(wgpu::Maintain::wait()).panic_on_timeout();
-            receiver.recv_async().await.unwrap().unwrap();
+            receiver.recv().unwrap().unwrap();
 
             self.timer.stop_time(BUFF_MAP_IDX);
             self.timer.collect_query_results(&self.device, &self.queue);

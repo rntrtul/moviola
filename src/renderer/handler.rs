@@ -74,7 +74,7 @@ async fn render_loop(
     cmd_recv: mpsc::Receiver<RenderCmd>,
     renderer_cmd_sender: mpsc::Sender<RenderCmd>,
 ) {
-    let renderer = Arc::new(Mutex::new(pollster::block_on(Renderer::new())));
+    let renderer = Arc::new(Mutex::new(Renderer::new().await));
 
     let mut queued_effect_params: Option<EffectParameters> = None;
     let mut queued_output_resolution: Option<(u32, u32)> = None;

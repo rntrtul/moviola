@@ -1,27 +1,22 @@
-use std::cell::Cell;
-
 use crate::ui::IGNORE_OVERLAY_COLOUR;
 use gtk4::prelude::{ObjectExt, SnapshotExt, SnapshotExtManual, WidgetExt};
 use gtk4::subclass::prelude::*;
 use gtk4::{gdk, glib, graphene, gsk, Snapshot};
-use lazy_static::lazy_static;
 use relm4::gtk;
+use std::cell::Cell;
+use std::sync::LazyLock;
 
+static FILL_RULE: gsk::FillRule = gsk::FillRule::Winding;
 pub static HANDLE_WIDTH: f32 = 20f32;
 pub static HANDLE_HEIGHT: f32 = 5f32;
-static FILL_RULE: gsk::FillRule = gsk::FillRule::Winding;
-static SEEK_BAR_WIDTH: f32 = 4f32;
-static SEEK_BAR_OFFSET: f32 = HANDLE_WIDTH - (SEEK_BAR_WIDTH / 2f32);
+static HANDLE_CURVE: LazyLock<graphene::Size> = LazyLock::new(|| graphene::Size::new(3f32, 6f32));
 static ARROW_WIDTH: f32 = 6f32;
 static ARROW_INSET: f32 = (HANDLE_WIDTH - ARROW_WIDTH) / 2.0;
-
-lazy_static! {
-    static ref HANDLE_CURVE: graphene::Size = graphene::Size::new(3f32, 6f32);
-    static ref ZERO_SIZE: graphene::Size = graphene::Size::zero();
-    static ref BORDER_COLOUR: gdk::RGBA = gdk::RGBA::parse("#565656").unwrap();
-    static ref SEEK_COLOUR: gdk::RGBA = gdk::RGBA::WHITE;
-    static ref ARROW_HEIGHT_OFFSET: f32 = 1.0f32.tan() * ARROW_WIDTH;
-}
+static ARROW_HEIGHT_OFFSET: LazyLock<f32> = LazyLock::new(|| 1.0f32.tan() * ARROW_WIDTH);
+static SEEK_BAR_WIDTH: f32 = 4f32;
+static SEEK_BAR_OFFSET: f32 = HANDLE_WIDTH - (SEEK_BAR_WIDTH / 2f32);
+static SEEK_COLOUR: gdk::RGBA = gdk::RGBA::WHITE;
+static BORDER_COLOUR: LazyLock<gdk::RGBA> = LazyLock::new(|| gdk::RGBA::parse("#565656").unwrap());
 
 #[derive(glib::Properties, Default, Debug)]
 #[properties(wrapper_type = super::HandleWidget)]
@@ -87,15 +82,15 @@ impl WidgetImpl for HandleWidget {
             &[*BORDER_COLOUR; 4],
         );
 
-        snapshot.append_fill(&self.seek_bar_path(), FILL_RULE, &*SEEK_COLOUR);
+        snapshot.append_fill(&self.seek_bar_path(), FILL_RULE, &SEEK_COLOUR);
         snapshot.append_fill(&self.start_handle_path(), FILL_RULE, &*BORDER_COLOUR);
         snapshot.append_fill(&self.end_handle_path(), FILL_RULE, &*BORDER_COLOUR);
 
         let arrow_stroke = gsk::Stroke::builder(4f32)
             .line_cap(gsk::LineCap::Round)
             .build();
-        snapshot.append_stroke(&self.left_arrow_path(), &arrow_stroke, &*SEEK_COLOUR);
-        snapshot.append_stroke(&self.right_arrow_path(), &arrow_stroke, &*SEEK_COLOUR);
+        snapshot.append_stroke(&self.left_arrow_path(), &arrow_stroke, &SEEK_COLOUR);
+        snapshot.append_stroke(&self.right_arrow_path(), &arrow_stroke, &SEEK_COLOUR);
     }
 }
 
@@ -120,8 +115,8 @@ impl HandleWidget {
         let handle_outline = gsk::RoundedRect::new(
             handle_rect,
             *HANDLE_CURVE,
-            *ZERO_SIZE,
-            *ZERO_SIZE,
+            graphene::Size::zero(),
+            graphene::Size::zero(),
             *HANDLE_CURVE,
         );
 
@@ -139,10 +134,10 @@ impl HandleWidget {
         );
         let handle_outline = gsk::RoundedRect::new(
             handle_rect,
-            *ZERO_SIZE,
+            graphene::Size::zero(),
             *HANDLE_CURVE,
             *HANDLE_CURVE,
-            *ZERO_SIZE,
+            graphene::Size::zero(),
         );
 
         let path_builder = gsk::PathBuilder::new();
