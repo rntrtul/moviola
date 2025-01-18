@@ -21,6 +21,7 @@ clap = { version = "4.5.21", features = ["derive"] }
 url = "2.5.3"
 tracing = "0.1.40"
 tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
+approx = "0.5.1"
 
 [build-dependencies]
 glib-build-tools = "0.20.0"

@@ -28,6 +28,24 @@ impl CornerType {
             CornerType::BottomRight => (EdgeType::Right, EdgeType::Bottom),
         }
     }
+
+    pub fn vertically_adjacent(&self) -> CornerType {
+        match self {
+            CornerType::TopLeft => CornerType::BottomLeft,
+            CornerType::TopRight => CornerType::BottomRight,
+            CornerType::BottomLeft => CornerType::TopLeft,
+            CornerType::BottomRight => CornerType::TopRight,
+        }
+    }
+
+    pub fn horizontally_adjacent(&self) -> CornerType {
+        match self {
+            CornerType::TopLeft => CornerType::TopRight,
+            CornerType::TopRight => CornerType::TopLeft,
+            CornerType::BottomLeft => CornerType::BottomRight,
+            CornerType::BottomRight => CornerType::BottomLeft,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug)]

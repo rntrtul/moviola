@@ -214,13 +214,15 @@ impl Line {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use approx::relative_eq;
 
     fn points_relatively_same(a: Point, b: Point, threshold: f32) -> bool {
-        a.x().abs() - b.x().abs() < threshold && a.y().abs() - b.y().abs() < threshold
+        relative_eq!(a.x(), b.x(), epsilon = threshold)
+            && relative_eq!(a.y(), b.y(), epsilon = threshold)
     }
 
     fn tuple_relatively_same(a: (f32, f32), b: (f32, f32), threshold: f32) -> bool {
-        a.0.abs() - b.0.abs() < threshold && a.1.abs() - b.1.abs() < threshold
+        relative_eq!(a.0, b.0, epsilon = threshold) && relative_eq!(a.1, b.1, epsilon = threshold)
     }
 
     fn new_vertical_line(x_intercept: f32) -> Line {

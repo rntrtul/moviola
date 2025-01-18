@@ -60,6 +60,13 @@ pub enum HandleType {
     BottomRight,
 }
 
+struct RectangleConstraints {
+    Top: Option<f32>,
+    Left: Option<f32>,
+    Bottom: Option<f32>,
+    Right: Option<f32>,
+}
+
 impl Preview {
     pub(crate) fn draw_bounding_box(&self, snapshot: &Snapshot) {
         let rect = self.bounding_box_rect();
@@ -375,10 +382,7 @@ impl Preview {
         let visible = self.visible_preview_rect();
         let bound = self.bounding_box_rect();
 
-        let top_left = Corner::new(bound.top_left(), CornerType::TopLeft);
-        let top_right = Corner::new(bound.top_right(), CornerType::TopRight);
-        let bottom_left = Corner::new(bound.bottom_left(), CornerType::BottomLeft);
-        let bottom_right = Corner::new(bound.bottom_right(), CornerType::BottomRight);
+        let (top_left, top_right, bottom_left, bottom_right) = rect_as_corners(&bound);
 
         let active_corner = match self.active_handle.get() {
             HandleType::TopLeft => top_left,
@@ -403,19 +407,11 @@ impl Preview {
             return (0.0, 0.0); // trying to move out of rect, but at border for active corner
         }
 
-        let vertically_adjacent_corner = match active_corner.corner_type {
-            CornerType::TopLeft => bottom_left,
-            CornerType::TopRight => bottom_right,
-            CornerType::BottomLeft => top_left,
-            CornerType::BottomRight => top_right,
-        };
+        let vertically_adjacent_corner =
+            corner_of_rect(&bound, active_corner.corner_type.vertically_adjacent());
 
-        let horizontally_adjacent_corner = match active_corner.corner_type {
-            CornerType::TopLeft => top_right,
-            CornerType::TopRight => top_left,
-            CornerType::BottomLeft => bottom_right,
-            CornerType::BottomRight => bottom_left,
-        };
+        let horizontally_adjacent_corner =
+            corner_of_rect(&bound, active_corner.corner_type.horizontally_adjacent());
 
         let aspect_ratio = if self.crop_mode.get() == CropMode::Free {
             offset.x() / offset.y()
@@ -479,59 +475,63 @@ impl Preview {
 
         let visible = self.visible_preview_rect();
         let bound = self.bounding_box_rect();
-
-        let top_left = Corner::new(bound.top_left(), CornerType::TopLeft);
-        let top_right = Corner::new(bound.top_right(), CornerType::TopRight);
-        let bottom_left = Corner::new(bound.bottom_left(), CornerType::BottomLeft);
-        let bottom_right = Corner::new(bound.bottom_right(), CornerType::BottomRight);
-
-        let (left_1, top_1) = corner_x_y_allowance(&visible, top_left);
-        let (right_1, top_2) = corner_x_y_allowance(&visible, top_right);
-        let (left_2, bottom_1) = corner_x_y_allowance(&visible, bottom_left);
-        let (right_2, bottom_2) = corner_x_y_allowance(&visible, bottom_right);
-
-        // fixme: don't unwrap here
-        let top_constraint = finite_abs_min(&[top_1, top_2]).unwrap();
-        let bottom_constraint = finite_abs_min(&[bottom_1, bottom_2]).unwrap();
-        let left_constraint = finite_abs_min(&[left_1, left_2]).unwrap();
-        let right_constraint = finite_abs_min(&[right_1, right_2]).unwrap();
+        let constraints = constrained_rect_bounds(&visible, &bound);
 
         // To ensure they move same amount we check if the current offset will cause clamping and if
         // it will, we take the max value that will not cause clamping.
-        let step_x = if offset.x() < 0.0 && offset.x() < left_constraint {
-            left_constraint
-        } else if offset.x() > 0.0 && right_constraint < offset.x() {
-            right_constraint
+        let step_x = if offset.x() < 0.0 {
+            one_sided_clamp(constraints.Left, offset.x())
+        } else if offset.x() > 0.0 {
+            one_sided_clamp(constraints.Right, offset.x())
         } else {
-            offset.x()
+            None
         };
 
-        let step_y = if offset.y() < 0.0 && offset.y() < top_constraint {
-            top_constraint
-        } else if offset.y() > 0.0 && bottom_constraint < offset.y() {
-            bottom_constraint
+        let step_y = if offset.y() < 0.0 {
+            one_sided_clamp(constraints.Top, offset.y())
+        } else if offset.y() > 0.0 {
+            one_sided_clamp(constraints.Bottom, offset.y())
         } else {
-            offset.y()
+            None
         };
 
-        let step_x = self.x_as_percent(step_x);
-        let step_y = self.y_as_percent(step_y);
-
-        // only translate if the leading edge can move
-        if (left_constraint < 0.0 && step_x < 0.0) || (right_constraint > 0.0 && step_x > 0.0) {
+        if let Some(step_x) = step_x {
+            let x_percent = self.x_as_percent(step_x);
             self.left_x
-                .set((self.left_x.get() + step_x).min(self.right_x.get()));
+                .set((self.left_x.get() + x_percent).min(self.right_x.get()));
             self.right_x
-                .set((self.right_x.get() + step_x).max(self.left_x.get()));
+                .set((self.right_x.get() + x_percent).max(self.left_x.get()));
         }
 
-        if (bottom_constraint > 0.0 && step_y > 0.0) || (top_constraint < 0.0 && step_y < 0.0) {
+        if let Some(step_y) = step_y {
+            let y_percent = self.y_as_percent(step_y);
+
             self.top_y
-                .set((self.top_y.get() + step_y).min(self.bottom_y.get()));
+                .set((self.top_y.get() + y_percent).min(self.bottom_y.get()));
             self.bottom_y
-                .set((self.bottom_y.get() + step_y).max(self.top_y.get()));
+                .set((self.bottom_y.get() + y_percent).max(self.top_y.get()));
         }
     }
+}
+
+fn rect_as_corners(rect: &graphene::Rect) -> (Corner, Corner, Corner, Corner) {
+    let top_left = Corner::new(rect.top_left(), CornerType::TopLeft);
+    let top_right = Corner::new(rect.top_right(), CornerType::TopRight);
+    let bottom_left = Corner::new(rect.bottom_left(), CornerType::BottomLeft);
+    let bottom_right = Corner::new(rect.bottom_right(), CornerType::BottomRight);
+
+    (top_left, top_right, bottom_left, bottom_right)
+}
+
+fn corner_of_rect(rect: &graphene::Rect, corner_type: CornerType) -> Corner {
+    let point = match corner_type {
+        CornerType::TopLeft => rect.top_left(),
+        CornerType::TopRight => rect.top_right(),
+        CornerType::BottomLeft => rect.bottom_left(),
+        CornerType::BottomRight => rect.bottom_right(),
+    };
+
+    Corner::new(point, corner_type)
 }
 
 fn min_by_abs(a: f32, b: f32) -> f32 {
@@ -547,15 +547,39 @@ fn is_same_sign(a: f32, b: f32) -> bool {
 }
 
 fn finite_abs_min(arr: &[f32]) -> Option<f32> {
-    let a = arr
-        .iter()
-        .filter(|val| val.is_finite())
-        .min_by(|a, b| a.abs().partial_cmp(&b.abs()).unwrap());
+    finite_abs_min_same_direction(arr, 0.0)
+}
 
-    if a.is_some() {
-        Some(*a.unwrap())
+fn finite_abs_min_same_direction(arr: &[f32], direction: f32) -> Option<f32> {
+    let min = arr
+        .into_iter()
+        .filter(|num| num.is_finite() && is_same_sign(**num, direction))
+        .min_by(|a, b| a.abs().total_cmp(&b.abs()));
+
+    if min.is_some() {
+        Some(*min.unwrap())
     } else {
         None
+    }
+}
+
+fn one_sided_clamp(bound: Option<f32>, val: f32) -> Option<f32> {
+    match bound {
+        Some(bound) => {
+            let (min, max) = if bound > 0.0 {
+                (0.0, bound)
+            } else {
+                (bound, 0.0)
+            };
+            let clamped = val.clamp(min, max);
+
+            if clamped == 0.0 && val != 0.0 {
+                None // clamped into bounds from wrong side
+            } else {
+                Some(clamped)
+            }
+        }
+        None => None,
     }
 }
 
@@ -606,7 +630,20 @@ fn corner_drag_edge_intersection(rect: &Rectangle, corner: Corner, target: Point
     rect.line_intersection_to_edge(corner.point, target, edge)
 }
 
-// expects offset to be aspect_ratio corrected
+fn min_by_distance(arr: &[(f32, f32)]) -> Option<(f32, f32)> {
+    let min = arr.iter().min_by(|a, b| {
+        let a_dist = a.0.powi(2) + a.1.powi(2);
+        let b_dist = b.0.powi(2) + b.1.powi(2);
+        a_dist.total_cmp(&b_dist)
+    });
+
+    if min.is_some() {
+        Some(*min.unwrap())
+    } else {
+        None
+    }
+}
+
 fn corner_x_y_bounds(
     bounding_rect: &Rectangle,
     active: Corner,
@@ -619,15 +656,8 @@ fn corner_x_y_bounds(
     let y_constraint = corner_constraints(&bounding_rect, horizontally_adjacent).1;
     let active_constraints = corner_x_y_allowance(&bounding_rect, active);
 
-    let x_bounds = [x_constraint, active_constraints.0]
-        .into_iter()
-        .filter(|x| x.is_finite() && is_same_sign(*x, offset.x()))
-        .min_by(|a, b| a.abs().total_cmp(&b.abs()));
-
-    let y_bounds = [y_constraint, active_constraints.1]
-        .into_iter()
-        .filter(|y| y.is_finite() && is_same_sign(*y, offset.y()))
-        .min_by(|a, b| a.abs().total_cmp(&b.abs()));
+    let x_bounds = finite_abs_min_same_direction(&[x_constraint, active_constraints.0], offset.x());
+    let y_bounds = finite_abs_min_same_direction(&[y_constraint, active_constraints.1], offset.y());
 
     let mut constraints: Vec<(f32, f32)> = Vec::with_capacity(4);
 
@@ -659,15 +689,32 @@ fn corner_x_y_bounds(
 
     constraints.push((offset.x(), offset.y()));
 
-    *constraints
-        .iter()
-        .min_by(|a, b| (a.0.powi(2) + a.1.powi(2)).total_cmp(&(b.0.powi(2) + b.1.powi(2))))
-        .unwrap()
+    min_by_distance(&constraints).unwrap()
+}
+
+fn constrained_rect_bounds(
+    outer_rect: &Rectangle,
+    inner_rect: &graphene::Rect,
+) -> RectangleConstraints {
+    let (top_left, top_right, bottom_left, bottom_right) = rect_as_corners(&inner_rect);
+
+    let (left_1, top_1) = corner_constraints(&outer_rect, top_left);
+    let (right_1, top_2) = corner_constraints(&outer_rect, top_right);
+    let (left_2, bottom_1) = corner_constraints(&outer_rect, bottom_left);
+    let (right_2, bottom_2) = corner_constraints(&outer_rect, bottom_right);
+
+    RectangleConstraints {
+        Top: finite_abs_min(&[top_1, top_2]),
+        Bottom: finite_abs_min(&[bottom_1, bottom_2]),
+        Left: finite_abs_min(&[left_1, left_2]),
+        Right: finite_abs_min(&[right_1, right_2]),
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use approx::{assert_relative_eq, relative_eq};
 
     #[test]
     fn offset_aspect_ratio_does_not_change_zero() {
@@ -743,5 +790,140 @@ mod tests {
             adjust_offset_to_aspect_ratio(0.5, Point::new(1.0, -0.0)),
             (1.0, 2.0)
         );
+    }
+
+    #[test]
+    fn test_min_by_distance() {
+        assert_eq!(min_by_distance(&[]), None);
+        assert_eq!(
+            min_by_distance(&[(0.0, 0.0), (0.0, 0.0)]).unwrap(),
+            (0.0, 0.0)
+        );
+
+        assert_eq!(
+            min_by_distance(&[(0.1, 0.1), (0.0, 0.0)]).unwrap(),
+            (0.0, 0.0)
+        );
+        assert_eq!(
+            min_by_distance(&[(0.1, 0.2), (-0.1, -0.1)]).unwrap(),
+            (-0.1, -0.1)
+        );
+
+        assert_eq!(
+            min_by_distance(&[(0.0, 1.0), (0.0, 0.5), (0.0, 4.0)]).unwrap(),
+            (0.0, 0.5)
+        );
+        assert_eq!(
+            min_by_distance(&[(0.0, -1.0), (0.0, -0.5), (0.0, -4.0)]).unwrap(),
+            (0.0, -0.5)
+        );
+    }
+
+    // todo: put in some common folder for line and here
+    fn tuple_relatively_same(a: (f32, f32), b: (f32, f32), threshold: f32) -> bool {
+        relative_eq!(a.0, b.0, epsilon = threshold) && relative_eq!(a.1, b.1, epsilon = threshold)
+    }
+
+    #[test]
+    fn corner_allowances() {
+        // only testing with top left since using other corners only tests the corner enums edges match
+        // function and the rectangles distance to edge. corner_x_y_allowance is choosing between 4
+        // possible values.
+        // at 45 deg rotation edge slopes are 1, so x,y distances are the same
+        let rect = Rectangle::new(Rect::new(0.0, 0.0, 60.0, 100.0), 45.0);
+
+        // 4 bounds present. x is equidistance between left edge and top edge. so second value chosen
+        assert!(tuple_relatively_same(
+            corner_x_y_allowance(
+                &rect,
+                Corner::new(Point::new(44.14241, 0.0), CornerType::TopLeft)
+            ),
+            (6.56854, -6.56854),
+            0.01
+        ));
+
+        // missing y allowance on top edge
+        assert!(tuple_relatively_same(
+            corner_x_y_allowance(
+                &rect,
+                Corner::new(Point::new(42.0, 0.0), CornerType::TopLeft)
+            ),
+            (-4.42641, -4.42641),
+            0.01
+        ));
+
+        // missing x on top edge
+        assert!(tuple_relatively_same(
+            corner_x_y_allowance(
+                &rect,
+                Corner::new(Point::new(44.14241, 36.0), CornerType::TopLeft)
+            ),
+            (-42.56882, -42.56854),
+            0.01
+        ));
+
+        // missing x on both and y on top edge
+        assert!(tuple_relatively_same(
+            corner_x_y_allowance(
+                &rect,
+                Corner::new(Point::new(0.0, 70.0), CornerType::TopLeft)
+            ),
+            (f32::NEG_INFINITY, -32.42641),
+            0.01
+        ));
+    }
+
+    #[test]
+    fn test_finite_abs_min() {
+        assert!(finite_abs_min_same_direction(&[-10.0, -0.5, -14.0], 1.0).is_none());
+        assert!(finite_abs_min_same_direction(&[15.2, 1.5, 4.0], -1.0).is_none(),);
+        assert!(finite_abs_min_same_direction(&[f32::NEG_INFINITY, f32::INFINITY], -1.0).is_none(),);
+
+        assert_eq!(
+            finite_abs_min_same_direction(&[0.0, 1.0, -0.5], 0.0).unwrap(),
+            0.0
+        );
+        assert_eq!(
+            finite_abs_min_same_direction(&[0.6, 1.0, -0.5], 0.0).unwrap(),
+            -0.5
+        );
+        assert_eq!(
+            finite_abs_min_same_direction(&[f32::NEG_INFINITY, 4.5, -6.0], -1.0).unwrap(),
+            -6.0
+        );
+    }
+
+    #[test]
+    fn test_one_sided_clamp() {
+        assert!(one_sided_clamp(None, -15.0).is_none());
+        assert!(one_sided_clamp(None, 1.0).is_none());
+
+        assert_eq!(one_sided_clamp(Some(-10.0), -15.0).unwrap(), -10.0);
+        assert_eq!(one_sided_clamp(Some(-10.0), -10.0).unwrap(), -10.0);
+        assert_eq!(one_sided_clamp(Some(-10.0), -6.0).unwrap(), -6.0);
+        assert_eq!(one_sided_clamp(Some(-10.0), 0.0).unwrap(), 0.0);
+        assert!(one_sided_clamp(Some(-10.0), 1.0).is_none());
+        assert_eq!(one_sided_clamp(Some(0.0), 0.0).unwrap(), 0.0);
+        assert!(one_sided_clamp(Some(0.0), -1.0).is_none());
+
+        assert_eq!(one_sided_clamp(Some(20.0), 215.0).unwrap(), 20.0);
+        assert_eq!(one_sided_clamp(Some(20.0), 20.0).unwrap(), 20.0);
+        assert_eq!(one_sided_clamp(Some(20.0), 13.0).unwrap(), 13.0);
+        assert_eq!(one_sided_clamp(Some(20.0), 0.0).unwrap(), 0.0);
+        assert!(one_sided_clamp(Some(20.0), -0.1).is_none());
+        assert_eq!(one_sided_clamp(Some(0.0), 0.0).unwrap(), 0.0);
+        assert!(one_sided_clamp(Some(0.0), 1.0).is_none());
+    }
+
+    #[test]
+    fn test_bound_rect_constraints() {
+        let outer = Rectangle::new(Rect::new(4.0, 4.0, 36.0, 87.0), 38.0);
+        let inner_rect = Rect::new(35.0, 20.0, 15.0, 20.0);
+        let bounds = constrained_rect_bounds(&outer, &inner_rect);
+
+        assert_relative_eq!(bounds.Top.unwrap(), -5.82629, epsilon = 0.01);
+        assert_relative_eq!(bounds.Bottom.unwrap(), 0.89848, epsilon = 0.01);
+        assert_relative_eq!(bounds.Right.unwrap(), 0.70197, epsilon = 0.01);
+        assert_relative_eq!(bounds.Left.unwrap(), -14.35697, epsilon = 0.01);
     }
 }
