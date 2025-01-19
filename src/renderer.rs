@@ -7,4 +7,4 @@ mod vertex;
 
 pub use effects::EffectParameters;
 pub use handler::RenderCmd;
-pub use handler::RendererHandler;
+pub use handler::{RenderMode, RendererHandler};

@@ -1,4 +1,4 @@
-use crate::renderer::{EffectParameters, RenderCmd, RendererHandler};
+use crate::renderer::{EffectParameters, RenderCmd, RenderMode, RendererHandler};
 use crate::ui::preview::preview_frame::{PreviewFrameModel, PreviewFrameMsg, PreviewFrameOutput};
 use crate::ui::preview::{CropMode, Orientation};
 use crate::ui::sidebar::sidebar::{ControlsModel, ControlsMsg, ControlsOutput};
@@ -240,7 +240,7 @@ impl Component for App {
                 PreviewFrameOutput::TogglePlayPause => AppMsg::TogglePlayPauseRequested,
             });
 
-        let (handler, texture_receiver) = RendererHandler::new();
+        let (handler, texture_receiver) = RendererHandler::new(RenderMode::MostRecentFrame);
 
         let player = Rc::new(RefCell::new(Player::new(
             sender.clone(),

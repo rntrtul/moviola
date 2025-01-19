@@ -4,17 +4,26 @@ use crate::renderer::EffectParameters;
 use crate::ui::preview::Orientation;
 use gtk4::gdk;
 use std::cell::RefCell;
+use std::cmp::PartialEq;
+use std::collections::VecDeque;
 use std::sync::atomic::AtomicBool;
 use std::sync::{mpsc, Arc};
 use std::thread;
 use tokio::sync::Mutex;
 
 pub enum RenderCmd {
+    ChangeRenderMode(RenderMode),
     RenderFrame,
     RenderSample(gst::Sample),
     UpdateEffects(EffectParameters),
     UpdateOutputResolution(u32, u32),
     UpdateOrientation(Orientation),
+}
+
+#[derive(PartialEq)]
+pub enum RenderMode {
+    MostRecentFrame,
+    AllFrames,
 }
 
 pub struct RendererHandler {
@@ -45,8 +54,8 @@ fn render_frame(
 
 async fn update_queued(
     renderer: Arc<Mutex<Renderer>>,
-    effect_parms: &mut Option<EffectParameters>,
     sample: &mut Option<gst::Sample>,
+    effect_parms: &mut Option<EffectParameters>,
     orientation: &mut Option<Orientation>,
     output_res: &mut Option<(u32, u32)>,
 ) {
@@ -73,13 +82,16 @@ async fn render_loop(
     texture_sender: mpsc::Sender<gdk::Texture>,
     cmd_recv: mpsc::Receiver<RenderCmd>,
     renderer_cmd_sender: mpsc::Sender<RenderCmd>,
+    render_mode: RenderMode,
 ) {
     let renderer = Arc::new(Mutex::new(Renderer::new().await));
 
     let mut queued_effect_params: Option<EffectParameters> = None;
     let mut queued_output_resolution: Option<(u32, u32)> = None;
     let mut queued_orientation: Option<Orientation> = None;
-    let mut queued_sample: Option<gst::Sample> = None;
+    let mut render_mode = render_mode;
+
+    let mut samples: VecDeque<gst::Sample> = VecDeque::with_capacity(1);
     let render_queued = Arc::new(AtomicBool::new(false));
 
     loop {
@@ -98,10 +110,13 @@ async fn render_loop(
                 }
             }
             RenderCmd::RenderSample(sample) => {
-                queued_sample.replace(sample);
+                if render_mode == RenderMode::MostRecentFrame {
+                    samples.clear();
+                }
+                samples.push_back(sample);
 
                 if let Ok(mut guarded_renderer) = renderer.try_lock() {
-                    guarded_renderer.upload_new_smple(&queued_sample.take().unwrap());
+                    guarded_renderer.upload_new_smple(&samples.pop_front().unwrap());
                     drop(guarded_renderer);
 
                     render_frame(
@@ -121,11 +136,19 @@ async fn render_loop(
                     drop(guarded_renderer);
 
                     if render_queued.load(std::sync::atomic::Ordering::Relaxed) {
-                        render_queued.store(false, std::sync::atomic::Ordering::Relaxed);
+                        let are_more_renders_queued = match render_mode {
+                            RenderMode::MostRecentFrame => false,
+                            RenderMode::AllFrames => samples.len() != 0,
+                        };
+                        render_queued.store(
+                            are_more_renders_queued,
+                            std::sync::atomic::Ordering::Relaxed,
+                        );
+
                         update_queued(
                             renderer.clone(),
+                            &mut samples.pop_front(),
                             &mut queued_effect_params,
-                            &mut queued_sample,
                             &mut queued_orientation,
                             &mut queued_output_resolution,
                         )
@@ -161,19 +184,27 @@ async fn render_loop(
                     render_queued.store(true, std::sync::atomic::Ordering::Relaxed);
                 }
             }
+            RenderCmd::ChangeRenderMode(mode) => {
+                render_mode = mode;
+            }
         }
     }
 }
 
 impl RendererHandler {
-    pub fn new() -> (Self, mpsc::Receiver<gdk::Texture>) {
+    pub fn new(mode: RenderMode) -> (Self, mpsc::Receiver<gdk::Texture>) {
         let (cmd_sender, cmd_recv) = mpsc::channel::<RenderCmd>();
         let (output_sender, output_receiver) = mpsc::channel::<gdk::Texture>();
 
         let renderer_cmd_sender = cmd_sender.clone();
         let thread = thread::spawn(move || {
             let runtime = tokio::runtime::Runtime::new().unwrap();
-            runtime.block_on(render_loop(output_sender, cmd_recv, renderer_cmd_sender));
+            runtime.block_on(render_loop(
+                output_sender,
+                cmd_recv,
+                renderer_cmd_sender,
+                mode,
+            ));
         });
 
         let handler = Self {
