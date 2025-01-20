@@ -1,3 +1,4 @@
+use crate::renderer::frame_position::FramePositionUniform;
 use crate::renderer::timer::{Timer, BUFF_MAP_IDX, GDK_TEX_IDX};
 use crate::renderer::vertex::{FrameRect, INDICES};
 use crate::renderer::{texture, vertex, EffectParameters};
@@ -34,10 +35,17 @@ pub struct Renderer {
     output_dimensions: (u32, u32),
     video_frame_texture: RefCell<texture::Texture>,
     video_frame_rect: FrameRect,
+    frame_position: FramePositionUniform,
+    frame_position_buffer: wgpu::Buffer,
     orientation: Orientation,
     pub timer: Timer,
     frame_count: Cell<u32>,
 }
+
+// todo: be able to skip pipelines if not needed. (if no padding skip it)
+// todo: add pipeline step for frame positioning as first step
+//   (subsequent steps will only deal with smaller frames)
+// todo: rename compute shader to unpadding
 
 impl Renderer {
     pub async fn new() -> Renderer {
@@ -131,6 +139,16 @@ impl Renderer {
                         },
                         count: None,
                     },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 2,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Uniform,
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    },
                 ],
             });
 
@@ -158,16 +176,20 @@ impl Renderer {
 
         let output_dimensions = (512, 288);
 
+        let frame_position = FramePositionUniform::new();
+
         let (
             render_target,
             output_staging_buffer,
             output_texture_view,
             compute_buffer,
             compute_bind_group,
+            frame_position_buffer,
         ) = Self::create_render_target(
             output_dimensions.0,
             output_dimensions.1,
             &compute_bind_group_layout,
+            &frame_position,
             &device,
         );
 
@@ -269,6 +291,8 @@ impl Renderer {
             video_frame_texture: RefCell::new(texture),
             video_frame_rect: frame_rect,
             frame_count: Cell::new(0),
+            frame_position,
+            frame_position_buffer,
         }
     }
 
@@ -276,6 +300,7 @@ impl Renderer {
         width: u32,
         height: u32,
         compute_bind_group_layout: &wgpu::BindGroupLayout,
+        frame_position: &FramePositionUniform,
         device: &wgpu::Device,
     ) -> (
         wgpu::Texture,
@@ -283,6 +308,7 @@ impl Renderer {
         wgpu::TextureView,
         wgpu::Buffer,
         wgpu::BindGroup,
+        wgpu::Buffer,
     ) {
         let render_target = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("Output Texture Descriptor"),
@@ -320,6 +346,7 @@ impl Renderer {
         let output_texture_view =
             render_target.create_view(&wgpu::TextureViewDescriptor::default());
 
+        let frame_position_buffer = frame_position.buffer(&device);
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("Compute Bind Group"),
             layout: &compute_bind_group_layout,
@@ -332,6 +359,10 @@ impl Renderer {
                     binding: 1,
                     resource: compute_buffer.as_entire_binding(),
                 },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: frame_position_buffer.as_entire_binding(),
+                },
             ],
         });
 
@@ -341,6 +372,7 @@ impl Renderer {
             output_texture_view,
             compute_buffer,
             bind_group,
+            frame_position_buffer,
         )
     }
 
@@ -351,10 +383,12 @@ impl Renderer {
             output_texture_view,
             compute_buffer,
             compute_bind_group,
+            frame_position_buffer,
         ) = Self::create_render_target(
             width,
             height,
             &self.compute_bind_group_layout,
+            &self.frame_position,
             &self.device,
         );
 
@@ -363,6 +397,7 @@ impl Renderer {
         self.compute_buffer = compute_buffer;
         self.output_texture_view = output_texture_view;
         self.compute_bind_group = compute_bind_group;
+        self.frame_position_buffer = frame_position_buffer;
     }
 
     pub fn is_size_equal_to_curr_input_size(&self, width: u32, height: u32) -> bool {
