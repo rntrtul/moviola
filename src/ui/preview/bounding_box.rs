@@ -61,10 +61,10 @@ pub enum HandleType {
 }
 
 struct RectangleConstraints {
-    Top: Option<f32>,
-    Left: Option<f32>,
-    Bottom: Option<f32>,
-    Right: Option<f32>,
+    top: Option<f32>,
+    left: Option<f32>,
+    bottom: Option<f32>,
+    right: Option<f32>,
 }
 
 impl Preview {
@@ -480,17 +480,17 @@ impl Preview {
         // To ensure they move same amount we check if the current offset will cause clamping and if
         // it will, we take the max value that will not cause clamping.
         let step_x = if offset.x() < 0.0 {
-            one_sided_clamp(constraints.Left, offset.x())
+            one_sided_clamp(constraints.left, offset.x())
         } else if offset.x() > 0.0 {
-            one_sided_clamp(constraints.Right, offset.x())
+            one_sided_clamp(constraints.right, offset.x())
         } else {
             None
         };
 
         let step_y = if offset.y() < 0.0 {
-            one_sided_clamp(constraints.Top, offset.y())
+            one_sided_clamp(constraints.top, offset.y())
         } else if offset.y() > 0.0 {
-            one_sided_clamp(constraints.Bottom, offset.y())
+            one_sided_clamp(constraints.bottom, offset.y())
         } else {
             None
         };
@@ -704,10 +704,10 @@ fn constrained_rect_bounds(
     let (right_2, bottom_2) = corner_constraints(&outer_rect, bottom_right);
 
     RectangleConstraints {
-        Top: finite_abs_min(&[top_1, top_2]),
-        Bottom: finite_abs_min(&[bottom_1, bottom_2]),
-        Left: finite_abs_min(&[left_1, left_2]),
-        Right: finite_abs_min(&[right_1, right_2]),
+        top: finite_abs_min(&[top_1, top_2]),
+        bottom: finite_abs_min(&[bottom_1, bottom_2]),
+        left: finite_abs_min(&[left_1, left_2]),
+        right: finite_abs_min(&[right_1, right_2]),
     }
 }
 
@@ -921,9 +921,9 @@ mod tests {
         let inner_rect = Rect::new(35.0, 20.0, 15.0, 20.0);
         let bounds = constrained_rect_bounds(&outer, &inner_rect);
 
-        assert_relative_eq!(bounds.Top.unwrap(), -5.82629, epsilon = 0.01);
-        assert_relative_eq!(bounds.Bottom.unwrap(), 0.89848, epsilon = 0.01);
-        assert_relative_eq!(bounds.Right.unwrap(), 0.70197, epsilon = 0.01);
-        assert_relative_eq!(bounds.Left.unwrap(), -14.35697, epsilon = 0.01);
+        assert_relative_eq!(bounds.top.unwrap(), -5.82629, epsilon = 0.01);
+        assert_relative_eq!(bounds.bottom.unwrap(), 0.89848, epsilon = 0.01);
+        assert_relative_eq!(bounds.right.unwrap(), 0.70197, epsilon = 0.01);
+        assert_relative_eq!(bounds.left.unwrap(), -14.35697, epsilon = 0.01);
     }
 }
