@@ -456,6 +456,20 @@ impl Component for App {
 
                 player.set_is_playing(true);
 
+                // fixme: deal with images with orientation tag (width and height switched) are blurry
+                let info = player.info.clone();
+                let (width, height) = info.orientation.oriented_size(info.width, info.height);
+
+                // need to be 256  alligned, so 64 pixel assuming 4 channel, 8 bit per pixel
+                let scale_factor = (width as f32 / 1280.0).ceil();
+                let scaled_width = (((width as f32 / scale_factor) as u32) / 64) * 64;
+                let scaled_height = (height as f32 / scale_factor) as u32;
+
+                self.renderer.send_cmd(RenderCmd::UpdateOutputResolution(
+                    scaled_width,
+                    scaled_height,
+                ));
+
                 self.video_controls.emit(VideoControlMsg::VideoLoaded);
                 self.preview_frame.emit(PreviewFrameMsg::VideoLoaded(
                     player.info.width,
@@ -465,20 +479,6 @@ impl Component for App {
                 self.preview_frame.widget().set_visible(true);
             }
             AppCommandMsg::FrameRendered(texture) => {
-                if self
-                    .preview_frame
-                    .model()
-                    .check_and_lower_preview_size_changed()
-                {
-                    let (width, height) = self.preview_frame.model().preview_size();
-                    if width > 0 && height > 0 {
-                        self.renderer.send_cmd(RenderCmd::UpdateOutputResolution(
-                            width as u32,
-                            height as u32,
-                        ));
-                    }
-                }
-
                 self.preview_frame
                     .emit(PreviewFrameMsg::FrameRendered(texture));
             }

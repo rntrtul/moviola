@@ -273,14 +273,6 @@ impl crate::ui::preview::Preview {
         self.queue_draw();
     }
 
-    pub fn preview_frame_size(&self) -> (i32, i32) {
-        let (width, height) = self
-            .imp()
-            .preview_size(self.imp().original_aspect_ratio.get());
-
-        (width as i32, height as i32)
-    }
-
     pub fn update_texture(&self, texture: gdk::Texture) {
         self.imp().update_texture(texture);
         self.queue_draw();

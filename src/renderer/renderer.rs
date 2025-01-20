@@ -13,7 +13,7 @@ use std::sync::mpsc;
 use wgpu::include_wgsl;
 use wgpu::util::DeviceExt;
 
-static U32_SIZE: u32 = size_of::<u32>() as u32;
+pub static U32_SIZE: u32 = size_of::<u32>() as u32;
 
 pub struct Renderer {
     device: wgpu::Device,
@@ -49,7 +49,7 @@ pub struct Renderer {
 
 impl Renderer {
     pub async fn new() -> Renderer {
-        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
+        let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
             backends: wgpu::Backends::PRIMARY,
             ..Default::default()
         });
@@ -460,6 +460,7 @@ impl Renderer {
 
     fn prepare_video_frame_render_pass(&mut self) -> wgpu::CommandBuffer {
         let texture = self.video_frame_texture.borrow();
+        let frame_is_padded = self.video_frame_texture.borrow().is_padded;
 
         let mut encoder = self
             .device
@@ -493,7 +494,7 @@ impl Renderer {
         }
 
         // compute pass
-        {
+        if frame_is_padded {
             let mut compute_pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
                 label: Some("Compute Pass"),
                 timestamp_writes: Some(wgpu::ComputePassTimestampWrites {
@@ -512,22 +513,47 @@ impl Renderer {
             );
         }
 
-        encoder.resolve_query_set(&self.timer.query_set, 0..4, &self.timer.resolve_buffer, 0);
-        encoder.copy_buffer_to_buffer(
-            &self.timer.resolve_buffer,
-            0,
-            &self.timer.destination_buffer,
-            0,
-            self.timer.destination_buffer.size(),
-        );
+        // fixme: deal with timers when compute step skipped
+        //  need to update timer when texture size is changed to know how many queries to adjust
+        //  buffer size
+        let queries = if frame_is_padded { 2 } else { 4 };
+        // encoder.resolve_query_set(&self.timer.query_set, 0..queries, &self.timer.resolve_buffer, 0);
+        // encoder.copy_buffer_to_buffer(
+        //     &self.timer.resolve_buffer,
+        //     0,
+        //     &self.timer.destination_buffer,
+        //     0,
+        //     self.timer.destination_buffer.size(),
+        // );
 
-        encoder.copy_buffer_to_buffer(
-            &self.compute_buffer,
-            0,
-            &self.output_staging_buffer,
-            0,
-            self.output_staging_buffer.size(),
-        );
+        if frame_is_padded {
+            encoder.copy_buffer_to_buffer(
+                &self.compute_buffer,
+                0,
+                &self.output_staging_buffer,
+                0,
+                self.output_staging_buffer.size(),
+            );
+        } else {
+            let bytes_per_row = self.render_target.width() * U32_SIZE;
+            encoder.copy_texture_to_buffer(
+                wgpu::TexelCopyTextureInfo {
+                    texture: &self.render_target,
+                    mip_level: 0,
+                    origin: wgpu::Origin3d::ZERO,
+                    aspect: wgpu::TextureAspect::All,
+                },
+                wgpu::TexelCopyBufferInfo {
+                    buffer: &self.output_staging_buffer,
+                    layout: wgpu::TexelCopyBufferLayout {
+                        offset: 0,
+                        bytes_per_row: Some(bytes_per_row),
+                        rows_per_image: None,
+                    },
+                },
+                self.render_target.size(),
+            );
+        }
 
         encoder.finish()
     }

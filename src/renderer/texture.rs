@@ -1,12 +1,19 @@
+use crate::renderer::renderer::U32_SIZE;
 use anyhow::*;
 use wgpu::BindGroupLayout;
 
 pub struct Texture {
-    #[allow(unused)]
     pub texture: wgpu::Texture,
     pub view: wgpu::TextureView,
     pub sampler: wgpu::Sampler,
     pub bind_group: wgpu::BindGroup,
+    pub is_padded: bool,
+}
+
+fn padded_bytes_per_row(row_width: u32) -> u32 {
+    wgpu::COPY_BYTES_PER_ROW_ALIGNMENT
+        * (((row_width * U32_SIZE) as f32 / wgpu::COPY_BYTES_PER_ROW_ALIGNMENT as f32).ceil()
+            as u32)
 }
 
 impl Texture {
@@ -23,6 +30,8 @@ impl Texture {
             height,
             depth_or_array_layers: 1,
         };
+
+        let is_padded = padded_bytes_per_row(width) != (width * U32_SIZE);
 
         let texture = device.create_texture(&wgpu::TextureDescriptor {
             size,
@@ -71,6 +80,7 @@ impl Texture {
             view,
             sampler,
             bind_group,
+            is_padded,
         })
     }
 
@@ -81,23 +91,23 @@ impl Texture {
 
     pub fn write_from_image(&self, queue: &wgpu::Queue, img: &image::DynamicImage) {
         let rgba = img.to_rgba8();
-        self.write_from_buffer(queue, &rgba);
+        self.write_from_pixel_buffer(queue, &rgba);
     }
     pub fn write_from_sample(&self, queue: &wgpu::Queue, sample: &gst::Sample) {
         let buffer = sample.buffer().unwrap();
-        self.write_from_buffer(queue, &buffer.map_readable().unwrap().as_slice());
+        self.write_from_pixel_buffer(queue, &buffer.map_readable().unwrap().as_slice());
     }
 
-    pub fn write_from_buffer(&self, queue: &wgpu::Queue, buffer: &[u8]) {
+    pub fn write_from_pixel_buffer(&self, queue: &wgpu::Queue, buffer: &[u8]) {
         queue.write_texture(
-            wgpu::ImageCopyTexture {
+            wgpu::TexelCopyTextureInfo {
                 texture: &self.texture,
                 mip_level: 0,
                 origin: wgpu::Origin3d::ZERO,
                 aspect: wgpu::TextureAspect::All,
             },
             &buffer,
-            wgpu::ImageDataLayout {
+            wgpu::TexelCopyBufferLayout {
                 offset: 0,
                 bytes_per_row: Some(4 * self.texture.width()),
                 rows_per_image: None,

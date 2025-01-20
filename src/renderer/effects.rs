@@ -8,7 +8,7 @@ pub struct EffectParameters {
 }
 
 impl EffectParameters {
-    // todo: don't have it be manual
+    // todo: don't have it be manual. Use Uniform struct instead
     pub fn parameter_count() -> u64 {
         3
     }

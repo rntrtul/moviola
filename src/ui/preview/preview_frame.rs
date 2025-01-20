@@ -3,15 +3,12 @@ use crate::ui::sidebar::CropExportSettings;
 use gtk4::gdk;
 use gtk4::prelude::WidgetExt;
 use relm4::*;
-use std::cell::Cell;
 use std::fmt::Debug;
 
 pub struct PreviewFrameModel {
     preview: Preview,
     video_is_loaded: bool,
     is_playing: bool,
-    prev_preview_size: (i32, i32),
-    preview_size_changed: Cell<bool>,
 }
 
 #[derive(Debug)]
@@ -77,8 +74,6 @@ impl Component for PreviewFrameModel {
             preview,
             video_is_loaded: false,
             is_playing: false,
-            prev_preview_size: (0, 0),
-            preview_size_changed: Cell::new(false),
         };
 
         let widgets = view_output!();
@@ -104,12 +99,6 @@ impl Component for PreviewFrameModel {
             }
             PreviewFrameMsg::FrameRendered(texture) => {
                 self.preview.update_texture(texture);
-                let preview_size = self.preview.preview_frame_size();
-
-                if preview_size != self.prev_preview_size {
-                    self.prev_preview_size = preview_size;
-                    self.preview_size_changed.set(true);
-                }
             }
             PreviewFrameMsg::Orient(orientation) => self.preview.set_orientation(orientation),
             PreviewFrameMsg::StraightenStart => self.preview.straigtening_begun(),
@@ -134,16 +123,6 @@ impl Component for PreviewFrameModel {
 impl PreviewFrameModel {
     pub fn reset(&self) {
         self.preview.reset_preview();
-    }
-
-    pub fn preview_size(&self) -> (i32, i32) {
-        self.preview.preview_frame_size()
-    }
-
-    pub fn check_and_lower_preview_size_changed(&self) -> bool {
-        let changed = self.preview_size_changed.get();
-        self.preview_size_changed.set(false);
-        changed
     }
 
     pub fn export_settings(&self) -> CropExportSettings {
