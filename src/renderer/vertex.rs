@@ -3,13 +3,21 @@ use crate::ui::preview::Orientation;
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct Vertex {
-    position: [f32; 3],
+    position: [f32; 2],
     tex_coords: [f32; 2],
 }
+
 impl Vertex {
+    pub fn new(position: [f32; 2], tex_coords: [f32; 2]) -> Self {
+        Self {
+            position,
+            tex_coords,
+        }
+    }
+
     pub fn layout() -> wgpu::VertexBufferLayout<'static> {
         wgpu::VertexBufferLayout {
-            array_stride: std::mem::size_of::<Vertex>() as wgpu::BufferAddress,
+            array_stride: size_of::<Vertex>() as wgpu::BufferAddress,
             step_mode: wgpu::VertexStepMode::Vertex,
             attributes: &[
                 wgpu::VertexAttribute {
@@ -18,7 +26,7 @@ impl Vertex {
                     format: wgpu::VertexFormat::Float32x3,
                 },
                 wgpu::VertexAttribute {
-                    offset: std::mem::size_of::<[f32; 3]>() as wgpu::BufferAddress,
+                    offset: size_of::<[f32; 2]>() as wgpu::BufferAddress,
                     shader_location: 1,
                     format: wgpu::VertexFormat::Float32x2,
                 },
@@ -30,19 +38,14 @@ impl Vertex {
 pub const INDICES: &[u16] = &[0, 3, 2, 0, 2, 1];
 
 pub struct FrameRect {
-    position: [[f32; 3]; 4],
+    position: [[f32; 2]; 4],
     tex_coords: [[f32; 2]; 4],
 }
 
 impl FrameRect {
     pub fn new() -> Self {
         Self {
-            position: [
-                [-1.0, 1.0, 0.0],
-                [1.0, 1.0, 0.0],
-                [1.0, -1.0, 0.0],
-                [-1.0, -1.0, 0.0],
-            ],
+            position: [[-1.0, 1.0], [1.0, 1.0], [1.0, -1.0], [-1.0, -1.0]],
             tex_coords: [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]],
         }
     }
@@ -53,22 +56,10 @@ impl FrameRect {
 
     pub fn vertices(&self) -> [Vertex; 4] {
         [
-            Vertex {
-                position: self.position[0],
-                tex_coords: self.tex_coords[0],
-            },
-            Vertex {
-                position: self.position[1],
-                tex_coords: self.tex_coords[1],
-            },
-            Vertex {
-                position: self.position[2],
-                tex_coords: self.tex_coords[2],
-            },
-            Vertex {
-                position: self.position[3],
-                tex_coords: self.tex_coords[3],
-            },
+            Vertex::new(self.position[0], self.tex_coords[0]),
+            Vertex::new(self.position[1], self.tex_coords[1]),
+            Vertex::new(self.position[2], self.tex_coords[2]),
+            Vertex::new(self.position[3], self.tex_coords[3]),
         ]
     }
 

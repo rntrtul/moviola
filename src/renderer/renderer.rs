@@ -389,6 +389,16 @@ impl Renderer {
         self.output_dimensions = (width, height);
     }
 
+    fn update_vertex_buffer(&mut self) {
+        self.vertex_buffer = self
+            .device
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("Vertex buffer"),
+                contents: bytemuck::cast_slice(&self.video_frame_rect.vertices()),
+                usage: wgpu::BufferUsages::VERTEX,
+            });
+    }
+
     fn sample_to_texture(&self, sample: &Sample) {
         self.video_frame_texture
             .borrow()
@@ -531,7 +541,7 @@ impl Renderer {
         Ok(gdk_texture)
     }
 
-    pub fn upload_new_smple(&mut self, sample: &Sample) {
+    pub fn upload_new_sample(&mut self, sample: &Sample) {
         let caps = sample.caps().expect("sample without caps");
         let info = gst_video::VideoInfo::from_caps(caps).expect("Failed to parse caps");
 
@@ -561,14 +571,7 @@ impl Renderer {
 
     pub fn orient(&mut self, orientation: Orientation) {
         self.video_frame_rect.orient(orientation);
-
-        self.vertex_buffer = self
-            .device
-            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("Vertex buffer"),
-                contents: bytemuck::cast_slice(&self.video_frame_rect.vertices()),
-                usage: wgpu::BufferUsages::VERTEX,
-            });
+        self.update_vertex_buffer();
 
         if self.orientation.is_width_flipped() != orientation.is_width_flipped() {
             self.update_output_texture_size(self.output_dimensions.1, self.output_dimensions.0);

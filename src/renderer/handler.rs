@@ -70,7 +70,7 @@ async fn update_queued(
     }
 
     if let Some(sample) = sample.take() {
-        renderer.upload_new_smple(&sample);
+        renderer.upload_new_sample(&sample);
     }
 
     if let Some(params) = effect_parms.take() {
@@ -116,7 +116,7 @@ async fn render_loop(
                 samples.push_back(sample);
 
                 if let Ok(mut guarded_renderer) = renderer.try_lock() {
-                    guarded_renderer.upload_new_smple(&samples.pop_front().unwrap());
+                    guarded_renderer.upload_new_sample(&samples.pop_front().unwrap());
                     drop(guarded_renderer);
 
                     render_frame(
