@@ -1,5 +1,5 @@
 use crate::renderer::frame_position::FramePositionUniform;
-use crate::renderer::timer::{Timer, BUFF_MAP_IDX, GDK_TEX_IDX};
+use crate::renderer::timer::{QuerySet, Timer, BUFF_MAP_IDX, GDK_TEX_IDX};
 use crate::renderer::vertex::{FrameRect, INDICES};
 use crate::renderer::{texture, vertex, EffectParameters};
 use crate::ui::preview::Orientation;
@@ -42,7 +42,6 @@ pub struct Renderer {
     frame_count: Cell<u32>,
 }
 
-// todo: be able to skip pipelines if not needed. (if no padding skip it)
 // todo: add pipeline step for frame positioning as first step
 //   (subsequent steps will only deal with smaller frames)
 // todo: rename compute shader to unpadding
@@ -417,6 +416,12 @@ impl Renderer {
             )
             .unwrap(),
         );
+
+        if self.video_frame_texture.borrow().is_padded {
+            self.timer.enable_query_set(QuerySet::Compute);
+        } else {
+            self.timer.disable_query_set(QuerySet::Compute);
+        }
     }
 
     fn update_output_texture_size(&mut self, width: u32, height: u32) {
@@ -479,11 +484,7 @@ impl Renderer {
                 })],
                 depth_stencil_attachment: None,
                 occlusion_query_set: None,
-                timestamp_writes: Some(wgpu::RenderPassTimestampWrites {
-                    query_set: &self.timer.query_set,
-                    beginning_of_pass_write_index: Some(0),
-                    end_of_pass_write_index: Some(1),
-                }),
+                timestamp_writes: self.timer.render_pass_timestamp_writes(),
             });
 
             render_pass.set_pipeline(&self.render_pipeline);
@@ -495,38 +496,21 @@ impl Renderer {
 
         // compute pass
         if frame_is_padded {
-            let mut compute_pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
-                label: Some("Compute Pass"),
-                timestamp_writes: Some(wgpu::ComputePassTimestampWrites {
-                    query_set: &self.timer.query_set,
-                    beginning_of_pass_write_index: Some(2),
-                    end_of_pass_write_index: Some(3),
-                }),
-            });
+            {
+                let mut compute_pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                    label: Some("Compute Pass"),
+                    timestamp_writes: self.timer.compute_pass_timestamp_writes(),
+                });
 
-            compute_pass.set_pipeline(&self.compute_pipeline);
-            compute_pass.set_bind_group(0, &self.compute_bind_group, &[]);
-            compute_pass.dispatch_workgroups(
-                self.output_dimensions.0.div_ceil(256),
-                self.output_dimensions.1,
-                1,
-            );
-        }
+                compute_pass.set_pipeline(&self.compute_pipeline);
+                compute_pass.set_bind_group(0, &self.compute_bind_group, &[]);
+                compute_pass.dispatch_workgroups(
+                    self.output_dimensions.0.div_ceil(256),
+                    self.output_dimensions.1,
+                    1,
+                );
+            }
 
-        // fixme: deal with timers when compute step skipped
-        //  need to update timer when texture size is changed to know how many queries to adjust
-        //  buffer size
-        let queries = if frame_is_padded { 2 } else { 4 };
-        // encoder.resolve_query_set(&self.timer.query_set, 0..queries, &self.timer.resolve_buffer, 0);
-        // encoder.copy_buffer_to_buffer(
-        //     &self.timer.resolve_buffer,
-        //     0,
-        //     &self.timer.destination_buffer,
-        //     0,
-        //     self.timer.destination_buffer.size(),
-        // );
-
-        if frame_is_padded {
             encoder.copy_buffer_to_buffer(
                 &self.compute_buffer,
                 0,
@@ -534,7 +518,23 @@ impl Renderer {
                 0,
                 self.output_staging_buffer.size(),
             );
-        } else {
+        }
+
+        encoder.resolve_query_set(
+            &self.timer.query_set,
+            0..self.timer.queries(),
+            &self.timer.resolve_buffer,
+            0,
+        );
+        encoder.copy_buffer_to_buffer(
+            &self.timer.resolve_buffer,
+            0,
+            &self.timer.result_buffer,
+            0,
+            self.timer.result_buffer.size(),
+        );
+
+        if !frame_is_padded {
             let bytes_per_row = self.render_target.width() * U32_SIZE;
             encoder.copy_texture_to_buffer(
                 wgpu::TexelCopyTextureInfo {
