@@ -4,7 +4,7 @@ struct VertexInput {
     @location(1) tex_coords: vec2<f32>,
 };
 
-struct VertexOutput{
+struct VertexOutput {
     @builtin(position) clip_position: vec4<f32>,
     @location(0) tex_coords: vec2<f32>,
 }
@@ -19,13 +19,18 @@ fn vs_main(model: VertexInput) -> VertexOutput {
 }
 
 // Fragment shader
+struct Parameters {
+    contrast: f32,
+    brightness: f32,
+    saturation: f32,
+}
+
 @group(0) @binding(0)
 var t_diffuse: texture_2d<f32>;
 @group(0) @binding(1)
 var s_diffuse: sampler;
 @group(0) @binding(2)
-var<storage, read> effect_parameters: array<f32>;
-
+var<uniform> params: Parameters;
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
@@ -41,14 +46,11 @@ fn apply_colour_effects(colour: vec4<f32> ) -> vec4<f32> {
 }
 
 fn contrast_brigtness(colour: vec4<f32>) -> vec4<f32> {
-    let contrast = effect_parameters[0] ;
-    let brightness = effect_parameters[1];
     //todo: should use midpoint as pow(0.5, 2.2)
-    return ((colour - 0.5 ) * contrast) + 0.5 + brightness;
+    return ((colour - 0.5 ) * params.contrast) + 0.5 + params.brightness;
 }
 
 fn saturate(colour: vec4<f32>) -> vec4<f32> {
-    let saturation = effect_parameters[2];
     let luma = dot(colour, vec4<f32>(0.216279, 0.7515122, 0.0721750, 0.0));
-    return luma + saturation * (colour - luma);
+    return luma + params.saturation * (colour - luma);
 }

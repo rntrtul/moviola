@@ -1,6 +1,8 @@
 use crate::range::Range;
+use wgpu::util::DeviceExt;
 
-#[derive(Debug, Copy, Clone)]
+#[repr(C)]
+#[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct EffectParameters {
     pub contrast: f32,
     pub brigthness: f32,
@@ -8,15 +10,6 @@ pub struct EffectParameters {
 }
 
 impl EffectParameters {
-    // todo: don't have it be manual. Use Uniform struct instead
-    pub fn parameter_count() -> u64 {
-        3
-    }
-
-    pub fn buffer_size() -> u64 {
-        EffectParameters::parameter_count() * std::mem::size_of::<f32>() as u64
-    }
-
     pub fn new() -> Self {
         Self {
             contrast: 1f32,
@@ -35,10 +28,12 @@ impl EffectParameters {
         self.saturation == 1f32 && self.contrast == 0f32 && self.brigthness == 1f32
     }
 
-    pub fn populate_buffer(&self, buffer: &mut [f32]) {
-        buffer[0] = self.contrast;
-        buffer[1] = self.brigthness;
-        buffer[2] = self.saturation;
+    pub fn buffer(&self, device: &wgpu::Device) -> wgpu::Buffer {
+        device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Effects Buffer"),
+            contents: bytemuck::cast_slice(&[*self]),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        })
     }
 
     pub fn set_contrast(&mut self, value: f32) {

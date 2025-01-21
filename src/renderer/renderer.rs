@@ -102,11 +102,9 @@ impl Renderer {
                         binding: 2,
                         visibility: wgpu::ShaderStages::FRAGMENT,
                         ty: wgpu::BindingType::Buffer {
-                            ty: wgpu::BufferBindingType::Storage { read_only: true },
+                            ty: wgpu::BufferBindingType::Uniform,
                             has_dynamic_offset: false,
-                            min_binding_size: Some(
-                                wgpu::BufferSize::new(EffectParameters::buffer_size()).unwrap(),
-                            ),
+                            min_binding_size: None,
                         },
                         count: None,
                     },
@@ -152,14 +150,7 @@ impl Renderer {
             });
 
         let effect_parameters = EffectParameters::new();
-
-        let effect_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("Effect Parameter Buffer"),
-            size: EffectParameters::buffer_size(),
-            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-        Self::populate_effect_buffer(effect_parameters, &queue, &effect_buffer);
+        let effect_buffer = effect_parameters.buffer(&device);
 
         let texture = texture::Texture::new_for_size(
             1,
@@ -243,7 +234,7 @@ impl Renderer {
             multisample: wgpu::MultisampleState {
                 count: 1,
                 mask: !0,
-                alpha_to_coverage_enabled: false, // antialiasing related. probably needed for crop box
+                alpha_to_coverage_enabled: false,
             },
             multiview: None,
             cache: None,
@@ -446,23 +437,6 @@ impl Renderer {
         self.queue.submit([]);
     }
 
-    fn populate_effect_buffer(
-        effect_parameters: EffectParameters,
-        queue: &wgpu::Queue,
-        buffer: &wgpu::Buffer,
-    ) {
-        let mut view = queue
-            .write_buffer_with(
-                &buffer,
-                0,
-                wgpu::BufferSize::new(EffectParameters::buffer_size()).unwrap(),
-            )
-            .unwrap();
-
-        let buffer = bytemuck::cast_slice_mut(&mut view);
-        effect_parameters.populate_buffer(buffer);
-    }
-
     fn prepare_video_frame_render_pass(&mut self) -> wgpu::CommandBuffer {
         let texture = self.video_frame_texture.borrow();
         let frame_is_padded = self.video_frame_texture.borrow().is_padded;
@@ -615,7 +589,18 @@ impl Renderer {
 
     pub fn update_effects(&mut self, parameters: EffectParameters) {
         self.effect_parameters = parameters;
-        Self::populate_effect_buffer(self.effect_parameters, &self.queue, &self.effect_buffer);
+
+        let mut view = self
+            .queue
+            .write_buffer_with(
+                &self.effect_buffer,
+                0,
+                wgpu::BufferSize::new(self.effect_buffer.size()).unwrap(),
+            )
+            .unwrap();
+
+        let buffer: &mut [f32] = bytemuck::cast_slice_mut(&mut view);
+        buffer.clone_from_slice(bytemuck::cast_slice(&[self.effect_parameters]));
     }
 
     pub async fn render_frame(&mut self) -> gdk::Texture {
