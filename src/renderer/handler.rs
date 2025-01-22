@@ -106,7 +106,7 @@ async fn render_loop(
         };
 
         if frames_rendered != 0 && frames_rendered % 30 == 0 {
-            let gpu_timing = renderer.lock().await.timer.frame_time_msg();
+            let gpu_timing = renderer.lock().await.gpu_timer.frame_time_msg();
             timer_sender
                 .send(TimerCmd::OutputResult(Some(gpu_timing)))
                 .unwrap();

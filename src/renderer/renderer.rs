@@ -28,17 +28,15 @@ pub struct Renderer {
     frame_position_bind_group: wgpu::BindGroup,
     frame_position_buffer: wgpu::Buffer,
     positioned_frame: wgpu::Texture,
-    compute_pipeline: wgpu::ComputePipeline,
-    compute_bind_group_layout: wgpu::BindGroupLayout,
-    compute_bind_group: wgpu::BindGroup,
-    effect_buffer: wgpu::Buffer,
-    compute_buffer: wgpu::Buffer,
-    output_staging_buffer: wgpu::Buffer,
-    pub(crate) timer: GpuTimer,
+    effects_pipeline: wgpu::ComputePipeline,
+    effects_bind_group_layout: wgpu::BindGroupLayout,
+    effects_bind_group: wgpu::BindGroup,
+    effects_buffer: wgpu::Buffer,
+    effects_output_buffer: wgpu::Buffer,
+    final_output_buffer: wgpu::Buffer,
+    pub(crate) gpu_timer: GpuTimer,
     timer_sender: mpsc::Sender<TimerCmd>,
 }
-
-// todo: rename compute shader to unpadding
 
 impl Renderer {
     pub async fn new(timer_sender: mpsc::Sender<TimerCmd>) -> Renderer {
@@ -116,9 +114,9 @@ impl Renderer {
                 ],
             });
 
-        let compute_bind_group_layout =
+        let effects_bind_group_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                label: Some("Compute bind group layout"),
+                label: Some("Effects bind group layout"),
                 entries: &[
                     wgpu::BindGroupLayoutEntry {
                         binding: 0,
@@ -154,7 +152,7 @@ impl Renderer {
             });
 
         let effect_parameters = EffectParameters::new();
-        let effect_buffer = effect_parameters.buffer(&device);
+        let effects_buffer = effect_parameters.buffer(&device);
 
         let texture = texture::Texture::new_for_size(1, 1, &device, "").unwrap();
 
@@ -163,36 +161,36 @@ impl Renderer {
         let frame_position = FramePositionUniform::new();
 
         let (
-            output_staging_buffer,
-            compute_buffer,
-            compute_bind_group,
+            final_output_buffer,
+            effects_output_buffer,
+            effects_bind_group,
             positioned_frame,
             frame_position_buffer,
             frame_position_bind_group,
         ) = Self::create_render_target(
             output_dimensions.0,
             output_dimensions.1,
-            &effect_buffer,
-            &compute_bind_group_layout,
+            &effects_buffer,
+            &effects_bind_group_layout,
             &frame_position_bind_group_layout,
             &frame_position,
             &texture,
             &device,
         );
 
-        let compute_shader = device.create_shader_module(include_wgsl!("compute.wgsl"));
+        let effects_shader = device.create_shader_module(include_wgsl!("effects.wgsl"));
 
-        let compute_pipeline_layout =
+        let effects_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                label: Some("compute pipeline"),
-                bind_group_layouts: &[&compute_bind_group_layout],
+                label: Some("effects pipeline"),
+                bind_group_layouts: &[&effects_bind_group_layout],
                 push_constant_ranges: &[],
             });
 
-        let compute_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-            label: Some("compute pipeline"),
-            layout: Some(&compute_pipeline_layout),
-            module: &compute_shader,
+        let effects_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+            label: Some("effects pipeline"),
+            layout: Some(&effects_pipeline_layout),
+            module: &effects_shader,
             entry_point: Some("main"),
             compilation_options: Default::default(),
             cache: None,
@@ -216,28 +214,27 @@ impl Renderer {
                 cache: None,
             });
 
-        // todo: order these to follow struct definition
         Self {
             device,
             queue,
-            compute_pipeline,
-            compute_bind_group_layout,
-            compute_bind_group,
-            output_staging_buffer,
-            compute_buffer,
-            effect_buffer,
-            effect_parameters,
             output_dimensions,
-            timer,
             orientation: Orientation::default(),
-            video_frame_texture: RefCell::new(texture),
             frame_position,
-            frame_position_buffer,
-            timer_sender,
-            frame_position_bind_group_layout,
+            effect_parameters,
+            video_frame_texture: RefCell::new(texture),
             frame_position_pipeline,
+            frame_position_bind_group_layout,
             frame_position_bind_group,
+            frame_position_buffer,
             positioned_frame,
+            effects_pipeline,
+            effects_bind_group_layout,
+            effects_bind_group,
+            effects_buffer,
+            effects_output_buffer,
+            final_output_buffer,
+            gpu_timer: timer,
+            timer_sender,
         }
     }
 
@@ -298,23 +295,23 @@ impl Renderer {
         )
     }
 
-    fn create_compute_bind_groups(
+    fn create_effects_bind_groups(
         device: &wgpu::Device,
         texture_size: u64,
-        compute_bind_group_layout: &wgpu::BindGroupLayout,
+        effects_bind_group_layout: &wgpu::BindGroupLayout,
         effect_buffer: &wgpu::Buffer,
         input_texture: &wgpu::Texture,
     ) -> (wgpu::Buffer, wgpu::BindGroup) {
-        let compute_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("compute buffer"),
+        let effects_output_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("effects output buffer"),
             size: texture_size,
             usage: wgpu::BufferUsages::COPY_SRC | wgpu::BufferUsages::STORAGE,
             mapped_at_creation: false,
         });
 
-        let compute_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("Compute Bind Group"),
-            layout: &compute_bind_group_layout,
+        let effects_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("Effects Bind Group"),
+            layout: &effects_bind_group_layout,
             entries: &[
                 wgpu::BindGroupEntry {
                     binding: 0,
@@ -324,7 +321,7 @@ impl Renderer {
                 },
                 wgpu::BindGroupEntry {
                     binding: 1,
-                    resource: compute_buffer.as_entire_binding(),
+                    resource: effects_output_buffer.as_entire_binding(),
                 },
                 wgpu::BindGroupEntry {
                     binding: 2,
@@ -333,14 +330,14 @@ impl Renderer {
             ],
         });
 
-        (compute_buffer, compute_bind_group)
+        (effects_output_buffer, effects_bind_group)
     }
 
     fn create_render_target(
         width: u32,
         height: u32,
         effect_buffer: &wgpu::Buffer,
-        compute_bind_group_layout: &wgpu::BindGroupLayout,
+        effects_bind_group_layout: &wgpu::BindGroupLayout,
         frame_position_bind_group_layout: &wgpu::BindGroupLayout,
         frame_position: &FramePositionUniform,
         texture: &texture::Texture,
@@ -363,10 +360,10 @@ impl Renderer {
                 &frame_position,
                 &texture,
             );
-        let (compute_buffer, compute_bind_group) = Self::create_compute_bind_groups(
+        let (effects_output_buffer, effects_bind_group) = Self::create_effects_bind_groups(
             &device,
             output_texture_size,
-            &compute_bind_group_layout,
+            &effects_bind_group_layout,
             &effect_buffer,
             &positioned_frame,
         );
@@ -380,8 +377,8 @@ impl Renderer {
 
         (
             output_staging_buffer,
-            compute_buffer,
-            compute_bind_group,
+            effects_output_buffer,
+            effects_bind_group,
             positioned_frame,
             frame_position_buffer,
             frame_position_bind_group,
@@ -390,26 +387,26 @@ impl Renderer {
 
     fn update_render_target(&mut self, width: u32, height: u32) {
         let (
-            output_staging_buffer,
-            compute_buffer,
-            compute_bind_group,
+            final_output_buffer,
+            effects_output_buffer,
+            effects_bind_group,
             positoned_frame,
             frame_position_buffer,
             frame_postion_bind_group,
         ) = Self::create_render_target(
             width,
             height,
-            &self.effect_buffer,
-            &self.compute_bind_group_layout,
+            &self.effects_buffer,
+            &self.effects_bind_group_layout,
             &self.frame_position_bind_group_layout,
             &self.frame_position,
             &self.video_frame_texture.borrow(),
             &self.device,
         );
 
-        self.output_staging_buffer = output_staging_buffer;
-        self.compute_buffer = compute_buffer;
-        self.compute_bind_group = compute_bind_group;
+        self.final_output_buffer = final_output_buffer;
+        self.effects_output_buffer = effects_output_buffer;
+        self.effects_bind_group = effects_bind_group;
         self.frame_position_buffer = frame_position_buffer;
         self.frame_position_bind_group = frame_postion_bind_group;
         self.positioned_frame = positoned_frame;
@@ -448,7 +445,7 @@ impl Renderer {
             let mut frame_position_pass =
                 encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
                     label: Some("frame position pass"),
-                    timestamp_writes: self.timer.query_timestamp_writes(QuerySet::Position),
+                    timestamp_writes: self.gpu_timer.query_timestamp_writes(QuerySet::Position),
                 });
 
             frame_position_pass.set_pipeline(&self.frame_position_pipeline);
@@ -460,17 +457,16 @@ impl Renderer {
             );
         }
 
-        // compute pass
         if !self.effect_parameters.is_default() {
             {
-                let mut compute_pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
-                    label: Some("Compute Pass"),
-                    timestamp_writes: self.timer.query_timestamp_writes(QuerySet::Compute),
+                let mut effects_pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                    label: Some("Effects Pass"),
+                    timestamp_writes: self.gpu_timer.query_timestamp_writes(QuerySet::Effects),
                 });
 
-                compute_pass.set_pipeline(&self.compute_pipeline);
-                compute_pass.set_bind_group(0, &self.compute_bind_group, &[]);
-                compute_pass.dispatch_workgroups(
+                effects_pass.set_pipeline(&self.effects_pipeline);
+                effects_pass.set_bind_group(0, &self.effects_bind_group, &[]);
+                effects_pass.dispatch_workgroups(
                     self.output_dimensions.0.div_ceil(256),
                     self.output_dimensions.1,
                     1,
@@ -478,11 +474,11 @@ impl Renderer {
             }
 
             encoder.copy_buffer_to_buffer(
-                &self.compute_buffer,
+                &self.effects_output_buffer,
                 0,
-                &self.output_staging_buffer,
+                &self.final_output_buffer,
                 0,
-                self.output_staging_buffer.size(),
+                self.final_output_buffer.size(),
             );
         } else {
             let bytes_per_row = self.positioned_frame.width() * U32_SIZE;
@@ -494,7 +490,7 @@ impl Renderer {
                     aspect: wgpu::TextureAspect::All,
                 },
                 wgpu::TexelCopyBufferInfo {
-                    buffer: &self.output_staging_buffer,
+                    buffer: &self.final_output_buffer,
                     layout: wgpu::TexelCopyBufferLayout {
                         offset: 0,
                         bytes_per_row: Some(bytes_per_row),
@@ -506,17 +502,17 @@ impl Renderer {
         }
 
         encoder.resolve_query_set(
-            &self.timer.query_set,
-            0..self.timer.queries(),
-            &self.timer.resolve_buffer,
+            &self.gpu_timer.query_set,
+            0..self.gpu_timer.queries(),
+            &self.gpu_timer.resolve_buffer,
             0,
         );
         encoder.copy_buffer_to_buffer(
-            &self.timer.resolve_buffer,
+            &self.gpu_timer.resolve_buffer,
             0,
-            &self.timer.result_buffer,
+            &self.gpu_timer.result_buffer,
             0,
-            self.timer.result_buffer.size(),
+            self.gpu_timer.result_buffer.size(),
         );
 
         encoder.finish()
@@ -532,7 +528,7 @@ impl Renderer {
 
         {
             let (sender, receiver) = mpsc::channel();
-            let slice = self.output_staging_buffer.slice(..);
+            let slice = self.final_output_buffer.slice(..);
 
             self.timer_sender
                 .send(TimerCmd::Start(TimerEvent::BuffMap, Instant::now()))
@@ -565,9 +561,10 @@ impl Renderer {
                     .send(TimerCmd::Stop(TimerEvent::TextureCreate, Instant::now()))
                     .unwrap();
             }
-            self.timer.collect_query_results(&self.device, &self.queue);
+            self.gpu_timer
+                .collect_query_results(&self.device, &self.queue);
 
-            self.output_staging_buffer.unmap();
+            self.final_output_buffer.unmap();
         }
 
         Ok(gdk_texture)
@@ -579,16 +576,16 @@ impl Renderer {
 
         if !self.is_size_equal_to_curr_input_size(info.width(), info.height()) {
             self.update_input_texture_size(info.width(), info.height());
-            self.timer.reset();
+            self.gpu_timer.reset();
         }
         self.sample_to_texture(sample);
     }
 
     pub fn update_effects(&mut self, parameters: EffectParameters) {
         if parameters.is_default() {
-            self.timer.disable_query_set(QuerySet::Compute);
+            self.gpu_timer.disable_query_set(QuerySet::Effects);
         } else {
-            self.timer.enable_query_set(QuerySet::Compute);
+            self.gpu_timer.enable_query_set(QuerySet::Effects);
         }
 
         self.effect_parameters = parameters;
@@ -596,9 +593,9 @@ impl Renderer {
         let mut view = self
             .queue
             .write_buffer_with(
-                &self.effect_buffer,
+                &self.effects_buffer,
                 0,
-                wgpu::BufferSize::new(self.effect_buffer.size()).unwrap(),
+                wgpu::BufferSize::new(self.effects_buffer.size()).unwrap(),
             )
             .unwrap();
 

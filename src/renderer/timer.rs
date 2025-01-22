@@ -1,6 +1,8 @@
 use std::collections::{HashMap, VecDeque};
 use std::time::{Duration, Instant};
 
+static SAMPLES_FOR_AVG: u32 = 128;
+
 #[derive(Clone, Copy, Eq, Hash, PartialEq)]
 pub enum TimerEvent {
     FrameTime,
@@ -92,20 +94,18 @@ impl InFlightTimer {
 #[derive(Copy, Clone, PartialEq)]
 pub enum QuerySet {
     Position,
-    Compute,
+    Effects,
 }
 
 pub(crate) struct GpuTimer {
     pub(crate) query_set: wgpu::QuerySet,
     pub(crate) resolve_buffer: wgpu::Buffer,
     pub(crate) result_buffer: wgpu::Buffer,
-    gpu_render_times: RollingAverage,
-    gpu_compute_times: RollingAverage,
+    position_times: RollingAverage,
+    effects_times: RollingAverage,
     total_frames_recorded: u32,
     active_query_sets: Vec<QuerySet>,
 }
-
-static SAMPLES_FOR_AVG: u32 = 1000;
 
 impl GpuTimer {
     pub fn new(device: &wgpu::Device) -> Self {
@@ -135,16 +135,16 @@ impl GpuTimer {
             query_set,
             resolve_buffer,
             result_buffer,
-            gpu_render_times: RollingAverage::new(SAMPLES_FOR_AVG),
-            gpu_compute_times: RollingAverage::new(SAMPLES_FOR_AVG),
+            position_times: RollingAverage::new(SAMPLES_FOR_AVG),
+            effects_times: RollingAverage::new(SAMPLES_FOR_AVG),
             total_frames_recorded: 0,
             active_query_sets: vec![QuerySet::Position],
         }
     }
 
     pub fn reset(&mut self) {
-        self.gpu_render_times.clear();
-        self.gpu_compute_times.clear();
+        self.position_times.clear();
+        self.effects_times.clear();
     }
 
     pub fn collect_query_results(&mut self, device: &wgpu::Device, queue: &wgpu::Queue) {
@@ -167,15 +167,15 @@ impl GpuTimer {
 
         if let Some(position_start_idx) = self.query_set_start_index(QuerySet::Position) {
             let index = position_start_idx as usize;
-            self.gpu_render_times.add_sample(elapsed_micro_seconds(
+            self.position_times.add_sample(elapsed_micro_seconds(
                 timestamps[index],
                 timestamps[index + 1],
             ));
         };
 
-        if let Some(compute_start_idx) = self.query_set_start_index(QuerySet::Compute) {
-            let index = compute_start_idx as usize;
-            self.gpu_compute_times.add_sample(elapsed_micro_seconds(
+        if let Some(effects_start_idx) = self.query_set_start_index(QuerySet::Effects) {
+            let index = effects_start_idx as usize;
+            self.effects_times.add_sample(elapsed_micro_seconds(
                 timestamps[index],
                 timestamps[index + 1],
             ));
@@ -183,13 +183,13 @@ impl GpuTimer {
     }
 
     pub fn frame_time_msg(&self) -> String {
-        let render_time = self.gpu_render_times.avg();
-        let compute_time = self.gpu_compute_times.avg();
-        let total_time = render_time + compute_time;
+        let positioning_time = self.position_times.avg();
+        let effects_time = self.effects_times.avg();
+        let total_time = positioning_time + effects_time;
 
         format!(
-            "GPU: {:.2}μs (r {:.2} + c {:.2})",
-            total_time, render_time, compute_time
+            "GPU: {:.2}μs (p {:.2} + e {:.2})",
+            total_time, positioning_time, effects_time
         )
     }
 
