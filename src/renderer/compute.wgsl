@@ -1,36 +1,40 @@
-struct PositionUniform {
-    rotation: vec2<f32>,
-    crop_size: vec2<u32>,
-    crop_start: vec2<u32>,
-    translate: vec2<u32>,
+struct Parameters {
+    contrast: f32,
+    brightness: f32,
+    saturation: f32,
 }
 
-@group(0) @binding(0) var padded_texture: texture_storage_2d<rgba8unorm, read>;
-@group(0) @binding(1) var<storage, read_write> unpadded_buffer: array<u32>;
-@group(0) @binding(2) var<uniform> position: PositionUniform;
+@group(0) @binding(0) var texture: texture_storage_2d<rgba8unorm, read>;
+@group(0) @binding(1) var<storage, read_write> output: array<u32>;
+@group(0) @binding(2) var<uniform> params: Parameters;
 
-const chunk_width = 256;
 
 @compute
-@workgroup_size(chunk_width, 1, 1)
+@workgroup_size(256, 1, 1)
 fn main(@builtin(global_invocation_id) global_invocation_id: vec3<u32>) {
-    let dimensions = textureDimensions(padded_texture);
-    let dest_coords = global_invocation_id.xy;
+    let dimensions = textureDimensions(texture);
+    let coords = global_invocation_id.xy;
+    let index = coords.y * dimensions.x + coords.x;
 
-    let center = vec2<f32>(dimensions) / 2.0;
-    let pos = vec2<f32>(dest_coords) - center;
+    let colour = textureLoad(texture, coords);
+    let final_colour = apply_colour_effects(colour);
 
-    let rotation = position.rotation;
-    let tex_coords =
-        vec2<f32>((pos.x * rotation.x - pos.y * rotation.y), (pos.x * rotation.y + pos.y * rotation.x)) + center;
+    output[index] = pack4x8unorm(final_colour);
+}
 
-    let bounds = dimensions;
 
-    let dest_in_bounds: bool = all(dest_coords < bounds);
-    let valid_origin_coord: bool = all(vec2f(0,0) <= tex_coords) && all(tex_coords < vec2<f32>(bounds));
+fn apply_colour_effects(colour: vec4<f32> ) -> vec4<f32> {
+    let contrast_bright = contrast_brigtness(colour);
 
-    if dest_in_bounds && valid_origin_coord {
-        let index = dest_coords.x + (dest_coords.y * dimensions.x);
-        unpadded_buffer[index] = pack4x8unorm(textureLoad(padded_texture, vec2<u32>(tex_coords)));
-    }
+    return saturate(contrast_bright);
+}
+
+fn contrast_brigtness(colour: vec4<f32>) -> vec4<f32> {
+    //todo: should use midpoint as pow(0.5, 2.2)
+    return ((colour - 0.5 ) * params.contrast) + 0.5 + params.brightness;
+}
+
+fn saturate(colour: vec4<f32>) -> vec4<f32> {
+    let luma = dot(colour, vec4<f32>(0.216279, 0.7515122, 0.0721750, 0.0));
+    return luma + params.saturation * (colour - luma);
 }

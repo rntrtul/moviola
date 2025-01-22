@@ -91,7 +91,7 @@ impl InFlightTimer {
 
 #[derive(Copy, Clone, PartialEq)]
 pub enum QuerySet {
-    Render,
+    Position,
     Compute,
 }
 
@@ -138,7 +138,7 @@ impl GpuTimer {
             gpu_render_times: RollingAverage::new(SAMPLES_FOR_AVG),
             gpu_compute_times: RollingAverage::new(SAMPLES_FOR_AVG),
             total_frames_recorded: 0,
-            active_query_sets: vec![QuerySet::Render],
+            active_query_sets: vec![QuerySet::Position],
         }
     }
 
@@ -165,8 +165,8 @@ impl GpuTimer {
         let elapsed_micro_seconds =
             |start, end: u64| end.wrapping_sub(start) as f64 * (period as f64) / 1000.0;
 
-        if let Some(render_start_idx) = self.query_set_start_index(QuerySet::Render) {
-            let index = render_start_idx as usize;
+        if let Some(position_start_idx) = self.query_set_start_index(QuerySet::Position) {
+            let index = position_start_idx as usize;
             self.gpu_render_times.add_sample(elapsed_micro_seconds(
                 timestamps[index],
                 timestamps[index + 1],
@@ -226,20 +226,11 @@ impl GpuTimer {
         self.active_query_sets.contains(&query_set)
     }
 
-    pub fn render_pass_timestamp_writes(&self) -> Option<wgpu::RenderPassTimestampWrites> {
-        if let Some(query_start) = self.query_set_start_index(QuerySet::Render) {
-            Some(wgpu::RenderPassTimestampWrites {
-                query_set: &self.query_set,
-                beginning_of_pass_write_index: Some(query_start),
-                end_of_pass_write_index: Some(query_start + 1),
-            })
-        } else {
-            None
-        }
-    }
-
-    pub fn compute_pass_timestamp_writes(&self) -> Option<wgpu::ComputePassTimestampWrites> {
-        if let Some(query_start) = self.query_set_start_index(QuerySet::Compute) {
+    pub fn query_timestamp_writes(
+        &self,
+        query_set: QuerySet,
+    ) -> Option<wgpu::ComputePassTimestampWrites> {
+        if let Some(query_start) = self.query_set_start_index(query_set) {
             Some(wgpu::ComputePassTimestampWrites {
                 query_set: &self.query_set,
                 beginning_of_pass_write_index: Some(query_start),

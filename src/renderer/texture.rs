@@ -1,12 +1,10 @@
 use crate::renderer::renderer::U32_SIZE;
 use anyhow::*;
-use wgpu::BindGroupLayout;
 
 pub struct Texture {
     pub texture: wgpu::Texture,
     pub view: wgpu::TextureView,
     pub sampler: wgpu::Sampler,
-    pub bind_group: wgpu::BindGroup,
     pub is_padded: bool,
 }
 
@@ -21,8 +19,6 @@ impl Texture {
         width: u32,
         height: u32,
         device: &wgpu::Device,
-        bind_group_layout: &BindGroupLayout,
-        effect_buffer: &wgpu::Buffer,
         label: &str,
     ) -> Result<Self> {
         let size = wgpu::Extent3d {
@@ -56,30 +52,10 @@ impl Texture {
             ..Default::default()
         });
 
-        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            layout: bind_group_layout,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: wgpu::BindingResource::TextureView(&view),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: wgpu::BindingResource::Sampler(&sampler),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 2,
-                    resource: effect_buffer.as_entire_binding(),
-                },
-            ],
-            label: Some("frame textue bind group"),
-        });
-
         Ok(Self {
             texture,
             view,
             sampler,
-            bind_group,
             is_padded,
         })
     }
