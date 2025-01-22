@@ -3,6 +3,7 @@ use crate::ui::preview::preview_frame::{PreviewFrameModel, PreviewFrameMsg, Prev
 use crate::ui::preview::{CropMode, Orientation};
 use crate::ui::sidebar::sidebar::{ControlsModel, ControlsMsg, ControlsOutput};
 use crate::ui::video_controls::{VideoControlModel, VideoControlMsg, VideoControlOutput};
+use crate::video::metadata::VideoInfo;
 use crate::video::player::Player;
 use gst::ClockTime;
 use gtk::prelude::{ApplicationExt, WidgetExt};
@@ -458,20 +459,10 @@ impl Component for App {
 
                 player.set_is_playing(true);
 
-                // fixme: deal with images with orientation tag (width and height switched) are blurry
-                let info = player.info.clone();
-                let (width, height) = info.orientation.oriented_size(info.width, info.height);
-
-                // need to be 256  alligned, so 64 pixel assuming 4 channel, 8 bit per pixel
-                let scale_factor = (width as f32 / 1280.0).ceil();
-                let scaled_width = (((width as f32 / scale_factor) as u32) / 64) * 64;
-                let scaled_height = (height as f32 / scale_factor) as u32;
+                let (width, height) = preview_size(&player.info);
 
                 self.renderer
-                    .send_render_cmd(RenderCmd::UpdateOutputResolution(
-                        scaled_width,
-                        scaled_height,
-                    ));
+                    .send_render_cmd(RenderCmd::UpdateOutputResolution(width, height));
 
                 self.video_controls.emit(VideoControlMsg::VideoLoaded);
                 self.preview_frame.emit(PreviewFrameMsg::VideoLoaded(
@@ -492,4 +483,13 @@ impl Component for App {
 
         self.update_view(widgets, sender);
     }
+}
+
+fn preview_size(info: &VideoInfo) -> (u32, u32) {
+    // need to be 256  alligned, so 64 pixel assuming 4 channel, 8 bit per pixel
+    let scale_factor = (info.width as f32 / 1280.0).max(1.0);
+    let scaled_width = ((info.width as f32 / scale_factor) / 64.0).ceil() as u32 * 64;
+    let scaled_height = ((info.height as f32 / scale_factor) / 64.0).ceil() as u32 * 64;
+
+    (scaled_width, scaled_height)
 }
