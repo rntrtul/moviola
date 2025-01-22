@@ -1,12 +1,16 @@
+use crate::renderer::{TimerCmd, TimerEvent};
 use crate::ui::preview::{CropMode, Orientation, Preview};
 use crate::ui::sidebar::CropExportSettings;
 use gtk4::gdk;
 use gtk4::prelude::WidgetExt;
 use relm4::*;
 use std::fmt::Debug;
+use std::sync::mpsc;
+use std::time::Instant;
 
 pub struct PreviewFrameModel {
     preview: Preview,
+    timer_sender: mpsc::Sender<TimerCmd>,
     video_is_loaded: bool,
     is_playing: bool,
 }
@@ -40,7 +44,7 @@ impl Component for PreviewFrameModel {
     type CommandOutput = PreviewFrameCmd;
     type Input = PreviewFrameMsg;
     type Output = PreviewFrameOutput;
-    type Init = ();
+    type Init = mpsc::Sender<TimerCmd>;
 
     view! {
         #[name = "vid_container"]
@@ -59,7 +63,7 @@ impl Component for PreviewFrameModel {
     }
 
     fn init(
-        _: Self::Init,
+        timer_sender: Self::Init,
         root: Self::Root,
         sender: ComponentSender<Self>,
     ) -> ComponentParts<Self> {
@@ -71,6 +75,7 @@ impl Component for PreviewFrameModel {
         offload.set_vexpand(true);
 
         let model = PreviewFrameModel {
+            timer_sender,
             preview,
             video_is_loaded: false,
             is_playing: false,
@@ -99,13 +104,14 @@ impl Component for PreviewFrameModel {
             }
             PreviewFrameMsg::FrameRendered(texture) => {
                 self.preview.update_texture(texture);
+                self.timer_sender
+                    .send(TimerCmd::Stop(TimerEvent::FrameTime, Instant::now()))
+                    .unwrap();
             }
             PreviewFrameMsg::Orient(orientation) => self.preview.set_orientation(orientation),
             PreviewFrameMsg::StraightenStart => self.preview.straigtening_begun(),
             PreviewFrameMsg::Straighten(angle) => {
                 self.preview.set_straigten_angle(angle);
-                // todo: get new frame width considering the zoom that has happened. So can get max
-                //  max resolution version possible.
             }
             PreviewFrameMsg::StraightenEnd => self.preview.straigtening_finished(),
             PreviewFrameMsg::CropMode(mode) => self.preview.set_crop_mode(mode),

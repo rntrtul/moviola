@@ -234,17 +234,18 @@ impl Component for App {
         root: Self::Root,
         sender: ComponentSender<Self>,
     ) -> ComponentParts<Self> {
+        let (handler, texture_receiver) = RendererHandler::new(RenderMode::MostRecentFrame);
+
         let preview_frame: Controller<PreviewFrameModel> = PreviewFrameModel::builder()
-            .launch(())
+            .launch(handler.timer_cmd_sender())
             .forward(sender.input_sender(), |msg| match msg {
                 PreviewFrameOutput::TogglePlayPause => AppMsg::TogglePlayPauseRequested,
             });
 
-        let (handler, texture_receiver) = RendererHandler::new(RenderMode::MostRecentFrame);
-
         let player = Rc::new(RefCell::new(Player::new(
             sender.clone(),
-            handler.cmd_sender(),
+            handler.render_cmd_sender(),
+            handler.timer_cmd_sender(),
         )));
 
         let controls_panel: Controller<ControlsModel> = ControlsModel::builder()
@@ -397,10 +398,10 @@ impl Component for App {
                 self.preview_frame
                     .emit(PreviewFrameMsg::Orient(orientation));
                 self.renderer
-                    .send_cmd(RenderCmd::UpdateOrientation(orientation));
+                    .send_render_cmd(RenderCmd::UpdateOrientation(orientation));
 
                 if !self.player.borrow().is_playing() {
-                    self.renderer.send_cmd(RenderCmd::RenderFrame);
+                    self.renderer.send_render_cmd(RenderCmd::RenderFrame);
                 }
             }
             AppMsg::StraightenBegin => self.preview_frame.emit(PreviewFrameMsg::StraightenStart),
@@ -421,10 +422,11 @@ impl Component for App {
                 self.preview_frame.emit(PreviewFrameMsg::ZoomShow)
             }
             AppMsg::EffectsChanged(params) => {
-                self.renderer.send_cmd(RenderCmd::UpdateEffects(params));
+                self.renderer
+                    .send_render_cmd(RenderCmd::UpdateEffects(params));
 
                 if !self.player.borrow().is_playing() {
-                    self.renderer.send_cmd(RenderCmd::RenderFrame);
+                    self.renderer.send_render_cmd(RenderCmd::RenderFrame);
                 }
             }
         }
@@ -465,10 +467,11 @@ impl Component for App {
                 let scaled_width = (((width as f32 / scale_factor) as u32) / 64) * 64;
                 let scaled_height = (height as f32 / scale_factor) as u32;
 
-                self.renderer.send_cmd(RenderCmd::UpdateOutputResolution(
-                    scaled_width,
-                    scaled_height,
-                ));
+                self.renderer
+                    .send_render_cmd(RenderCmd::UpdateOutputResolution(
+                        scaled_width,
+                        scaled_height,
+                    ));
 
                 self.video_controls.emit(VideoControlMsg::VideoLoaded);
                 self.preview_frame.emit(PreviewFrameMsg::VideoLoaded(

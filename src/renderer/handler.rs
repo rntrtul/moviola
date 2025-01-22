@@ -1,14 +1,14 @@
 use crate::renderer::renderer::Renderer;
-use crate::renderer::timer::SingleTimer;
-use crate::renderer::EffectParameters;
+use crate::renderer::timer::Timer;
+use crate::renderer::{EffectParameters, TimerEvent};
 use crate::ui::preview::Orientation;
 use gtk4::gdk;
-use std::cell::RefCell;
 use std::cmp::PartialEq;
 use std::collections::VecDeque;
 use std::sync::atomic::AtomicBool;
 use std::sync::{mpsc, Arc};
 use std::thread;
+use std::time::Instant;
 use tokio::sync::Mutex;
 
 pub enum RenderCmd {
@@ -20,16 +20,18 @@ pub enum RenderCmd {
     UpdateOrientation(Orientation),
 }
 
+// todo: rename outputresult
+pub enum TimerCmd {
+    Start(TimerEvent, Instant),
+    Stop(TimerEvent, Instant),
+    OutputResult(Option<String>),
+    Quit,
+}
+
 #[derive(PartialEq)]
 pub enum RenderMode {
     MostRecentFrame,
     AllFrames,
-}
-
-pub struct RendererHandler {
-    thread: thread::JoinHandle<()>,
-    cmd_sender: mpsc::Sender<RenderCmd>,
-    frame_timer: RefCell<SingleTimer>,
 }
 
 fn render_frame(
@@ -80,12 +82,14 @@ async fn update_queued(
 
 async fn render_loop(
     texture_sender: mpsc::Sender<gdk::Texture>,
+    timer_sender: mpsc::Sender<TimerCmd>,
     cmd_recv: mpsc::Receiver<RenderCmd>,
     renderer_cmd_sender: mpsc::Sender<RenderCmd>,
     render_mode: RenderMode,
 ) {
-    let renderer = Arc::new(Mutex::new(Renderer::new().await));
+    let renderer = Arc::new(Mutex::new(Renderer::new(timer_sender.clone()).await));
 
+    // todo: make a struct to hold these
     let mut queued_effect_params: Option<EffectParameters> = None;
     let mut queued_output_resolution: Option<(u32, u32)> = None;
     let mut queued_orientation: Option<Orientation> = None;
@@ -94,10 +98,19 @@ async fn render_loop(
     let mut samples: VecDeque<gst::Sample> = VecDeque::with_capacity(1);
     let render_queued = Arc::new(AtomicBool::new(false));
 
+    let mut frames_rendered: u32 = 0;
+
     loop {
         let Ok(cmd) = cmd_recv.recv() else {
             break;
         };
+
+        if frames_rendered != 0 && frames_rendered % 30 == 0 {
+            let gpu_timing = renderer.lock().await.timer.frame_time_msg();
+            timer_sender
+                .send(TimerCmd::OutputResult(Some(gpu_timing)))
+                .unwrap();
+        }
 
         match cmd {
             RenderCmd::UpdateEffects(params) => {
@@ -125,6 +138,7 @@ async fn render_loop(
                         render_queued.clone(),
                         renderer_cmd_sender.clone(),
                     );
+                    frames_rendered += 1;
                 } else {
                     render_queued.store(true, std::sync::atomic::Ordering::Relaxed);
                 }
@@ -161,6 +175,7 @@ async fn render_loop(
                         render_queued.clone(),
                         renderer_cmd_sender.clone(),
                     );
+                    frames_rendered += 1;
                 } else {
                     render_queued.store(true, std::sync::atomic::Ordering::Relaxed);
                 }
@@ -191,44 +206,80 @@ async fn render_loop(
     }
 }
 
+async fn timer_loop(timer_reciver: mpsc::Receiver<TimerCmd>) {
+    let mut timer = Timer::new();
+
+    loop {
+        let Ok(cmd) = timer_reciver.recv() else {
+            break;
+        };
+
+        match cmd {
+            TimerCmd::Start(label, time) => {
+                timer.start_time(label, time);
+            }
+            TimerCmd::Stop(label, time) => {
+                timer.stop_time(label, time);
+            }
+            TimerCmd::OutputResult(gpu_time) => {
+                tracing::trace!("{}", timer.timings(gpu_time));
+            }
+            TimerCmd::Quit => {
+                break;
+            }
+        }
+    }
+}
+
+pub struct RendererHandler {
+    _thread: thread::JoinHandle<()>,
+    cmd_sender: mpsc::Sender<RenderCmd>,
+    timer_sender: mpsc::Sender<TimerCmd>,
+}
+
 impl RendererHandler {
     pub fn new(mode: RenderMode) -> (Self, mpsc::Receiver<gdk::Texture>) {
         let (cmd_sender, cmd_recv) = mpsc::channel::<RenderCmd>();
         let (output_sender, output_receiver) = mpsc::channel::<gdk::Texture>();
+        let (timer_sender, timer_receiver) = mpsc::channel::<TimerCmd>();
 
         let renderer_cmd_sender = cmd_sender.clone();
+        let timer_cmd_sender = timer_sender.clone();
+
         let thread = thread::spawn(move || {
             let runtime = tokio::runtime::Runtime::new().unwrap();
+
+            runtime.spawn(timer_loop(timer_receiver));
+
             runtime.block_on(render_loop(
                 output_sender,
+                timer_cmd_sender.clone(),
                 cmd_recv,
                 renderer_cmd_sender,
                 mode,
             ));
+
+            timer_cmd_sender.send(TimerCmd::Quit).unwrap();
         });
 
         let handler = Self {
-            thread,
+            _thread: thread,
             cmd_sender,
-            frame_timer: RefCell::new(SingleTimer::new()),
+            timer_sender,
         };
 
         (handler, output_receiver)
     }
 
-    pub fn cmd_sender(&self) -> mpsc::Sender<RenderCmd> {
+    pub fn render_cmd_sender(&self) -> mpsc::Sender<RenderCmd> {
         self.cmd_sender.clone()
     }
 
-    pub fn send_cmd(&self, cmd: RenderCmd) {
+    pub fn timer_cmd_sender(&self) -> mpsc::Sender<TimerCmd> {
+        self.timer_sender.clone()
+    }
+
+    pub fn send_render_cmd(&self, cmd: RenderCmd) {
         self.cmd_sender.send(cmd).unwrap();
-    }
-
-    pub fn start_frame_time(&self) {
-        self.frame_timer.borrow_mut().start_time();
-    }
-
-    pub fn stop_frame_time(&self) {
-        self.frame_timer.borrow_mut().stop_time();
     }
 }

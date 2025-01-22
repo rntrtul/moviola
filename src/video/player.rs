@@ -1,5 +1,5 @@
 use crate::app::{App, AppMsg};
-use crate::renderer::RenderCmd;
+use crate::renderer::{RenderCmd, TimerCmd, TimerEvent};
 use crate::ui::preview::Orientation;
 use crate::video::metadata::{
     AudioCodec, AudioStreamInfo, ContainerFormat, VideoCodec, VideoContainerInfo, VideoInfo,
@@ -11,6 +11,7 @@ use gst::{Bus, ClockTime, FlowSuccess, SeekFlags, State};
 use relm4::ComponentSender;
 use std::fmt::Debug;
 use std::sync::mpsc;
+use std::time::Instant;
 
 #[derive(Debug)]
 pub enum PlayerError {
@@ -28,7 +29,11 @@ pub struct Player {
 }
 
 impl Player {
-    pub fn new(app_sender: ComponentSender<App>, sample_sender: mpsc::Sender<RenderCmd>) -> Self {
+    pub fn new(
+        app_sender: ComponentSender<App>,
+        sample_sender: mpsc::Sender<RenderCmd>,
+        timer_sender: mpsc::Sender<TimerCmd>,
+    ) -> Self {
         let playbin = gst::ElementFactory::make("playbin")
             .name("playbin")
             .build()
@@ -58,18 +63,25 @@ impl Player {
             .build();
 
         let preroll_sender = sample_sender.clone();
+        let preroll_timer_sender = timer_sender.clone();
 
         app_sink.set_callbacks(
             gst_app::AppSinkCallbacks::builder()
                 .new_sample(move |appsink| {
                     let sample = appsink.pull_sample().unwrap();
                     sample_sender.send(RenderCmd::RenderSample(sample)).unwrap();
+                    timer_sender
+                        .send(TimerCmd::Start(TimerEvent::FrameTime, Instant::now()))
+                        .unwrap();
                     Ok(FlowSuccess::Ok)
                 })
                 .new_preroll(move |appsink| {
                     let sample = appsink.pull_preroll().unwrap();
                     preroll_sender
                         .send(RenderCmd::RenderSample(sample))
+                        .unwrap();
+                    preroll_timer_sender
+                        .send(TimerCmd::Start(TimerEvent::FrameTime, Instant::now()))
                         .unwrap();
                     Ok(FlowSuccess::Ok)
                 })

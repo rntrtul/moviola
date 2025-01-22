@@ -1,9 +1,22 @@
 use std::collections::{HashMap, VecDeque};
 use std::time::{Duration, Instant};
 
-pub static FRAME_TIME_IDX: &str = "Frame time";
-pub static BUFF_MAP_IDX: &str = "buffer map";
-pub static GDK_TEX_IDX: &str = "mem text";
+#[derive(Clone, Copy, Eq, Hash, PartialEq)]
+pub enum TimerEvent {
+    FrameTime,
+    BuffMap,
+    TextureCreate,
+}
+
+impl TimerEvent {
+    pub fn label(&self) -> &str {
+        match self {
+            TimerEvent::FrameTime => "Frame time",
+            TimerEvent::BuffMap => "buffer map",
+            TimerEvent::TextureCreate => "gdk texture",
+        }
+    }
+}
 
 struct RollingAverage {
     total: f64,
@@ -42,6 +55,7 @@ impl RollingAverage {
 }
 
 struct InFlightTimer {
+    avg: RollingAverage,
     start_time: Instant,
     started: bool,
 }
@@ -49,50 +63,29 @@ struct InFlightTimer {
 impl InFlightTimer {
     pub fn new() -> Self {
         Self {
+            avg: RollingAverage::new(SAMPLES_FOR_AVG),
             start_time: Instant::now(),
             started: false,
         }
     }
 
-    pub fn start_time(&mut self) {
-        let now = Instant::now();
+    pub fn start_time(&mut self, start_time: Instant) {
         if !self.started {
-            self.start_time = now;
+            self.start_time = start_time;
             self.started = true;
         }
     }
 
-    pub fn stop_time(&mut self) -> Duration {
-        let elapsed = self.start_time.elapsed();
+    pub fn stop_time(&mut self, end_time: Instant) {
+        let elapsed = end_time
+            .checked_duration_since(self.start_time)
+            .unwrap_or(Duration::new(0, 0));
         self.started = false;
-        elapsed
-    }
-}
-
-pub(crate) struct SingleTimer {
-    avg: RollingAverage,
-    timer: InFlightTimer,
-}
-
-impl SingleTimer {
-    pub fn new() -> Self {
-        Self {
-            avg: RollingAverage::new(SAMPLES_FOR_AVG),
-            timer: InFlightTimer::new(),
-        }
+        self.avg.add_sample(elapsed.as_millis() as f64);
     }
 
     pub fn avg(&self) -> f64 {
         self.avg.avg()
-    }
-
-    pub fn start_time(&mut self) {
-        self.timer.start_time();
-    }
-
-    pub fn stop_time(&mut self) {
-        let elapsed = self.timer.stop_time();
-        self.avg.add_sample(elapsed.as_millis() as f64);
     }
 }
 
@@ -102,11 +95,10 @@ pub enum QuerySet {
     Compute,
 }
 
-pub(crate) struct Timer {
+pub(crate) struct GpuTimer {
     pub(crate) query_set: wgpu::QuerySet,
     pub(crate) resolve_buffer: wgpu::Buffer,
     pub(crate) result_buffer: wgpu::Buffer,
-    in_flight_times: HashMap<String, SingleTimer>,
     gpu_render_times: RollingAverage,
     gpu_compute_times: RollingAverage,
     total_frames_recorded: u32,
@@ -115,7 +107,7 @@ pub(crate) struct Timer {
 
 static SAMPLES_FOR_AVG: u32 = 1000;
 
-impl Timer {
+impl GpuTimer {
     pub fn new(device: &wgpu::Device) -> Self {
         let max_query_count = 4;
 
@@ -143,7 +135,6 @@ impl Timer {
             query_set,
             resolve_buffer,
             result_buffer,
-            in_flight_times: HashMap::new(),
             gpu_render_times: RollingAverage::new(SAMPLES_FOR_AVG),
             gpu_compute_times: RollingAverage::new(SAMPLES_FOR_AVG),
             total_frames_recorded: 0,
@@ -152,24 +143,8 @@ impl Timer {
     }
 
     pub fn reset(&mut self) {
-        self.in_flight_times.clear();
         self.gpu_render_times.clear();
         self.gpu_compute_times.clear();
-    }
-
-    pub fn start_time(&mut self, label: &str) {
-        if !self.in_flight_times.contains_key(label) {
-            self.in_flight_times
-                .insert(label.to_string(), SingleTimer::new());
-        }
-        self.in_flight_times.get_mut(label).unwrap().start_time();
-    }
-
-    pub fn stop_time(&mut self, label: &str) {
-        if !self.in_flight_times.contains_key(label) {
-            return;
-        }
-        self.in_flight_times.get_mut(label).unwrap().stop_time();
     }
 
     pub fn collect_query_results(&mut self, device: &wgpu::Device, queue: &wgpu::Queue) {
@@ -205,21 +180,17 @@ impl Timer {
                 timestamps[index + 1],
             ));
         };
+    }
 
-        if self.total_frames_recorded % 30 == 0 {
-            let render_time = self.gpu_render_times.avg();
-            let compute_time = self.gpu_compute_times.avg();
-            let total_time = render_time + compute_time;
+    pub fn frame_time_msg(&self) -> String {
+        let render_time = self.gpu_render_times.avg();
+        let compute_time = self.gpu_compute_times.avg();
+        let total_time = render_time + compute_time;
 
-            let mut msg = format!(
-                "gpu: {:.2}μs (r {:.2} + c {:.2})",
-                total_time, render_time, compute_time
-            );
-            for (label, timer) in self.in_flight_times.iter() {
-                msg.push_str(&format!(" {label}: {:.2}ms", timer.avg()));
-            }
-            tracing::trace!(msg);
-        }
+        format!(
+            "GPU: {:.2}μs (r {:.2} + c {:.2})",
+            total_time, render_time, compute_time
+        )
     }
 
     fn query_set_start_index(&self, query_set: QuerySet) -> Option<u32> {
@@ -277,5 +248,55 @@ impl Timer {
         } else {
             None
         }
+    }
+}
+
+pub struct Timer {
+    in_flight_times: HashMap<TimerEvent, InFlightTimer>,
+}
+
+impl Timer {
+    pub fn new() -> Self {
+        Self {
+            in_flight_times: HashMap::new(),
+        }
+    }
+
+    pub fn reset(&mut self) {
+        self.in_flight_times.clear();
+    }
+
+    pub fn start_time(&mut self, event: TimerEvent, start: Instant) {
+        let timer = self
+            .in_flight_times
+            .entry(event)
+            .or_insert(InFlightTimer::new());
+        timer.start_time(start);
+    }
+
+    pub fn stop_time(&mut self, event: TimerEvent, stop: Instant) {
+        self.in_flight_times
+            .entry(event)
+            .and_modify(|timer| timer.stop_time(stop));
+    }
+
+    fn append_event_to_msg(&self, msg: &mut String, event: TimerEvent) {
+        if let Some(timer) = self.in_flight_times.get(&event) {
+            msg.push_str(&format!("{}: {:.2}ms | ", event.label(), timer.avg()));
+        }
+    }
+
+    pub fn timings(&self, gpu_time: Option<String>) -> String {
+        let mut msg = "".to_string();
+
+        self.append_event_to_msg(&mut msg, TimerEvent::FrameTime);
+        self.append_event_to_msg(&mut msg, TimerEvent::BuffMap);
+        self.append_event_to_msg(&mut msg, TimerEvent::TextureCreate);
+
+        if let Some(gpu_time) = gpu_time {
+            msg.push_str(&format!("[{}]", gpu_time));
+        }
+
+        msg
     }
 }

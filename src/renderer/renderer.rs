@@ -1,7 +1,8 @@
 use crate::renderer::frame_position::FramePositionUniform;
-use crate::renderer::timer::{QuerySet, Timer, BUFF_MAP_IDX, GDK_TEX_IDX};
+use crate::renderer::handler::TimerCmd;
+use crate::renderer::timer::{GpuTimer, QuerySet};
 use crate::renderer::vertex::{FrameRect, INDICES};
-use crate::renderer::{texture, vertex, EffectParameters};
+use crate::renderer::{texture, vertex, EffectParameters, TimerEvent};
 use crate::ui::preview::Orientation;
 use ges::glib;
 use gst::Sample;
@@ -10,6 +11,7 @@ use gtk4::prelude::Cast;
 use std::cell::{Cell, RefCell};
 use std::default::Default;
 use std::sync::mpsc;
+use std::time::Instant;
 use wgpu::include_wgsl;
 use wgpu::util::DeviceExt;
 
@@ -38,7 +40,8 @@ pub struct Renderer {
     frame_position: FramePositionUniform,
     frame_position_buffer: wgpu::Buffer,
     orientation: Orientation,
-    pub timer: Timer,
+    pub timer: GpuTimer,
+    timer_sender: mpsc::Sender<TimerCmd>,
     frame_count: Cell<u32>,
 }
 
@@ -47,7 +50,7 @@ pub struct Renderer {
 // todo: rename compute shader to unpadding
 
 impl Renderer {
-    pub async fn new() -> Renderer {
+    pub async fn new(timer_sender: mpsc::Sender<TimerCmd>) -> Renderer {
         let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
             backends: wgpu::Backends::PRIMARY,
             ..Default::default()
@@ -77,7 +80,7 @@ impl Renderer {
             .unwrap();
 
         // assuming timestamp feature available always
-        let timer = Timer::new(&device);
+        let timer = GpuTimer::new(&device);
 
         let frame_bind_group_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -283,6 +286,7 @@ impl Renderer {
             frame_count: Cell::new(0),
             frame_position,
             frame_position_buffer,
+            timer_sender,
         }
     }
 
@@ -492,23 +496,7 @@ impl Renderer {
                 0,
                 self.output_staging_buffer.size(),
             );
-        }
-
-        encoder.resolve_query_set(
-            &self.timer.query_set,
-            0..self.timer.queries(),
-            &self.timer.resolve_buffer,
-            0,
-        );
-        encoder.copy_buffer_to_buffer(
-            &self.timer.resolve_buffer,
-            0,
-            &self.timer.result_buffer,
-            0,
-            self.timer.result_buffer.size(),
-        );
-
-        if !frame_is_padded {
+        } else {
             let bytes_per_row = self.render_target.width() * U32_SIZE;
             encoder.copy_texture_to_buffer(
                 wgpu::TexelCopyTextureInfo {
@@ -529,6 +517,20 @@ impl Renderer {
             );
         }
 
+        encoder.resolve_query_set(
+            &self.timer.query_set,
+            0..self.timer.queries(),
+            &self.timer.resolve_buffer,
+            0,
+        );
+        encoder.copy_buffer_to_buffer(
+            &self.timer.resolve_buffer,
+            0,
+            &self.timer.result_buffer,
+            0,
+            self.timer.result_buffer.size(),
+        );
+
         encoder.finish()
     }
 
@@ -544,17 +546,22 @@ impl Renderer {
             let (sender, receiver) = mpsc::channel();
             let slice = self.output_staging_buffer.slice(..);
 
-            self.timer.start_time(BUFF_MAP_IDX);
+            self.timer_sender
+                .send(TimerCmd::Start(TimerEvent::BuffMap, Instant::now()))
+                .unwrap();
 
             slice.map_async(wgpu::MapMode::Read, move |r| sender.send(r).unwrap());
             self.device.poll(wgpu::Maintain::wait()).panic_on_timeout();
             receiver.recv().unwrap().unwrap();
 
-            self.timer.stop_time(BUFF_MAP_IDX);
-            self.timer.collect_query_results(&self.device, &self.queue);
+            self.timer_sender
+                .send(TimerCmd::Stop(TimerEvent::BuffMap, Instant::now()))
+                .unwrap();
 
             {
-                self.timer.start_time(GDK_TEX_IDX);
+                self.timer_sender
+                    .send(TimerCmd::Start(TimerEvent::TextureCreate, Instant::now()))
+                    .unwrap();
                 let view = slice.get_mapped_range();
 
                 gdk_texture = gdk::MemoryTexture::new(
@@ -562,13 +569,17 @@ impl Renderer {
                     self.output_dimensions.1 as i32,
                     gdk::MemoryFormat::R8g8b8a8,
                     &glib::Bytes::from(&view.iter().as_slice()),
-                    (self.output_dimensions.0 as i32 * 4) as usize,
+                    self.output_dimensions.0 as usize * 4,
                 )
                 .upcast::<gdk::Texture>();
 
-                self.timer.stop_time(GDK_TEX_IDX);
+                self.timer_sender
+                    .send(TimerCmd::Stop(TimerEvent::TextureCreate, Instant::now()))
+                    .unwrap();
+
                 self.frame_count.set(self.frame_count.get() + 1);
             }
+            self.timer.collect_query_results(&self.device, &self.queue);
 
             self.output_staging_buffer.unmap();
         }

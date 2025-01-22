@@ -7,5 +7,6 @@ mod timer;
 mod vertex;
 
 pub use effects::EffectParameters;
-pub use handler::RenderCmd;
+pub use handler::{RenderCmd, TimerCmd};
 pub use handler::{RenderMode, RendererHandler};
+pub use timer::TimerEvent;
