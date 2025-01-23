@@ -14,13 +14,16 @@ struct Parameters {
 fn main(@builtin(global_invocation_id) global_invocation_id: vec3<u32>) {
     let dimensions = textureDimensions(texture);
     let coords = global_invocation_id.xy;
-    let index = coords.y * dimensions.x + coords.x;
 
-    let colour = textureLoad(texture, coords);
-    let final_colour = apply_colour_effects(colour);
+    if all(coords < dimensions) {
+        let index = coords.y * dimensions.x + coords.x;
+        let colour = textureLoad(texture, coords);
+        let final_colour = apply_colour_effects(colour);
 
-    output[index] = pack4x8unorm(final_colour);
+        output[index] = pack4x8unorm(final_colour);
+    }
 }
+
 
 
 fn apply_colour_effects(colour: vec4<f32> ) -> vec4<f32> {
