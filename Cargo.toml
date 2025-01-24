@@ -11,16 +11,15 @@ gst_video = { package = "gstreamer-video", version = "0.23.0" }
 gst_app = { package = "gstreamer-app", version = "0.23.0" }
 ges = { package = "gstreamer-editing-services", version = "0.23.0" }
 image = { version = "0.25.5", default-features = false, features = ["png", "jpeg"] }
-anyhow = "1.0.93"
-tokio = { version = "1.41.1", features = ["time", "rt-multi-thread", "macros"] }
-wgpu = { version = "24.0.0" }
-bytemuck = { version = "1.20.0", features = ["derive"] }
-fast_image_resize = { version = "5.0.0", features = ["image"] }
-clap = { version = "4.5.21", features = ["derive"] }
-url = "2.5.3"
-tracing = "0.1.40"
-tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
-approx = "0.5.1"
+anyhow = "1.0.95"
+tokio = { version = "1.43.0", features = ["time", "rt-multi-thread", "macros"] }
+wgpu = { version = "24.0.1" }
+bytemuck = { version = "1.21.0", features = ["derive"] }
+fast_image_resize = { version = "5.1.1", features = ["image"] }
+tracing = { version = "0.1.41" }
+tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
+approx = { version = "0.5.1" }
+argh = { version = "0.1.13" }
 
 [build-dependencies]
 glib-build-tools = "0.20.0"

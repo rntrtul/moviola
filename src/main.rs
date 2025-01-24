@@ -1,3 +1,4 @@
+use argh::FromArgs;
 use relm4::gtk::gio;
 use relm4::{adw, gtk, RelmApp, RELM_THREADS};
 
@@ -11,16 +12,15 @@ mod renderer;
 mod ui;
 mod video;
 
-use clap::Parser;
 use tracing_subscriber::fmt::format::FmtSpan;
 use tracing_subscriber::{fmt, prelude::*, EnvFilter};
-use url::Url;
 
-#[derive(Parser)]
-#[clap(about, version, author, long_about = None)]
+#[derive(FromArgs)]
+/// options
 struct Cli {
-    #[arg(short, long)]
-    file_path: Option<std::path::PathBuf>,
+    #[argh(option, short = 'f')]
+    /// path of media to load immediately
+    file_path: Option<String>,
 }
 
 fn initilaize_gresources() {
@@ -31,7 +31,7 @@ fn initilaize_gresources() {
 }
 
 fn main() {
-    let cli = Cli::parse();
+    let cli: Cli = argh::from_env();
 
     let _tracing_sub = tracing_subscriber::registry()
         .with(fmt::layer().with_span_events(FmtSpan::FULL))
@@ -47,12 +47,9 @@ fn main() {
     let style_manger = adw::StyleManager::default();
     style_manger.set_color_scheme(adw::ColorScheme::ForceDark);
 
-    let uri = if let Some(path) = cli.file_path {
-        Some(
-            Url::from_file_path(path.canonicalize().unwrap())
-                .unwrap()
-                .to_string(),
-        )
+    let uri = if let Some(file_path) = cli.file_path {
+        let path = std::path::PathBuf::from(file_path);
+        Some(format!("file://{}", path.canonicalize().unwrap().to_str().unwrap()).to_owned())
     } else {
         None
     };
