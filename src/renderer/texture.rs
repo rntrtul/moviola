@@ -1,17 +1,9 @@
-use crate::renderer::renderer::U32_SIZE;
 use anyhow::*;
 
 pub struct Texture {
     pub texture: wgpu::Texture,
     pub view: wgpu::TextureView,
     pub sampler: wgpu::Sampler,
-    pub is_padded: bool,
-}
-
-fn padded_bytes_per_row(row_width: u32) -> u32 {
-    wgpu::COPY_BYTES_PER_ROW_ALIGNMENT
-        * (((row_width * U32_SIZE) as f32 / wgpu::COPY_BYTES_PER_ROW_ALIGNMENT as f32).ceil()
-            as u32)
 }
 
 impl Texture {
@@ -26,8 +18,6 @@ impl Texture {
             height,
             depth_or_array_layers: 1,
         };
-
-        let is_padded = padded_bytes_per_row(width) != (width * U32_SIZE);
 
         let texture = device.create_texture(&wgpu::TextureDescriptor {
             size,
@@ -56,7 +46,6 @@ impl Texture {
             texture,
             view,
             sampler,
-            is_padded,
         })
     }
 

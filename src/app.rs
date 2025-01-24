@@ -486,10 +486,9 @@ impl Component for App {
 }
 
 fn preview_size(info: &VideoInfo) -> (u32, u32) {
-    // need to be 256  alligned, so 64 pixel assuming 4 channel, 8 bit per pixel
     let scale_factor = (info.width as f32 / 1280.0).max(1.0);
-    let scaled_width = ((info.width as f32 / scale_factor) / 64.0).ceil() as u32 * 64;
-    let scaled_height = ((info.height as f32 / scale_factor) / 64.0).ceil() as u32 * 64;
+    let scaled_width = (info.width as f32 / scale_factor) as u32;
+    let scaled_height = (info.height as f32 / scale_factor) as u32;
 
     (scaled_width, scaled_height)
 }

@@ -25,7 +25,7 @@ impl EffectParameters {
     }
 
     pub fn is_default(&self) -> bool {
-        self.saturation == 1f32 && self.contrast == 0f32 && self.brigthness == 1f32
+        self.contrast == 1f32 && self.brigthness == 0f32 && self.saturation == 1f32
     }
 
     pub fn buffer(&self, device: &wgpu::Device) -> wgpu::Buffer {

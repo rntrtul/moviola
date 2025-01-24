@@ -1,4 +1,4 @@
-use crate::renderer::frame_position::FramePositionUniform;
+use crate::renderer::frame_position::{FramePositionUniform, FrameSize};
 use crate::renderer::handler::TimerCmd;
 use crate::renderer::timer::{GpuTimer, QuerySet};
 use crate::renderer::{texture, EffectParameters, TimerEvent};
@@ -7,6 +7,7 @@ use ges::glib;
 use gst::Sample;
 use gtk4::gdk;
 use gtk4::prelude::Cast;
+use image::DynamicImage;
 use std::cell::RefCell;
 use std::default::Default;
 use std::sync::mpsc;
@@ -27,7 +28,7 @@ pub struct Renderer {
     frame_position_bind_group_layout: wgpu::BindGroupLayout,
     frame_position_bind_group: wgpu::BindGroup,
     frame_position_buffer: wgpu::Buffer,
-    positioned_frame: wgpu::Texture,
+    positioned_frame_buffer: wgpu::Buffer,
     effects_pipeline: wgpu::ComputePipeline,
     effects_bind_group_layout: wgpu::BindGroupLayout,
     effects_bind_group: wgpu::BindGroup,
@@ -88,6 +89,12 @@ impl Renderer {
                     wgpu::BindGroupLayoutEntry {
                         binding: 1,
                         visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                        count: None,
+                    },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 2,
+                        visibility: wgpu::ShaderStages::COMPUTE,
                         ty: wgpu::BindingType::Buffer {
                             ty: wgpu::BufferBindingType::Uniform,
                             has_dynamic_offset: false,
@@ -96,19 +103,23 @@ impl Renderer {
                         count: None,
                     },
                     wgpu::BindGroupLayoutEntry {
-                        binding: 2,
+                        binding: 3,
                         visibility: wgpu::ShaderStages::COMPUTE,
-                        ty: wgpu::BindingType::StorageTexture {
-                            format: wgpu::TextureFormat::Rgba8Unorm,
-                            access: wgpu::StorageTextureAccess::WriteOnly,
-                            view_dimension: wgpu::TextureViewDimension::D2,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Uniform,
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
                         },
                         count: None,
                     },
                     wgpu::BindGroupLayoutEntry {
-                        binding: 3,
+                        binding: 4,
                         visibility: wgpu::ShaderStages::COMPUTE,
-                        ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Storage { read_only: false },
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
                         count: None,
                     },
                 ],
@@ -121,10 +132,10 @@ impl Renderer {
                     wgpu::BindGroupLayoutEntry {
                         binding: 0,
                         visibility: wgpu::ShaderStages::COMPUTE,
-                        ty: wgpu::BindingType::StorageTexture {
-                            format: wgpu::TextureFormat::Rgba8Unorm,
-                            access: wgpu::StorageTextureAccess::ReadOnly,
-                            view_dimension: wgpu::TextureViewDimension::D2,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Storage { read_only: true },
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
                         },
                         count: None,
                     },
@@ -132,9 +143,9 @@ impl Renderer {
                         binding: 1,
                         visibility: wgpu::ShaderStages::COMPUTE,
                         ty: wgpu::BindingType::Buffer {
-                            ty: wgpu::BufferBindingType::Storage { read_only: false },
+                            ty: wgpu::BufferBindingType::Uniform,
                             has_dynamic_offset: false,
-                            min_binding_size: wgpu::BufferSize::new(256),
+                            min_binding_size: None,
                         },
                         count: None,
                     },
@@ -145,6 +156,16 @@ impl Renderer {
                             ty: wgpu::BufferBindingType::Uniform,
                             has_dynamic_offset: false,
                             min_binding_size: None,
+                        },
+                        count: None,
+                    },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 3,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Storage { read_only: false },
+                            has_dynamic_offset: false,
+                            min_binding_size: wgpu::BufferSize::new(256),
                         },
                         count: None,
                     },
@@ -161,12 +182,12 @@ impl Renderer {
         let frame_position = FramePositionUniform::new();
 
         let (
-            final_output_buffer,
-            effects_output_buffer,
-            effects_bind_group,
-            positioned_frame,
+            positioned_frame_buffer,
             frame_position_buffer,
             frame_position_bind_group,
+            effects_output_buffer,
+            effects_bind_group,
+            final_output_buffer,
         ) = Self::create_render_target(
             output_dimensions.0,
             output_dimensions.1,
@@ -226,7 +247,7 @@ impl Renderer {
             frame_position_bind_group_layout,
             frame_position_bind_group,
             frame_position_buffer,
-            positioned_frame,
+            positioned_frame_buffer,
             effects_pipeline,
             effects_bind_group_layout,
             effects_bind_group,
@@ -240,28 +261,20 @@ impl Renderer {
 
     fn create_frame_positon_bind_groups(
         device: &wgpu::Device,
-        width: u32,
-        height: u32,
+        texture_size: u64,
         frame_position_bind_group_layout: &wgpu::BindGroupLayout,
         frame_position: &FramePositionUniform,
         texture: &texture::Texture,
-    ) -> (wgpu::Texture, wgpu::Buffer, wgpu::BindGroup) {
-        let positioned_frame = device.create_texture(&wgpu::TextureDescriptor {
-            label: Some("Output Texture Descriptor"),
-            size: wgpu::Extent3d {
-                width,
-                height,
-                depth_or_array_layers: 1,
-            },
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::Rgba8Unorm,
-            usage: wgpu::TextureUsages::COPY_SRC | wgpu::TextureUsages::STORAGE_BINDING,
-            view_formats: &[wgpu::TextureFormat::Rgba8Unorm],
-        });
-
+        frame_size_buffer: &wgpu::Buffer,
+    ) -> (wgpu::Buffer, wgpu::Buffer, wgpu::BindGroup) {
         let frame_position_buffer = frame_position.buffer(&device);
+
+        let positioned_frame_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("effects output buffer"),
+            size: texture_size,
+            usage: wgpu::BufferUsages::COPY_SRC | wgpu::BufferUsages::STORAGE,
+            mapped_at_creation: false,
+        });
 
         let frame_position_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("Frame Position Bind Group"),
@@ -273,23 +286,25 @@ impl Renderer {
                 },
                 wgpu::BindGroupEntry {
                     binding: 1,
-                    resource: frame_position_buffer.as_entire_binding(),
+                    resource: wgpu::BindingResource::Sampler(&texture.sampler),
                 },
                 wgpu::BindGroupEntry {
                     binding: 2,
-                    resource: wgpu::BindingResource::TextureView(
-                        &positioned_frame.create_view(&wgpu::TextureViewDescriptor::default()),
-                    ),
+                    resource: frame_position_buffer.as_entire_binding(),
                 },
                 wgpu::BindGroupEntry {
                     binding: 3,
-                    resource: wgpu::BindingResource::Sampler(&texture.sampler),
+                    resource: frame_size_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 4,
+                    resource: positioned_frame_buffer.as_entire_binding(),
                 },
             ],
         });
 
         (
-            positioned_frame,
+            positioned_frame_buffer,
             frame_position_buffer,
             frame_position_bind_group,
         )
@@ -299,8 +314,9 @@ impl Renderer {
         device: &wgpu::Device,
         texture_size: u64,
         effects_bind_group_layout: &wgpu::BindGroupLayout,
-        effect_buffer: &wgpu::Buffer,
-        input_texture: &wgpu::Texture,
+        effect_parameters_buffer: &wgpu::Buffer,
+        input_buffer: &wgpu::Buffer,
+        frame_size_buffer: &wgpu::Buffer,
     ) -> (wgpu::Buffer, wgpu::BindGroup) {
         let effects_output_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("effects output buffer"),
@@ -315,17 +331,19 @@ impl Renderer {
             entries: &[
                 wgpu::BindGroupEntry {
                     binding: 0,
-                    resource: wgpu::BindingResource::TextureView(
-                        &input_texture.create_view(&wgpu::TextureViewDescriptor::default()),
-                    ),
+                    resource: input_buffer.as_entire_binding(),
                 },
                 wgpu::BindGroupEntry {
                     binding: 1,
-                    resource: effects_output_buffer.as_entire_binding(),
+                    resource: frame_size_buffer.as_entire_binding(),
                 },
                 wgpu::BindGroupEntry {
                     binding: 2,
-                    resource: effect_buffer.as_entire_binding(),
+                    resource: effect_parameters_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: effects_output_buffer.as_entire_binding(),
                 },
             ],
         });
@@ -346,29 +364,34 @@ impl Renderer {
         wgpu::Buffer,
         wgpu::Buffer,
         wgpu::BindGroup,
-        wgpu::Texture,
         wgpu::Buffer,
         wgpu::BindGroup,
+        wgpu::Buffer,
     ) {
         let output_texture_size = texture_size(width, height);
-        let (positioned_frame, frame_position_buffer, frame_position_bind_group) =
+        let frame_size = FrameSize::new(width, height);
+        let frame_size_buffer = frame_size.buffer(&device);
+
+        let (positioned_frame_buffer, frame_position_buffer, frame_position_bind_group) =
             Self::create_frame_positon_bind_groups(
                 &device,
-                width,
-                height,
+                output_texture_size,
                 &frame_position_bind_group_layout,
                 &frame_position,
                 &texture,
+                &frame_size_buffer,
             );
+
         let (effects_output_buffer, effects_bind_group) = Self::create_effects_bind_groups(
             &device,
             output_texture_size,
             &effects_bind_group_layout,
             &effect_buffer,
-            &positioned_frame,
+            &positioned_frame_buffer,
+            &frame_size_buffer,
         );
 
-        let output_staging_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+        let final_output_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("Output staging Buffer"),
             size: output_texture_size,
             usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
@@ -376,23 +399,23 @@ impl Renderer {
         });
 
         (
-            output_staging_buffer,
-            effects_output_buffer,
-            effects_bind_group,
-            positioned_frame,
+            positioned_frame_buffer,
             frame_position_buffer,
             frame_position_bind_group,
+            effects_output_buffer,
+            effects_bind_group,
+            final_output_buffer,
         )
     }
 
     fn update_render_target(&mut self, width: u32, height: u32) {
         let (
-            final_output_buffer,
-            effects_output_buffer,
-            effects_bind_group,
-            positoned_frame,
+            positioned_frame_buffer,
             frame_position_buffer,
             frame_postion_bind_group,
+            effects_output_buffer,
+            effects_bind_group,
+            final_output_buffer,
         ) = Self::create_render_target(
             width,
             height,
@@ -409,7 +432,7 @@ impl Renderer {
         self.effects_bind_group = effects_bind_group;
         self.frame_position_buffer = frame_position_buffer;
         self.frame_position_bind_group = frame_postion_bind_group;
-        self.positioned_frame = positoned_frame;
+        self.positioned_frame_buffer = positioned_frame_buffer;
     }
 
     pub fn is_size_equal_to_curr_input_size(&self, width: u32, height: u32) -> bool {
@@ -457,6 +480,8 @@ impl Renderer {
             );
         }
 
+        let mut source_buffer = &self.positioned_frame_buffer;
+
         if !self.effect_parameters.is_default() {
             {
                 let mut effects_pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
@@ -473,33 +498,16 @@ impl Renderer {
                 );
             }
 
-            encoder.copy_buffer_to_buffer(
-                &self.effects_output_buffer,
-                0,
-                &self.final_output_buffer,
-                0,
-                self.final_output_buffer.size(),
-            );
-        } else {
-            let bytes_per_row = self.positioned_frame.width() * U32_SIZE;
-            encoder.copy_texture_to_buffer(
-                wgpu::TexelCopyTextureInfo {
-                    texture: &self.positioned_frame,
-                    mip_level: 0,
-                    origin: wgpu::Origin3d::ZERO,
-                    aspect: wgpu::TextureAspect::All,
-                },
-                wgpu::TexelCopyBufferInfo {
-                    buffer: &self.final_output_buffer,
-                    layout: wgpu::TexelCopyBufferLayout {
-                        offset: 0,
-                        bytes_per_row: Some(bytes_per_row),
-                        rows_per_image: None,
-                    },
-                },
-                self.positioned_frame.size(),
-            );
+            source_buffer = &self.effects_output_buffer;
         }
+
+        encoder.copy_buffer_to_buffer(
+            &source_buffer,
+            0,
+            &self.final_output_buffer,
+            0,
+            self.final_output_buffer.size(),
+        );
 
         encoder.resolve_query_set(
             &self.gpu_timer.query_set,
@@ -581,6 +589,16 @@ impl Renderer {
         self.sample_to_texture(sample);
     }
 
+    pub fn upload_new_image(&mut self, img: &DynamicImage) {
+        if !self.is_size_equal_to_curr_input_size(img.width(), img.height()) {
+            self.update_input_texture_size(img.width(), img.height());
+        }
+        self.video_frame_texture
+            .borrow()
+            .write_from_image(&self.queue, img);
+        self.queue.submit([]);
+    }
+
     pub fn update_effects(&mut self, parameters: EffectParameters) {
         if parameters.is_default() {
             self.gpu_timer.disable_query_set(QuerySet::Effects);
@@ -612,20 +630,57 @@ impl Renderer {
         // need to handle width and height when base orientation is non-zero as input width + heights
         // are relative to the sample/frame which is always 0deg.
         let (w, h) = self.orientation.oriented_size(width, height);
+        println!("output: {w}x{h}");
         self.update_output_texture_size(w, h);
     }
 
     pub fn orient(&mut self, orientation: Orientation) {
-        // fixme: update the orientation uniform
+        // fixme: update the frame position uniform buffer
 
         if self.orientation.is_width_flipped() != orientation.is_width_flipped() {
             self.update_output_texture_size(self.output_dimensions.1, self.output_dimensions.0);
         }
 
+        self.frame_position.orient(orientation);
         self.orientation = orientation;
     }
 }
 
 fn texture_size(width: u32, height: u32) -> u64 {
     (width * height * U32_SIZE) as u64
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::IMG_TEST_LANDSCAPE;
+    use gtk4::prelude::TextureExt;
+
+    #[tokio::test]
+    async fn render_to_image() {
+        let (sender, _recv) = mpsc::channel();
+        let mut r = Renderer::new(sender).await;
+
+        let img = image::open(IMG_TEST_LANDSCAPE).unwrap();
+        let orientation = Orientation {
+            angle: 90.0,
+            base_angle: 0.0,
+            mirrored: false,
+        };
+        let mut effects = EffectParameters::new();
+        effects.saturation = 1.2;
+
+        r.orient(orientation);
+        // r.update_effects(effects);
+        r.upload_new_image(&img);
+        r.update_output_resolution(img.width(), img.height());
+        // r.update_output_resolution(832, 520);
+
+        // getting blank spaces because not aligned to grid 256. but why?
+
+        let texture = r.render_frame().await;
+        println!("time to render: {}", r.gpu_timer.frame_time_msg());
+
+        texture.save_to_png("test_image.png").unwrap();
+    }
 }

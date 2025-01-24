@@ -53,7 +53,7 @@ impl Orientation {
     }
 
     pub fn oriented_size(&self, width: u32, height: u32) -> (u32, u32) {
-        if self.base_angle == 90.0 || self.base_angle == 180.0 {
+        if self.absolute_angle() == 90.0 || self.absolute_angle() == 180.0 {
             (height, width)
         } else {
             (width, height)
