@@ -1,8 +1,8 @@
 use crate::range::Range;
 use crate::ui::slider::slider::SliderFillMode;
 use crate::ui::slider::Slider;
-use gtk4::prelude::{GestureDragExt, WidgetExt};
 use relm4::component::Connector;
+use relm4::gtk::prelude::{GestureDragExt, WidgetExt};
 use relm4::{gtk, Component, ComponentParts, ComponentSender};
 
 #[derive(Debug)]
@@ -175,7 +175,7 @@ impl Component for AdjustRowModel {
 }
 
 impl AdjustRowModel {
-    fn update_label_from_slider(&self, slider: &Slider, label: &gtk4::Label) {
+    fn update_label_from_slider(&self, slider: &Slider, label: &relm4::gtk::Label) {
         let display_value = slider.map_value_to_range(self.display_range);
         let display_str = self.format_display_value(display_value);
         label.set_label(display_str.as_str());

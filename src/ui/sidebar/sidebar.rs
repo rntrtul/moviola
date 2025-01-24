@@ -5,7 +5,7 @@ use crate::ui::sidebar::crop::{CropPageModel, CropPageMsg, CropPageOutput};
 use crate::ui::sidebar::output::{OutputPageModel, OutputPageMsg, OutputPageOutput};
 use crate::ui::sidebar::ControlsExportSettings;
 use crate::video::metadata::VideoContainerInfo;
-use gtk4::prelude::ButtonExt;
+use relm4::gtk::prelude::ButtonExt;
 use relm4::{
     adw, gtk, Component, ComponentController, ComponentParts, ComponentSender, Controller,
     SimpleComponent,

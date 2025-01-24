@@ -1549,7 +1549,6 @@ dependencies = [
  "gstreamer-app",
  "gstreamer-editing-services",
  "gstreamer-video",
- "gtk4",
  "image",
  "relm4",
  "tokio",

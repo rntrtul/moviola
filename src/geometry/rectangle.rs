@@ -1,7 +1,7 @@
 use crate::geometry::line::{component_distance_from_point_to_edge, Line};
 use crate::geometry::{line, rotate_point_around};
-use gtk4::graphene;
-use gtk4::graphene::Point;
+use relm4::gtk::graphene;
+use relm4::gtk::graphene::Point;
 
 #[derive(Clone, Copy, Debug)]
 pub enum EdgeType {

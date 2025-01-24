@@ -1,5 +1,4 @@
-use gtk4;
-use gtk4::gdk;
+use relm4::gtk::gdk;
 
 pub mod preview;
 pub(crate) mod sidebar;

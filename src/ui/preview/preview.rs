@@ -6,11 +6,11 @@ use crate::ui::sidebar::CropExportSettings;
 use ges::subclass::prelude::ObjectSubclassIsExt;
 use gst::glib;
 use gst::subclass::prelude::{ObjectImpl, ObjectSubclass};
-use gtk4::graphene::Point;
-use gtk4::prelude::{PaintableExt, SnapshotExt, WidgetExt};
-use gtk4::subclass::prelude::ObjectSubclassExt;
-use gtk4::subclass::widget::WidgetImpl;
-use gtk4::{gdk, graphene, Orientation};
+use relm4::gtk::graphene::Point;
+use relm4::gtk::prelude::{PaintableExt, SnapshotExt, WidgetExt};
+use relm4::gtk::subclass::prelude::ObjectSubclassExt;
+use relm4::gtk::subclass::widget::WidgetImpl;
+use relm4::gtk::{gdk, graphene, Orientation};
 use std::cell::{Cell, RefCell};
 
 static DEFAULT_WIDTH: f64 = 640f64;
@@ -71,7 +71,7 @@ impl Default for Preview {
 impl ObjectSubclass for Preview {
     const NAME: &'static str = "Preview";
     type Type = super::Preview;
-    type ParentType = gtk4::Widget;
+    type ParentType = relm4::gtk::Widget;
 }
 
 impl ObjectImpl for Preview {
@@ -101,7 +101,7 @@ impl WidgetImpl for Preview {
         }
     }
 
-    fn snapshot(&self, snapshot: &gtk4::Snapshot) {
+    fn snapshot(&self, snapshot: &relm4::gtk::Snapshot) {
         let preview = self.display_preview_rect();
         snapshot.save();
 

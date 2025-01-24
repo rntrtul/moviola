@@ -7,7 +7,7 @@ use ges::prelude::{GESPipelineExt, TimelineElementExt, TimelineExt};
 use ges::{gst_pbutils, PipelineFlags};
 use gst::prelude::{ElementExt, GstObjectExt};
 use gst::{ClockTime, State};
-use gtk4::prelude::ToValue;
+use relm4::gtk::prelude::ToValue;
 use relm4::ComponentSender;
 
 use crate::app::{App, AppMsg};

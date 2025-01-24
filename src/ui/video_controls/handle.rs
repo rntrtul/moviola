@@ -1,8 +1,8 @@
 use crate::ui::IGNORE_OVERLAY_COLOUR;
-use gtk4::prelude::{ObjectExt, SnapshotExt, SnapshotExtManual, WidgetExt};
-use gtk4::subclass::prelude::*;
-use gtk4::{gdk, glib, graphene, gsk, Snapshot};
 use relm4::gtk;
+use relm4::gtk::prelude::{ObjectExt, SnapshotExt, SnapshotExtManual, WidgetExt};
+use relm4::gtk::subclass::prelude::*;
+use relm4::gtk::{gdk, glib, graphene, gsk, Snapshot};
 use std::cell::Cell;
 use std::sync::LazyLock;
 

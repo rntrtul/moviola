@@ -7,8 +7,10 @@ use crate::video::metadata::VideoInfo;
 use crate::video::player::Player;
 use gst::ClockTime;
 use gtk::prelude::{ApplicationExt, WidgetExt};
-use gtk4::prelude::{ButtonExt, FileExt, GtkApplicationExt, GtkWindowExt, OrientableExt, RangeExt};
-use gtk4::{gdk, gio, glib};
+use relm4::gtk::prelude::{
+    ButtonExt, FileExt, GtkApplicationExt, GtkWindowExt, OrientableExt, RangeExt,
+};
+use relm4::gtk::{gdk, gio, glib};
 use relm4::{
     adw, gtk, main_application, Component, ComponentController, ComponentParts, ComponentSender,
     Controller, RelmWidgetExt,

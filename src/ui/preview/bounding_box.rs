@@ -3,10 +3,10 @@ use crate::geometry::{point_distance, Corner, CornerType, Rectangle};
 use crate::ui::preview::input::DragType;
 use crate::ui::preview::preview::Preview;
 use ges::subclass::prelude::ObjectSubclassExt;
-use gtk4::graphene::{Point, Rect};
-use gtk4::prelude::{SnapshotExt, SnapshotExtManual, WidgetExt};
-use gtk4::{gdk, gsk};
-use gtk4::{graphene, Snapshot};
+use relm4::gtk::graphene::{Point, Rect};
+use relm4::gtk::prelude::{SnapshotExt, SnapshotExtManual, WidgetExt};
+use relm4::gtk::{gdk, gsk};
+use relm4::gtk::{graphene, Snapshot};
 use std::cmp::PartialEq;
 
 pub(crate) static BOX_HANDLE_WIDTH: f32 = 3f32;

@@ -1,5 +1,5 @@
 use crate::ui::preview::preview::Preview;
-use gtk4::graphene;
+use relm4::gtk::graphene;
 
 impl Preview {
     pub(crate) fn pan_preview(&self, offset_x: f32, offset_y: f32) {

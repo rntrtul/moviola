@@ -1,9 +1,9 @@
 use crate::ui::preview::bounding_box::HandleType;
 use crate::ui::preview::preview::Preview;
 use ges::subclass::prelude::ObjectSubclassExt;
-use gtk4::prelude::{GestureDragExt, WidgetExt};
-use gtk4::subclass::prelude::ObjectSubclassIsExt;
-use gtk4::{glib, graphene};
+use relm4::gtk::prelude::{GestureDragExt, WidgetExt};
+use relm4::gtk::subclass::prelude::ObjectSubclassIsExt;
+use relm4::gtk::{glib, graphene};
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub enum DragType {
@@ -39,7 +39,7 @@ impl DragType {
 impl Preview {
     pub(crate) fn connect_gestures(&self) {
         let obj = self.obj();
-        let drag_gesture = gtk4::GestureDrag::new();
+        let drag_gesture = relm4::gtk::GestureDrag::new();
 
         drag_gesture.connect_drag_begin(glib::clone!(
             #[weak]

@@ -1,5 +1,5 @@
-use gtk4::prelude::{ListBoxRowExt, WidgetExt};
 use relm4::adw::prelude::{ActionRowExt, ComboRowExt, PreferencesGroupExt, PreferencesRowExt};
+use relm4::gtk::prelude::{ListBoxRowExt, WidgetExt};
 use relm4::{adw, Component, ComponentParts, ComponentSender};
 
 use crate::ui::sidebar::output::OutputPageMsg::{

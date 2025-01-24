@@ -5,9 +5,9 @@ use crate::renderer::{texture, EffectParameters, TimerEvent};
 use crate::ui::preview::Orientation;
 use ges::glib;
 use gst::Sample;
-use gtk4::gdk;
-use gtk4::prelude::Cast;
 use image::DynamicImage;
+use relm4::gtk::gdk;
+use relm4::gtk::prelude::Cast;
 use std::cell::RefCell;
 use std::default::Default;
 use std::sync::mpsc;
@@ -654,7 +654,7 @@ fn texture_size(width: u32, height: u32) -> u64 {
 mod tests {
     use super::*;
     use crate::config::IMG_TEST_LANDSCAPE;
-    use gtk4::prelude::TextureExt;
+    use relm4::gtk::prelude::TextureExt;
 
     #[tokio::test]
     async fn render_to_image() {

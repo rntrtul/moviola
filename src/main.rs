@@ -1,4 +1,4 @@
-use gtk4::gio;
+use relm4::gtk::gio;
 use relm4::{adw, gtk, RelmApp, RELM_THREADS};
 
 use crate::app::App;

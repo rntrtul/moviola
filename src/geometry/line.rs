@@ -1,4 +1,4 @@
-use gtk4::graphene::Point;
+use relm4::gtk::graphene::Point;
 
 const SIMILARITY_THRESHOLD: f32 = 0.1; // for pixel values, so fairly loose. might tighten.
 

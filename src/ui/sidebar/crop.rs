@@ -1,8 +1,8 @@
 use crate::range::Range;
 use crate::ui::preview::{CropMode, Orientation};
 use crate::ui::slider::adjust_row::{AdjustRowModel, AdjustRowMsg, AdjustRowOutput};
-use gtk4::prelude::{OrientableExt, WidgetExt};
 use relm4::adw::prelude::{ComboRowExt, PreferencesRowExt};
+use relm4::gtk::prelude::{OrientableExt, WidgetExt};
 use relm4::{
     adw, gtk, Component, ComponentController, ComponentParts, ComponentSender, Controller,
 };

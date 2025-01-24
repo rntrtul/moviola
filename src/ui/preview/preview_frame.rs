@@ -1,8 +1,8 @@
 use crate::renderer::{TimerCmd, TimerEvent};
 use crate::ui::preview::{CropMode, Orientation, Preview};
 use crate::ui::sidebar::CropExportSettings;
-use gtk4::gdk;
-use gtk4::prelude::WidgetExt;
+use relm4::gtk::gdk;
+use relm4::gtk::prelude::WidgetExt;
 use relm4::*;
 use std::fmt::Debug;
 use std::sync::mpsc;
@@ -69,7 +69,7 @@ impl Component for PreviewFrameModel {
     ) -> ComponentParts<Self> {
         let preview = Preview::new();
 
-        let offload = gtk4::GraphicsOffload::new(Some(&preview));
+        let offload = relm4::gtk::GraphicsOffload::new(Some(&preview));
         offload.set_enabled(gtk::GraphicsOffloadEnabled::Enabled);
         offload.set_visible(false);
         offload.set_vexpand(true);

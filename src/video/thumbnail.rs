@@ -6,8 +6,8 @@ use gst::prelude::{Cast, ElementExt, ElementExtManual, GstBinExt, ObjectExt};
 use gst::{ClockTime, SeekFlags, State};
 use gst_app::AppSink;
 use gst_video::VideoFrameExt;
-use gtk4::gdk;
-use gtk4::gdk::MemoryTexture;
+use relm4::gtk::gdk;
+use relm4::gtk::gdk::MemoryTexture;
 use std::sync::{Arc, Condvar, Mutex};
 use tracing::{info, instrument, trace};
 

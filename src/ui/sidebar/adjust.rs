@@ -3,8 +3,8 @@ use crate::ui::sidebar::adjust::AdjustPageMsg::{
     BrightnessChange, ContrastChange, SaturationChange, NOP,
 };
 use crate::ui::slider::adjust_row::{AdjustRowModel, AdjustRowMsg, AdjustRowOutput};
-use gtk4::prelude::{BoxExt, OrientableExt, WidgetExt};
 use relm4::adw::prelude::PreferencesRowExt;
+use relm4::gtk::prelude::{BoxExt, OrientableExt, WidgetExt};
 use relm4::{
     adw, gtk, ComponentController, ComponentParts, ComponentSender, Controller, SimpleComponent,
 };

@@ -1,6 +1,6 @@
-use gtk4::graphene;
-use gtk4::prelude::WidgetExt;
-use gtk4::subclass::prelude::ObjectSubclassIsExt;
+use relm4::gtk::graphene;
+use relm4::gtk::prelude::WidgetExt;
+use relm4::gtk::subclass::prelude::ObjectSubclassIsExt;
 
 impl crate::ui::preview::Preview {
     pub fn zoom(&self) -> f64 {

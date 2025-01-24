@@ -1,4 +1,4 @@
-use gtk4::graphene::Point;
+use relm4::gtk::graphene::Point;
 
 fn rotate_point(point: Point, degrees: f32) -> Point {
     let angle = degrees.to_radians();

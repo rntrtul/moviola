@@ -1,11 +1,11 @@
 use crate::range::Range;
 use ges::glib;
 use ges::subclass::prelude::{ObjectImpl, ObjectSubclass};
-use gtk4::prelude::{SnapshotExt, WidgetExt};
-use gtk4::subclass::prelude::{ObjectSubclassExt, ObjectSubclassIsExt};
-use gtk4::subclass::widget::WidgetImpl;
-use gtk4::{gdk, graphene, gsk, Orientation, Snapshot};
 use relm4::adw;
+use relm4::gtk::prelude::{SnapshotExt, WidgetExt};
+use relm4::gtk::subclass::prelude::{ObjectSubclassExt, ObjectSubclassIsExt};
+use relm4::gtk::subclass::widget::WidgetImpl;
+use relm4::gtk::{gdk, graphene, gsk, Orientation, Snapshot};
 use std::cell::Cell;
 
 #[derive(Clone, Copy, Debug)]
@@ -48,7 +48,7 @@ impl Default for Slider {
 impl ObjectSubclass for Slider {
     const NAME: &'static str = "Slider";
     type Type = super::Slider;
-    type ParentType = gtk4::Widget;
+    type ParentType = relm4::gtk::Widget;
 }
 
 impl ObjectImpl for Slider {

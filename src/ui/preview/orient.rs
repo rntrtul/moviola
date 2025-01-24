@@ -1,7 +1,7 @@
 use crate::ui::preview;
 use gst_video::VideoOrientationMethod;
-use gtk4::prelude::WidgetExt;
-use gtk4::subclass::prelude::ObjectSubclassIsExt;
+use relm4::gtk::prelude::WidgetExt;
+use relm4::gtk::subclass::prelude::ObjectSubclassIsExt;
 
 #[derive(Debug, Clone, Copy)]
 pub struct Orientation {
