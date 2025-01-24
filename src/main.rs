@@ -16,7 +16,7 @@ use tracing_subscriber::fmt::format::FmtSpan;
 use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 
 #[derive(FromArgs)]
-/// options
+/// option
 struct Cli {
     #[argh(option, short = 'f')]
     /// path of media to load immediately
