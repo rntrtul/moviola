@@ -20,6 +20,8 @@ tracing = { version = "0.1.41" }
 tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
 approx = { version = "0.5.1" }
 argh = { version = "0.1.13", features = ["help"], default-features = false }
+encase = { version = "0.10.0", features = ["mint"] }
+mint = "0.5.9"
 
 [build-dependencies]
 glib-build-tools = "0.20.0"

@@ -1,8 +1,7 @@
 struct PositionUniform {
-    rotation: vec2<f32>,
-    crop_size: vec2<u32>,
-    crop_start: vec2<u32>,
-    translate: vec2<u32>,
+    crop_edges: vec4u,
+    translate: vec2i,
+    rotation: f32,
     orientation: f32,
     mirrored: u32,
 }
@@ -18,11 +17,11 @@ struct FrameSize{
 @group(0) @binding(3) var<uniform> size: FrameSize;
 @group(0) @binding(4) var<storage, read_write> output: array<u32>;
 
-fn rotate_90(p: vec2<f32>) -> vec2<f32> {
-    return mat2x2(0, -1, 1, 0) * p;
-}
+const rotate_90: mat2x2f = mat2x2(0, -1, 1, 0);
+const rotate_180: mat2x2f = mat2x2(-1, 0, 0, -1);
+const rotate_270: mat2x2f = mat2x2(0, 1, -1, 0);
 
-fn rotate(p: vec2<f32>, angle: f32) -> vec2<f32> {
+fn rotate(p: vec2f, angle: f32) -> vec2f {
     let cos = cos(angle);
     let sin = sin(angle);
     let r = mat2x2(cos, -sin, sin, cos);
@@ -33,47 +32,56 @@ fn rotate(p: vec2<f32>, angle: f32) -> vec2<f32> {
 @compute
 @workgroup_size(256, 1, 1)
 fn main(@builtin(global_invocation_id) global_invocation_id: vec3<u32>) {
-    let input_dimensions = textureDimensions(texture);
-    let output_dimensions = vec2<u32>(size.width, size.height);
+    let tex_dimensions = textureDimensions(texture);
+    let output_dimensions = vec2u(size.width, size.height);
 
-    let f_output_dimensions = vec2<f32>(output_dimensions);
-    let f_input_dimensions = vec2<f32>(input_dimensions);
-    let output_coords = global_invocation_id.xy;
+    let f_text_dimensions = vec2f(tex_dimensions);
+    let f_output_dimensions = vec2f(output_dimensions);
+    let output_coords = vec2f(global_invocation_id.xy);
 
-    var scale = f_input_dimensions / f_output_dimensions;
-    let center = f_input_dimensions / 2.0;
-    var input_pos = vec2<f32>(output_coords);
-
-    if (position.orientation == 90.0) || (position.orientation == 270.0) {
-        let out_center = f_output_dimensions / 2.0;
-        input_pos = rotate_90(input_pos - out_center) + out_center.yx;
-        scale = f_input_dimensions / f_output_dimensions.yx;
+    if !all(output_coords < f_output_dimensions) {
+        return;
     }
-    input_pos = input_pos * scale;
+
+    var scale = f_text_dimensions / f_output_dimensions;
+    var tex_coords = output_coords;
 
     if position.orientation != 0.0 {
-//        input_pos = rotate_90(input_pos - center) + center;
+        let center = f_output_dimensions / 2.0;
+
+        switch (u32(position.orientation)) {
+            case 90u: {
+                tex_coords = (rotate_90 * (tex_coords - center)) + center.yx;
+                scale = f_text_dimensions / f_output_dimensions.yx;
+            }
+            case 180u: {
+                tex_coords = (rotate_180 * (tex_coords - center)) + center;
+            }
+            case 270u: {
+                tex_coords = (rotate_270 * (tex_coords - center)) + center.yx;
+                scale = f_text_dimensions / f_output_dimensions.yx;
+            }
+            default: {
+                tex_coords = tex_coords;
+            }
+        }
     }
+
+    tex_coords = tex_coords * scale;
 
     if (position.mirrored == 1) {
-        input_pos = vec2<f32>(abs(input_pos.x - f_output_dimensions.x), input_pos.y);
+        tex_coords = vec2f(abs(tex_coords.x - f_text_dimensions.x), tex_coords.y);
     }
 
-    let rotation = position.rotation;
-//    pos = pos - center;
-//    pos = vec2<f32>((pos.x * rotation.x - pos.y * rotation.y), (pos.x * rotation.y + pos.y * rotation.x));
-//    pos = pos + center;
+    let tex_center = f_text_dimensions / 2.0;
+    tex_coords = rotate(tex_coords - tex_center, position.rotation) + tex_center;
+    tex_coords = tex_coords - vec2f(position.translate);
 
-    let output_in_bounds: bool = all(output_coords < output_dimensions);
-    let valid_input_coord: bool = all(vec2f(0,0) <= input_pos) && all(input_pos < f_input_dimensions);
-
-    if output_in_bounds && valid_input_coord {
-        let uv = (input_pos + 0.5) / f_input_dimensions;
+    let valid_tex_coord: bool = all(vec2f(0,0) <= tex_coords) && all(tex_coords < f_text_dimensions);
+    if valid_tex_coord {
+        let uv = (tex_coords + 0.5) / f_text_dimensions;
         let colour = textureSampleLevel(texture, s_texture, uv, 0.0);
-        let index = (output_coords.y * size.width) + output_coords.x;
-//        output[index] = pack4x8unorm(vec4f(uv, 0.0, 1.0));
+        let index = (u32(output_coords.y) * size.width) + u32(output_coords.x);
         output[index] = pack4x8unorm(colour);
     }
 }
-
-

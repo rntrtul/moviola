@@ -1,45 +1,64 @@
 use crate::ui::preview::Orientation;
+use encase::{ShaderType, UniformBuffer};
 use wgpu::util::DeviceExt;
 
-#[repr(C)]
-#[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
-// todo: send a matrix for rotation and translate
+#[derive(ShaderType)]
 pub struct FramePositionUniform {
-    rotation: [f32; 2],
-    crop_start: [u32; 2],
-    crop_size: [u32; 2],
-    translate: [u32; 2],
+    crop_edges: mint::Vector4<u32>,
+    translate: mint::Vector2<i32>,
+    rotation: f32,
     orientation: f32,
     mirrored: u32,
 }
 
-impl FramePositionUniform {
+// todo: send a matrix for rotation and translate
+pub struct FramePosition {
+    pub(crate) crop_edges: [u32; 4],
+    pub(crate) translate: [i32; 2],
+    pub(crate) orientation: Orientation,
+    pub(crate) rotation_radians: f32,
+    pub(crate) original_frame_size: FrameSize,
+}
+
+impl FramePosition {
     pub fn new() -> Self {
         Self {
-            orientation: 0.0,
-            rotation: [1.0, 0.0],
-            crop_start: [0, 0],
-            crop_size: [0, 0],
-            translate: [0, 0],
-            mirrored: 0,
+            crop_edges: [0; 4],
+            translate: [0; 2],
+            orientation: Orientation::default(),
+            rotation_radians: 0.0,
+            original_frame_size: FrameSize::new(0, 0),
         }
     }
 
-    pub fn update_rotation(&mut self, radians: f32) {
-        self.rotation = [radians.cos(), radians.sin()];
-    }
-
-    pub fn orient(&mut self, orientation: Orientation) {
-        self.orientation = orientation.absolute_angle();
-        self.mirrored = if orientation.mirrored { 1 } else { 0 };
-    }
-
     pub fn buffer(&self, device: &wgpu::Device) -> wgpu::Buffer {
+        let uniform = FramePositionUniform {
+            rotation: self.rotation_radians,
+            orientation: self.orientation.absolute_angle(),
+            mirrored: if self.orientation.mirrored { 1 } else { 0 },
+            crop_edges: mint::Vector4::from(self.crop_edges),
+            translate: mint::Vector2::from(self.translate),
+        };
+
+        let mut buffer = UniformBuffer::new(Vec::<u8>::new());
+        buffer.write(&uniform).unwrap();
+        let byte_buffer = buffer.into_inner();
+
         device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Frame Position Buffer"),
-            contents: bytemuck::cast_slice(&[*self]),
+            contents: &*byte_buffer,
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         })
+    }
+
+    pub fn positioned_frame_size(&self) -> FrameSize {
+        // todo: get target output frame size and do math on that.
+        let crop_width = self.original_frame_size.width - (self.crop_edges[0] + self.crop_edges[2]);
+        let crop_height =
+            self.original_frame_size.height - (self.crop_edges[1] + self.crop_edges[3]);
+        let (width, height) = self.orientation.oriented_size(crop_width, crop_height);
+
+        FrameSize::new(width, height)
     }
 }
 

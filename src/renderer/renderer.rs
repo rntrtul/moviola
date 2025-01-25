@@ -1,4 +1,4 @@
-use crate::renderer::frame_position::{FramePositionUniform, FrameSize};
+use crate::renderer::frame_position::{FramePosition, FrameSize};
 use crate::renderer::handler::TimerCmd;
 use crate::renderer::timer::{GpuTimer, QuerySet};
 use crate::renderer::{texture, EffectParameters, TimerEvent};
@@ -19,8 +19,9 @@ pub struct Renderer {
     device: wgpu::Device,
     queue: wgpu::Queue,
     output_dimensions: (u32, u32),
+    // todo: use orientation from frame position
     orientation: Orientation,
-    frame_position: FramePositionUniform,
+    frame_position: FramePosition,
     effect_parameters: EffectParameters,
     video_frame_texture: RefCell<texture::Texture>,
     frame_position_pipeline: wgpu::ComputePipeline,
@@ -178,7 +179,7 @@ impl Renderer {
 
         let output_dimensions = (512, 288);
 
-        let frame_position = FramePositionUniform::new();
+        let frame_position = FramePosition::new();
 
         let (
             positioned_frame_buffer,
@@ -262,7 +263,7 @@ impl Renderer {
         device: &wgpu::Device,
         texture_size: u64,
         frame_position_bind_group_layout: &wgpu::BindGroupLayout,
-        frame_position: &FramePositionUniform,
+        frame_position: &FramePosition,
         texture: &texture::Texture,
         frame_size_buffer: &wgpu::Buffer,
     ) -> (wgpu::Buffer, wgpu::Buffer, wgpu::BindGroup) {
@@ -356,7 +357,7 @@ impl Renderer {
         effect_buffer: &wgpu::Buffer,
         effects_bind_group_layout: &wgpu::BindGroupLayout,
         frame_position_bind_group_layout: &wgpu::BindGroupLayout,
-        frame_position: &FramePositionUniform,
+        frame_position: &FramePosition,
         texture: &texture::Texture,
         device: &wgpu::Device,
     ) -> (
@@ -635,13 +636,20 @@ impl Renderer {
 
     pub fn orient(&mut self, orientation: Orientation) {
         // fixme: update the frame position uniform buffer
-
         if self.orientation.is_width_flipped() != orientation.is_width_flipped() {
             self.update_output_texture_size(self.output_dimensions.1, self.output_dimensions.0);
         }
 
-        self.frame_position.orient(orientation);
         self.orientation = orientation;
+    }
+
+    pub fn position_frame(&mut self, frame_position: FramePosition) {
+        self.frame_position = frame_position;
+
+        let output_size = self.frame_position.positioned_frame_size();
+        self.update_output_texture_size(output_size.width, output_size.height);
+
+        self.orientation = self.frame_position.orientation;
     }
 }
 
@@ -661,25 +669,28 @@ mod tests {
         let mut r = Renderer::new(sender).await;
 
         let img = image::open(IMG_TEST_LANDSCAPE).unwrap();
-        let orientation = Orientation {
-            angle: 90.0,
-            base_angle: 0.0,
-            mirrored: false,
+        let frame_position = FramePosition {
+            original_frame_size: FrameSize::new(img.width(), img.height()),
+            crop_edges: [0, 0, 0, 0],
+            translate: [-100, -50],
+            orientation: Orientation {
+                angle: 0.0,
+                base_angle: 0.0,
+                mirrored: false,
+            },
+            rotation_radians: 0.0,
         };
+
         let mut effects = EffectParameters::new();
         effects.saturation = 1.2;
 
-        r.orient(orientation);
-        // r.update_effects(effects);
         r.upload_new_image(&img);
-        r.update_output_resolution(img.width(), img.height());
-        // r.update_output_resolution(832, 520);
-
-        // getting blank spaces because not aligned to grid 256. but why?
+        r.position_frame(frame_position);
+        // r.update_output_resolution(img.width() / 2, img.height() / 2);
+        // r.update_effects(effects);
 
         let texture = r.render_frame().await;
         println!("time to render: {}", r.gpu_timer.frame_time_msg());
-
         texture.save_to_png("test_image.png").unwrap();
     }
 }
