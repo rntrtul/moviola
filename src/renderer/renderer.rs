@@ -261,7 +261,7 @@ impl Renderer {
 
     fn create_frame_positon_bind_groups(
         device: &wgpu::Device,
-        texture_size: u64,
+        frame_size: &FrameSize,
         frame_position_bind_group_layout: &wgpu::BindGroupLayout,
         frame_position: &FramePosition,
         texture: &texture::Texture,
@@ -271,7 +271,7 @@ impl Renderer {
 
         let positioned_frame_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("effects output buffer"),
-            size: texture_size,
+            size: frame_size.texture_size(),
             usage: wgpu::BufferUsages::COPY_SRC | wgpu::BufferUsages::STORAGE,
             mapped_at_creation: false,
         });
@@ -375,7 +375,7 @@ impl Renderer {
         let (positioned_frame_buffer, frame_position_buffer, frame_position_bind_group) =
             Self::create_frame_positon_bind_groups(
                 &device,
-                output_texture_size,
+                &frame_size,
                 &frame_position_bind_group_layout,
                 &frame_position,
                 &texture,
@@ -686,7 +686,8 @@ mod tests {
 
         r.upload_new_image(&img);
         r.position_frame(frame_position);
-        // r.update_output_resolution(img.width() / 2, img.height() / 2);
+        // r.update_output_resolution((img.width() -100)/ 2, (img.height() - 50) / 2);
+        r.update_output_resolution((img.width() - 100), (img.height() - 50));
         // r.update_effects(effects);
 
         let texture = r.render_frame().await;

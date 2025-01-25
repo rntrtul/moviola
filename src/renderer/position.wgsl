@@ -1,6 +1,7 @@
 struct PositionUniform {
     crop_edges: vec4u,
     translate: vec2i,
+    scale: vec2f,
     rotation: f32,
     orientation: f32,
     mirrored: u32,
@@ -37,14 +38,11 @@ fn main(@builtin(global_invocation_id) global_invocation_id: vec3<u32>) {
 
     let f_text_dimensions = vec2f(tex_dimensions);
     let f_output_dimensions = vec2f(output_dimensions);
-    let output_coords = vec2f(global_invocation_id.xy);
+    var tex_coords = vec2f(global_invocation_id.xy);
 
-    if !all(output_coords < f_output_dimensions) {
+    if !all(tex_coords < f_output_dimensions) {
         return;
     }
-
-    var scale = f_text_dimensions / f_output_dimensions;
-    var tex_coords = output_coords;
 
     if position.orientation != 0.0 {
         let center = f_output_dimensions / 2.0;
@@ -52,14 +50,12 @@ fn main(@builtin(global_invocation_id) global_invocation_id: vec3<u32>) {
         switch (u32(position.orientation)) {
             case 90u: {
                 tex_coords = (rotate_90 * (tex_coords - center)) + center.yx;
-                scale = f_text_dimensions / f_output_dimensions.yx;
             }
             case 180u: {
                 tex_coords = (rotate_180 * (tex_coords - center)) + center;
             }
             case 270u: {
                 tex_coords = (rotate_270 * (tex_coords - center)) + center.yx;
-                scale = f_text_dimensions / f_output_dimensions.yx;
             }
             default: {
                 tex_coords = tex_coords;
@@ -67,7 +63,7 @@ fn main(@builtin(global_invocation_id) global_invocation_id: vec3<u32>) {
         }
     }
 
-    tex_coords = tex_coords * scale;
+    tex_coords = tex_coords * position.scale;
 
     if (position.mirrored == 1) {
         tex_coords = vec2f(abs(tex_coords.x - f_text_dimensions.x), tex_coords.y);
@@ -77,11 +73,10 @@ fn main(@builtin(global_invocation_id) global_invocation_id: vec3<u32>) {
     tex_coords = rotate(tex_coords - tex_center, position.rotation) + tex_center;
     tex_coords = tex_coords - vec2f(position.translate);
 
-    let valid_tex_coord: bool = all(vec2f(0,0) <= tex_coords) && all(tex_coords < f_text_dimensions);
-    if valid_tex_coord {
+    if all(vec2f(0,0) <= tex_coords) && all(tex_coords < f_text_dimensions) {
         let uv = (tex_coords + 0.5) / f_text_dimensions;
         let colour = textureSampleLevel(texture, s_texture, uv, 0.0);
-        let index = (u32(output_coords.y) * size.width) + u32(output_coords.x);
+        let index = (global_invocation_id.y * size.width) + global_invocation_id.x;
         output[index] = pack4x8unorm(colour);
     }
 }

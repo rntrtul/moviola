@@ -1,3 +1,4 @@
+use crate::renderer::renderer::U32_SIZE;
 use crate::ui::preview::Orientation;
 use encase::{ShaderType, UniformBuffer};
 use wgpu::util::DeviceExt;
@@ -6,6 +7,7 @@ use wgpu::util::DeviceExt;
 pub struct FramePositionUniform {
     crop_edges: mint::Vector4<u32>,
     translate: mint::Vector2<i32>,
+    scale: mint::Vector2<f32>,
     rotation: f32,
     orientation: f32,
     mirrored: u32,
@@ -32,12 +34,15 @@ impl FramePosition {
     }
 
     pub fn buffer(&self, device: &wgpu::Device) -> wgpu::Buffer {
+        let scale = mint::Vector2::from([1.0, 1.0]);
+
         let uniform = FramePositionUniform {
             rotation: self.rotation_radians,
             orientation: self.orientation.absolute_angle(),
             mirrored: if self.orientation.mirrored { 1 } else { 0 },
             crop_edges: mint::Vector4::from(self.crop_edges),
             translate: mint::Vector2::from(self.translate),
+            scale,
         };
 
         let mut buffer = UniformBuffer::new(Vec::<u8>::new());
@@ -72,6 +77,10 @@ pub struct FrameSize {
 impl FrameSize {
     pub fn new(width: u32, height: u32) -> Self {
         Self { width, height }
+    }
+
+    pub fn texture_size(&self) -> u64 {
+        (self.width * self.height * U32_SIZE) as u64
     }
 
     pub fn buffer(&self, device: &wgpu::Device) -> wgpu::Buffer {
