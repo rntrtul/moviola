@@ -18,7 +18,7 @@ pub static U32_SIZE: u32 = size_of::<u32>() as u32;
 pub struct Renderer {
     device: wgpu::Device,
     queue: wgpu::Queue,
-    output_dimensions: (u32, u32), //todo: change to using framesize
+    output_size: FrameSize,
     frame_position: FramePosition,
     effect_parameters: EffectParameters,
     video_frame_texture: RefCell<texture::Texture>,
@@ -175,11 +175,10 @@ impl Renderer {
 
         let texture = texture::Texture::new_for_size(1, 1, &device, "").unwrap();
 
-        let output_dimensions = (512, 288);
+        let output_size = FrameSize::new(512, 288);
 
         let mut frame_position = FramePosition::new();
-        frame_position.original_frame_size =
-            FrameSize::new(output_dimensions.0, output_dimensions.1);
+        frame_position.original_frame_size = output_size;
 
         let (
             positioned_frame_buffer,
@@ -189,8 +188,7 @@ impl Renderer {
             effects_bind_group,
             final_output_buffer,
         ) = Self::create_render_target(
-            output_dimensions.0,
-            output_dimensions.1,
+            output_size,
             &effects_buffer,
             &effects_bind_group_layout,
             &frame_position_bind_group_layout,
@@ -238,7 +236,7 @@ impl Renderer {
         Self {
             device,
             queue,
-            output_dimensions,
+            output_size,
             frame_position,
             effect_parameters,
             video_frame_texture: RefCell::new(texture),
@@ -351,8 +349,7 @@ impl Renderer {
     }
 
     fn create_render_target(
-        width: u32,
-        height: u32,
+        output_frame_size: FrameSize,
         effect_buffer: &wgpu::Buffer,
         effects_bind_group_layout: &wgpu::BindGroupLayout,
         frame_position_bind_group_layout: &wgpu::BindGroupLayout,
@@ -367,14 +364,12 @@ impl Renderer {
         wgpu::BindGroup,
         wgpu::Buffer,
     ) {
-        let output_texture_size = texture_size(width, height);
-        let frame_size = FrameSize::new(width, height);
-        let frame_size_buffer = frame_size.buffer(&device);
+        let frame_size_buffer = output_frame_size.buffer(&device);
 
         let (positioned_frame_buffer, frame_position_buffer, frame_position_bind_group) =
             Self::create_frame_positon_bind_groups(
                 &device,
-                &frame_size,
+                &output_frame_size,
                 &frame_position_bind_group_layout,
                 &frame_position,
                 &texture,
@@ -383,7 +378,7 @@ impl Renderer {
 
         let (effects_output_buffer, effects_bind_group) = Self::create_effects_bind_groups(
             &device,
-            output_texture_size,
+            output_frame_size.texture_size(),
             &effects_bind_group_layout,
             &effect_buffer,
             &positioned_frame_buffer,
@@ -392,7 +387,7 @@ impl Renderer {
 
         let final_output_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("Output staging Buffer"),
-            size: output_texture_size,
+            size: output_frame_size.texture_size(),
             usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
             mapped_at_creation: false,
         });
@@ -407,7 +402,7 @@ impl Renderer {
         )
     }
 
-    fn update_render_target(&mut self, width: u32, height: u32) {
+    fn update_render_target(&mut self, output_frame_size: FrameSize) {
         let (
             positioned_frame_buffer,
             frame_position_buffer,
@@ -416,8 +411,7 @@ impl Renderer {
             effects_bind_group,
             final_output_buffer,
         ) = Self::create_render_target(
-            width,
-            height,
+            output_frame_size,
             &self.effects_buffer,
             &self.effects_bind_group_layout,
             &self.frame_position_bind_group_layout,
@@ -447,9 +441,9 @@ impl Renderer {
         self.frame_position.original_frame_size = FrameSize::new(width, height);
     }
 
-    fn update_buffers_for_output_size(&mut self, width: u32, height: u32) {
-        self.update_render_target(width, height);
-        self.output_dimensions = (width, height);
+    fn update_buffers_for_output_size(&mut self, output_frame_size: FrameSize) {
+        self.update_render_target(output_frame_size);
+        self.output_size = output_frame_size;
     }
 
     fn sample_to_texture(&self, sample: &Sample) {
@@ -474,13 +468,13 @@ impl Renderer {
             frame_position_pass.set_pipeline(&self.frame_position_pipeline);
             frame_position_pass.set_bind_group(0, &self.frame_position_bind_group, &[]);
             frame_position_pass.dispatch_workgroups(
-                self.output_dimensions.0.div_ceil(256),
-                self.output_dimensions.1,
+                self.output_size.width.div_ceil(256),
+                self.output_size.height,
                 1,
             );
         }
 
-        let mut source_buffer = &self.positioned_frame_buffer;
+        let mut output_source_buffer = &self.positioned_frame_buffer;
 
         if !self.effect_parameters.is_default() {
             {
@@ -492,17 +486,17 @@ impl Renderer {
                 effects_pass.set_pipeline(&self.effects_pipeline);
                 effects_pass.set_bind_group(0, &self.effects_bind_group, &[]);
                 effects_pass.dispatch_workgroups(
-                    self.output_dimensions.0.div_ceil(256),
-                    self.output_dimensions.1,
+                    self.output_size.width.div_ceil(256),
+                    self.output_size.height,
                     1,
                 );
             }
 
-            source_buffer = &self.effects_output_buffer;
+            output_source_buffer = &self.effects_output_buffer;
         }
 
         encoder.copy_buffer_to_buffer(
-            &source_buffer,
+            &output_source_buffer,
             0,
             &self.final_output_buffer,
             0,
@@ -557,11 +551,11 @@ impl Renderer {
                 let view = slice.get_mapped_range();
 
                 gdk_texture = gdk::MemoryTexture::new(
-                    self.output_dimensions.0 as i32,
-                    self.output_dimensions.1 as i32,
+                    self.output_size.width as i32,
+                    self.output_size.height as i32,
                     gdk::MemoryFormat::R8g8b8a8,
                     &glib::Bytes::from(&view.iter().as_slice()),
-                    self.output_dimensions.0 as usize * 4,
+                    self.output_size.width as usize * 4,
                 )
                 .upcast::<gdk::Texture>();
 
@@ -630,25 +624,20 @@ impl Renderer {
         // need to handle width and height when base orientation is non-zero as input width + heights
         // are relative to the sample/frame which is always 0deg.
         let (w, h) = self.frame_position.orientation.oriented_size(width, height);
-        println!("output: {w}x{h}");
-        self.update_buffers_for_output_size(w, h);
+        self.update_buffers_for_output_size(FrameSize::new(w, h));
     }
 
     pub fn orient(&mut self, orientation: Orientation) {
         self.frame_position.orientation = orientation;
         let size = self.frame_position.positioned_frame_size();
-        self.update_buffers_for_output_size(size.width, size.height);
+        self.update_buffers_for_output_size(size);
     }
 
     pub fn position_frame(&mut self, frame_position: FramePosition) {
         self.frame_position = frame_position;
         let output_size = self.frame_position.positioned_frame_size();
-        self.update_buffers_for_output_size(output_size.width, output_size.height);
+        self.update_buffers_for_output_size(output_size);
     }
-}
-
-fn texture_size(width: u32, height: u32) -> u64 {
-    (width * height * U32_SIZE) as u64
 }
 
 #[cfg(test)]
