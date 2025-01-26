@@ -140,8 +140,7 @@ impl Component for CropPageModel {
     ) {
         match message {
             CropPageMsg::Reset => {
-                self.orientation.angle = 0.0;
-                self.orientation.mirrored = false;
+                self.orientation.reset();
                 self.crop_mode = CropMode::Free;
 
                 widgets.crop_mode_row.set_selected(0);
@@ -171,20 +170,19 @@ impl Component for CropPageModel {
             }
             CropPageMsg::StraightenEnd => sender.output(CropPageOutput::StraightenEnd).unwrap(),
             CropPageMsg::RotateRight90 => {
-                self.orientation.angle = (self.orientation.angle + 90.0) % 360.0;
+                self.orientation.rotate_90_clockwise();
                 sender
                     .output(CropPageOutput::OrientVideo(self.orientation))
                     .unwrap()
             }
             CropPageMsg::FlipHorizontally => {
-                self.orientation.flip_mirrored();
+                self.orientation.flip_horizontally();
                 sender
                     .output(CropPageOutput::OrientVideo(self.orientation))
                     .unwrap()
             }
             CropPageMsg::FlipVertically => {
-                self.orientation.angle = (self.orientation.angle + 180.0) % 360.0;
-                self.orientation.flip_mirrored();
+                self.orientation.flip_vertically();
 
                 sender
                     .output(CropPageOutput::OrientVideo(self.orientation))

@@ -19,6 +19,11 @@ impl Orientation {
         }
     }
 
+    pub fn reset(&mut self) {
+        self.mirrored = false;
+        self.angle = 0f32;
+    }
+
     pub fn absolute_angle(&self) -> f32 {
         (self.base_angle + self.angle) % 360.0
     }
@@ -48,7 +53,7 @@ impl Orientation {
         }
     }
 
-    pub fn flip_mirrored(&mut self) {
+    fn flip_mirrored(&mut self) {
         self.mirrored = !self.mirrored;
     }
 
@@ -58,6 +63,20 @@ impl Orientation {
         } else {
             (width, height)
         }
+    }
+
+    pub fn rotate_90_clockwise(&mut self) {
+        self.angle = (self.angle + 90.0) % 360.0;
+    }
+
+    pub fn flip_horizontally(&mut self) {
+        // fixme: if base angle is 90 or 180 flip vertically
+        self.flip_mirrored();
+    }
+
+    pub fn flip_vertically(&mut self) {
+        self.angle = (self.angle + 180.0) % 360.0;
+        self.flip_mirrored();
     }
 }
 

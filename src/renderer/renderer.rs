@@ -18,9 +18,7 @@ pub static U32_SIZE: u32 = size_of::<u32>() as u32;
 pub struct Renderer {
     device: wgpu::Device,
     queue: wgpu::Queue,
-    output_dimensions: (u32, u32),
-    // todo: use orientation from frame position
-    orientation: Orientation,
+    output_dimensions: (u32, u32), //todo: change to using framesize
     frame_position: FramePosition,
     effect_parameters: EffectParameters,
     video_frame_texture: RefCell<texture::Texture>,
@@ -179,7 +177,9 @@ impl Renderer {
 
         let output_dimensions = (512, 288);
 
-        let frame_position = FramePosition::new();
+        let mut frame_position = FramePosition::new();
+        frame_position.original_frame_size =
+            FrameSize::new(output_dimensions.0, output_dimensions.1);
 
         let (
             positioned_frame_buffer,
@@ -239,7 +239,6 @@ impl Renderer {
             device,
             queue,
             output_dimensions,
-            orientation: Orientation::default(),
             frame_position,
             effect_parameters,
             video_frame_texture: RefCell::new(texture),
@@ -445,9 +444,10 @@ impl Renderer {
             texture::Texture::new_for_size(width, height, &self.device, "video frame texture")
                 .unwrap(),
         );
+        self.frame_position.original_frame_size = FrameSize::new(width, height);
     }
 
-    fn update_output_texture_size(&mut self, width: u32, height: u32) {
+    fn update_buffers_for_output_size(&mut self, width: u32, height: u32) {
         self.update_render_target(width, height);
         self.output_dimensions = (width, height);
     }
@@ -629,27 +629,21 @@ impl Renderer {
     pub fn update_output_resolution(&mut self, width: u32, height: u32) {
         // need to handle width and height when base orientation is non-zero as input width + heights
         // are relative to the sample/frame which is always 0deg.
-        let (w, h) = self.orientation.oriented_size(width, height);
+        let (w, h) = self.frame_position.orientation.oriented_size(width, height);
         println!("output: {w}x{h}");
-        self.update_output_texture_size(w, h);
+        self.update_buffers_for_output_size(w, h);
     }
 
     pub fn orient(&mut self, orientation: Orientation) {
-        // fixme: update the frame position uniform buffer
-        if self.orientation.is_width_flipped() != orientation.is_width_flipped() {
-            self.update_output_texture_size(self.output_dimensions.1, self.output_dimensions.0);
-        }
-
-        self.orientation = orientation;
+        self.frame_position.orientation = orientation;
+        let size = self.frame_position.positioned_frame_size();
+        self.update_buffers_for_output_size(size.width, size.height);
     }
 
     pub fn position_frame(&mut self, frame_position: FramePosition) {
         self.frame_position = frame_position;
-
         let output_size = self.frame_position.positioned_frame_size();
-        self.update_output_texture_size(output_size.width, output_size.height);
-
-        self.orientation = self.frame_position.orientation;
+        self.update_buffers_for_output_size(output_size.width, output_size.height);
     }
 }
 
@@ -671,14 +665,14 @@ mod tests {
         let img = image::open(IMG_TEST_LANDSCAPE).unwrap();
         let frame_position = FramePosition {
             original_frame_size: FrameSize::new(img.width(), img.height()),
-            crop_edges: [200, 100, 100, 100],
+            crop_edges: [0, 0, 0, 0],
             translate: [0, 0],
             orientation: Orientation {
-                angle: 0.0,
+                angle: 180.0,
                 base_angle: 0.0,
-                mirrored: false,
+                mirrored: true,
             },
-            rotation_radians: 0.72,
+            rotation_radians: 0.0,
         };
 
         let mut effects = EffectParameters::new();

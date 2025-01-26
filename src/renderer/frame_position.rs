@@ -60,12 +60,14 @@ impl FramePosition {
 
     pub fn positioned_frame_size(&self) -> FrameSize {
         // todo: get target output frame size and do math on that.
-        let crop_width = self.original_frame_size.width - (self.crop_edges[0] + self.crop_edges[2]);
-        let crop_height =
-            self.original_frame_size.height - (self.crop_edges[1] + self.crop_edges[3]);
-        let (width, height) = self.orientation.oriented_size(crop_width, crop_height);
+        let (width, height) = self.orientation.oriented_size(
+            self.original_frame_size.width,
+            self.original_frame_size.height,
+        );
+        let crop_width = width - (self.crop_edges[0] + self.crop_edges[2]);
+        let crop_height = height - (self.crop_edges[1] + self.crop_edges[3]);
 
-        FrameSize::new(width, height)
+        FrameSize::new(crop_width, crop_height)
     }
 }
 
