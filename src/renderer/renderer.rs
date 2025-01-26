@@ -671,14 +671,14 @@ mod tests {
         let img = image::open(IMG_TEST_LANDSCAPE).unwrap();
         let frame_position = FramePosition {
             original_frame_size: FrameSize::new(img.width(), img.height()),
-            crop_edges: [0, 0, 0, 0],
-            translate: [-100, -50],
+            crop_edges: [200, 100, 100, 100],
+            translate: [0, 0],
             orientation: Orientation {
                 angle: 0.0,
                 base_angle: 0.0,
                 mirrored: false,
             },
-            rotation_radians: 0.0,
+            rotation_radians: 0.72,
         };
 
         let mut effects = EffectParameters::new();
@@ -687,7 +687,7 @@ mod tests {
         r.upload_new_image(&img);
         r.position_frame(frame_position);
         // r.update_output_resolution((img.width() -100)/ 2, (img.height() - 50) / 2);
-        r.update_output_resolution((img.width() - 100), (img.height() - 50));
+        // r.update_output_resolution((img.width() - 100), (img.height() - 50));
         // r.update_effects(effects);
 
         let texture = r.render_frame().await;

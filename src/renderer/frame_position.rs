@@ -5,7 +5,6 @@ use wgpu::util::DeviceExt;
 
 #[derive(ShaderType)]
 pub struct FramePositionUniform {
-    crop_edges: mint::Vector4<u32>,
     translate: mint::Vector2<i32>,
     scale: mint::Vector2<f32>,
     rotation: f32,
@@ -35,13 +34,16 @@ impl FramePosition {
 
     pub fn buffer(&self, device: &wgpu::Device) -> wgpu::Buffer {
         let scale = mint::Vector2::from([1.0, 1.0]);
+        let translate = mint::Vector2::from([
+            self.translate[0] - self.crop_edges[0] as i32,
+            self.translate[1] - self.crop_edges[1] as i32,
+        ]);
 
         let uniform = FramePositionUniform {
             rotation: self.rotation_radians,
             orientation: self.orientation.absolute_angle(),
             mirrored: if self.orientation.mirrored { 1 } else { 0 },
-            crop_edges: mint::Vector4::from(self.crop_edges),
-            translate: mint::Vector2::from(self.translate),
+            translate,
             scale,
         };
 

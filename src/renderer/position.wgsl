@@ -1,5 +1,4 @@
 struct PositionUniform {
-    crop_edges: vec4u,
     translate: vec2i,
     scale: vec2f,
     rotation: f32,
