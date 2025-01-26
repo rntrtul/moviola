@@ -176,9 +176,7 @@ impl Renderer {
         let texture = texture::Texture::new_for_size(1, 1, &device, "").unwrap();
 
         let output_size = FrameSize::new(512, 288);
-
-        let mut frame_position = FramePosition::new();
-        frame_position.original_frame_size = output_size;
+        let frame_position = FramePosition::new(output_size);
 
         let (
             positioned_frame_buffer,
@@ -444,6 +442,7 @@ impl Renderer {
     fn update_buffers_for_output_size(&mut self, output_frame_size: FrameSize) {
         self.update_render_target(output_frame_size);
         self.output_size = output_frame_size;
+        self.frame_position.set_output_size(output_frame_size);
     }
 
     fn sample_to_texture(&self, sample: &Sample) {
@@ -624,7 +623,9 @@ impl Renderer {
         // need to handle width and height when base orientation is non-zero as input width + heights
         // are relative to the sample/frame which is always 0deg.
         let (w, h) = self.frame_position.orientation.oriented_size(width, height);
-        self.update_buffers_for_output_size(FrameSize::new(w, h));
+        let size = FrameSize::new(w, h);
+        self.frame_position.set_output_size(size);
+        self.update_buffers_for_output_size(size);
     }
 
     pub fn orient(&mut self, orientation: Orientation) {
@@ -652,16 +653,12 @@ mod tests {
         let mut r = Renderer::new(sender).await;
 
         let img = image::open(IMG_TEST_LANDSCAPE).unwrap();
-        let frame_position = FramePosition {
-            original_frame_size: FrameSize::new(img.width(), img.height()),
-            crop_edges: [0, 0, 0, 0],
-            translate: [0, 0],
-            orientation: Orientation {
-                angle: 180.0,
-                base_angle: 0.0,
-                mirrored: true,
-            },
-            rotation_radians: 0.0,
+        let mut frame_position = FramePosition::new(FrameSize::new(img.width(), img.height()));
+        frame_position.set_output_size(FrameSize::new(img.width() / 2, img.height() / 2));
+        frame_position.orientation = Orientation {
+            angle: 00.0,
+            base_angle: 0.0,
+            mirrored: false,
         };
 
         let mut effects = EffectParameters::new();
@@ -669,7 +666,7 @@ mod tests {
 
         r.upload_new_image(&img);
         r.position_frame(frame_position);
-        // r.update_output_resolution((img.width() -100)/ 2, (img.height() - 50) / 2);
+        // r.update_output_resolution((img.width()) / 2, (img.height()) / 2);
         // r.update_output_resolution((img.width() - 100), (img.height() - 50));
         // r.update_effects(effects);
 

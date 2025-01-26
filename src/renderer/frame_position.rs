@@ -16,35 +16,38 @@ pub struct FramePositionUniform {
 pub struct FramePosition {
     pub(crate) crop_edges: [u32; 4],
     pub(crate) translate: [i32; 2],
+    pub(crate) scale: [f32; 2],
     pub(crate) orientation: Orientation,
-    pub(crate) rotation_radians: f32,
+    pub(crate) straigthen_angle: f32,
     pub(crate) original_frame_size: FrameSize,
+    output_frame_size: FrameSize,
 }
 
 impl FramePosition {
-    pub fn new() -> Self {
+    pub fn new(frame_size: FrameSize) -> Self {
         Self {
             crop_edges: [0; 4],
             translate: [0; 2],
+            scale: [1.0; 2],
             orientation: Orientation::default(),
-            rotation_radians: 0.0,
-            original_frame_size: FrameSize::new(0, 0),
+            straigthen_angle: 0.0,
+            original_frame_size: frame_size,
+            output_frame_size: frame_size,
         }
     }
 
     pub fn buffer(&self, device: &wgpu::Device) -> wgpu::Buffer {
-        let scale = mint::Vector2::from([1.0, 1.0]);
         let translate = mint::Vector2::from([
             self.translate[0] - self.crop_edges[0] as i32,
             self.translate[1] - self.crop_edges[1] as i32,
         ]);
 
         let uniform = FramePositionUniform {
-            rotation: self.rotation_radians,
+            rotation: self.straigthen_angle,
             orientation: self.orientation.absolute_angle(),
             mirrored: if self.orientation.mirrored { 1 } else { 0 },
             translate,
-            scale,
+            scale: mint::Vector2::from(self.scale),
         };
 
         let mut buffer = UniformBuffer::new(Vec::<u8>::new());
@@ -58,16 +61,22 @@ impl FramePosition {
         })
     }
 
-    pub fn positioned_frame_size(&self) -> FrameSize {
-        // todo: get target output frame size and do math on that.
-        let (width, height) = self.orientation.oriented_size(
-            self.original_frame_size.width,
-            self.original_frame_size.height,
-        );
-        let crop_width = width - (self.crop_edges[0] + self.crop_edges[2]);
-        let crop_height = height - (self.crop_edges[1] + self.crop_edges[3]);
+    pub fn set_output_size(&mut self, output_size: FrameSize) {
+        self.scale = [
+            self.original_frame_size.width as f32 / output_size.width as f32,
+            self.original_frame_size.height as f32 / output_size.height as f32,
+        ];
+        self.output_frame_size = output_size;
+    }
 
-        FrameSize::new(crop_width, crop_height)
+    pub fn positioned_frame_size(&self) -> FrameSize {
+        let (mut width, mut height) = self
+            .orientation
+            .oriented_size(self.output_frame_size.width, self.output_frame_size.height);
+        width = width - (self.crop_edges[0] + self.crop_edges[2]);
+        height = height - (self.crop_edges[1] + self.crop_edges[3]);
+
+        FrameSize::new(width, height)
     }
 }
 
