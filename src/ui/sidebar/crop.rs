@@ -176,13 +176,13 @@ impl Component for CropPageModel {
                     .unwrap()
             }
             CropPageMsg::FlipHorizontally => {
-                self.orientation.flip_horizontally();
+                self.orientation.mirror_horizontally();
                 sender
                     .output(CropPageOutput::OrientVideo(self.orientation))
                     .unwrap()
             }
             CropPageMsg::FlipVertically => {
-                self.orientation.flip_vertically();
+                self.orientation.mirror_vertically();
 
                 sender
                     .output(CropPageOutput::OrientVideo(self.orientation))

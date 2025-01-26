@@ -32,6 +32,10 @@ impl Orientation {
         self.absolute_angle() == 90.0 || self.absolute_angle() == 270.0
     }
 
+    pub fn is_base_width_flipped(&self) -> bool {
+        self.base_angle == 90.0 || self.base_angle == 270.0
+    }
+
     pub fn to_gst_video_orientation(&self) -> VideoOrientationMethod {
         // only using angle since base angle encoded in video metadata
         if self.mirrored {
@@ -69,14 +73,29 @@ impl Orientation {
         self.angle = (self.angle + 90.0) % 360.0;
     }
 
-    pub fn flip_horizontally(&mut self) {
-        // fixme: if base angle is 90 or 180 flip vertically
+    fn flip_horizontally(&mut self) {
         self.flip_mirrored();
     }
 
-    pub fn flip_vertically(&mut self) {
+    fn flip_vertical(&mut self) {
         self.angle = (self.angle + 180.0) % 360.0;
         self.flip_mirrored();
+    }
+
+    pub fn mirror_horizontally(&mut self) {
+        if self.is_base_width_flipped() {
+            self.flip_vertical();
+        } else {
+            self.flip_horizontally();
+        }
+    }
+
+    pub fn mirror_vertically(&mut self) {
+        if self.is_base_width_flipped() {
+            self.flip_horizontally();
+        } else {
+            self.flip_mirrored();
+        }
     }
 }
 
