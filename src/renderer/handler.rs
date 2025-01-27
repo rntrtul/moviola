@@ -39,14 +39,21 @@ fn render_frame(
     renderer: Arc<Mutex<Renderer>>,
     render_queued: Arc<AtomicBool>,
     render_cmd_sender: mpsc::Sender<RenderCmd>,
+    timer_cmd_sender: mpsc::Sender<TimerCmd>,
 ) {
     tokio::spawn(async move {
         let tex;
         {
             let mut renderer = renderer.lock().await;
             tex = renderer.render_frame().await;
+            timer_cmd_sender
+                .send(TimerCmd::Stop(TimerEvent::Renderer, Instant::now()))
+                .unwrap();
         }
         sender.send(tex).unwrap();
+        timer_cmd_sender
+            .send(TimerCmd::Start(TimerEvent::Transmission, Instant::now()))
+            .unwrap();
 
         if render_queued.load(std::sync::atomic::Ordering::Relaxed) {
             render_cmd_sender.send(RenderCmd::RenderFrame).unwrap();
@@ -85,7 +92,7 @@ async fn render_loop(
     timer_sender: mpsc::Sender<TimerCmd>,
     cmd_recv: mpsc::Receiver<RenderCmd>,
     renderer_cmd_sender: mpsc::Sender<RenderCmd>,
-    render_mode: RenderMode,
+    inital_render_mode: RenderMode,
 ) {
     let renderer = Arc::new(Mutex::new(Renderer::new(timer_sender.clone()).await));
 
@@ -93,7 +100,7 @@ async fn render_loop(
     let mut queued_effect_params: Option<EffectParameters> = None;
     let mut queued_output_resolution: Option<(u32, u32)> = None;
     let mut queued_orientation: Option<Orientation> = None;
-    let mut render_mode = render_mode;
+    let mut render_mode = inital_render_mode;
 
     let mut samples: VecDeque<gst::Sample> = VecDeque::with_capacity(1);
     let render_queued = Arc::new(AtomicBool::new(false));
@@ -137,6 +144,7 @@ async fn render_loop(
                         renderer.clone(),
                         render_queued.clone(),
                         renderer_cmd_sender.clone(),
+                        timer_sender.clone(),
                     );
                     frames_rendered += 1;
                 } else {
@@ -174,6 +182,7 @@ async fn render_loop(
                         renderer.clone(),
                         render_queued.clone(),
                         renderer_cmd_sender.clone(),
+                        timer_sender.clone(),
                     );
                     frames_rendered += 1;
                 } else {

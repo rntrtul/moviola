@@ -1,13 +1,15 @@
 use std::collections::{HashMap, VecDeque};
 use std::time::{Duration, Instant};
 
-static SAMPLES_FOR_AVG: u32 = 128;
+static SAMPLES_FOR_AVG: u32 = 1280;
 
-#[derive(Clone, Copy, Eq, Hash, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum TimerEvent {
     FrameTime,
     BuffMap,
     TextureCreate,
+    Transmission,
+    Renderer,
 }
 
 impl TimerEvent {
@@ -16,6 +18,8 @@ impl TimerEvent {
             TimerEvent::FrameTime => "Frame time",
             TimerEvent::BuffMap => "buffer map",
             TimerEvent::TextureCreate => "gdk texture",
+            TimerEvent::Transmission => "transmission to preview",
+            TimerEvent::Renderer => "renderer",
         }
     }
 }
@@ -63,6 +67,7 @@ struct InFlightTimer {
 }
 
 impl InFlightTimer {
+    // todo: add function to drop inflight timers
     pub fn new() -> Self {
         Self {
             avg: RollingAverage::new(SAMPLES_FOR_AVG),
@@ -243,36 +248,33 @@ impl GpuTimer {
 }
 
 pub struct Timer {
-    in_flight_times: HashMap<TimerEvent, InFlightTimer>,
+    timers: HashMap<TimerEvent, InFlightTimer>,
 }
 
 impl Timer {
     pub fn new() -> Self {
         Self {
-            in_flight_times: HashMap::new(),
+            timers: HashMap::new(),
         }
     }
 
     pub fn reset(&mut self) {
-        self.in_flight_times.clear();
+        self.timers.clear();
     }
 
     pub fn start_time(&mut self, event: TimerEvent, start: Instant) {
-        let timer = self
-            .in_flight_times
-            .entry(event)
-            .or_insert(InFlightTimer::new());
+        let timer = self.timers.entry(event).or_insert(InFlightTimer::new());
         timer.start_time(start);
     }
 
     pub fn stop_time(&mut self, event: TimerEvent, stop: Instant) {
-        self.in_flight_times
+        self.timers
             .entry(event)
             .and_modify(|timer| timer.stop_time(stop));
     }
 
     fn append_event_to_msg(&self, msg: &mut String, event: TimerEvent) {
-        if let Some(timer) = self.in_flight_times.get(&event) {
+        if let Some(timer) = self.timers.get(&event) {
             msg.push_str(&format!("{}: {:.2}ms | ", event.label(), timer.avg()));
         }
     }
@@ -281,8 +283,10 @@ impl Timer {
         let mut msg = "".to_string();
 
         self.append_event_to_msg(&mut msg, TimerEvent::FrameTime);
+        self.append_event_to_msg(&mut msg, TimerEvent::Renderer);
         self.append_event_to_msg(&mut msg, TimerEvent::BuffMap);
         self.append_event_to_msg(&mut msg, TimerEvent::TextureCreate);
+        self.append_event_to_msg(&mut msg, TimerEvent::Transmission);
 
         if let Some(gpu_time) = gpu_time {
             msg.push_str(&format!("[{}]", gpu_time));

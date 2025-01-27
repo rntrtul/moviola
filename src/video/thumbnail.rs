@@ -147,7 +147,7 @@ impl Thumbnail {
         let duration = pipeline.query_duration::<ClockTime>().unwrap();
         // + 1 so first and last frame not chosen
         let step = duration.mseconds() / (NUM_THUMBNAILS + 1);
-        trace!("thumbnail is stepping at {step} second intervals");
+        trace!("thumbnail is stepping at {step}ms intervals");
 
         for i in 0..NUM_THUMBNAILS {
             let timestamp =

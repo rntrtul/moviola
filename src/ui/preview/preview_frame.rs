@@ -104,8 +104,12 @@ impl Component for PreviewFrameModel {
             }
             PreviewFrameMsg::FrameRendered(texture) => {
                 self.preview.update_texture(texture);
+                let now = Instant::now();
                 self.timer_sender
-                    .send(TimerCmd::Stop(TimerEvent::FrameTime, Instant::now()))
+                    .send(TimerCmd::Stop(TimerEvent::FrameTime, now))
+                    .unwrap();
+                self.timer_sender
+                    .send(TimerCmd::Stop(TimerEvent::Transmission, now))
                     .unwrap();
             }
             PreviewFrameMsg::Orient(orientation) => self.preview.set_orientation(orientation),

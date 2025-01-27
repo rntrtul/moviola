@@ -572,6 +572,9 @@ impl Renderer {
     }
 
     pub fn upload_new_sample(&mut self, sample: &Sample) {
+        self.timer_sender
+            .send(TimerCmd::Start(TimerEvent::Renderer, Instant::now()))
+            .unwrap();
         let caps = sample.caps().expect("sample without caps");
         let info = gst_video::VideoInfo::from_caps(caps).expect("Failed to parse caps");
 
