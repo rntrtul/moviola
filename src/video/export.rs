@@ -1,18 +1,18 @@
+use crate::app::{App, AppMsg};
+use crate::ui::sidebar::{ControlsExportSettings, OutputContainerSettings};
+use crate::video::metadata::VideoInfo;
+use crate::video::player::Player;
+use gst::prelude::{Cast, ElementExt, ElementExtManual, GstBinExtManual, GstObjectExt, PadExt};
+use gst::{ClockTime, State};
+use gst_app::AppSrc;
+use gst_pbutils::prelude::EncodingProfileBuilder;
+use gst_pbutils::EncodingContainerProfile;
+use relm4::gtk::gdk;
+use relm4::gtk::prelude::TextureExtManual;
+use relm4::ComponentSender;
+use std::sync::mpsc;
 use std::thread;
 use std::time::SystemTime;
-
-use ges::gst_pbutils::EncodingContainerProfile;
-use ges::prelude::{EncodingProfileBuilder, GESContainerExt, GESTrackExt, LayerExt};
-use ges::prelude::{GESPipelineExt, TimelineElementExt, TimelineExt};
-use ges::{gst_pbutils, PipelineFlags};
-use gst::prelude::{ElementExt, GstObjectExt};
-use gst::{ClockTime, State};
-use relm4::gtk::prelude::ToValue;
-use relm4::ComponentSender;
-
-use crate::app::{App, AppMsg};
-use crate::ui::sidebar::{ControlsExportSettings, CropExportSettings, OutputContainerSettings};
-use crate::video::player::Player;
 
 #[derive(Debug)]
 pub struct TimelineExportSettings {
@@ -21,170 +21,175 @@ pub struct TimelineExportSettings {
 }
 
 impl Player {
-    fn build_container_profile(
-        &self,
-        container: OutputContainerSettings,
-    ) -> EncodingContainerProfile {
-        let container_caps = container.container.caps_builder().build();
-        let video_caps = container.video_codec.caps_builder().build();
-
-        let video_profile = gst_pbutils::EncodingVideoProfile::builder(&video_caps)
-            .name("video_profile")
-            .build();
-        let profile_builder = EncodingContainerProfile::builder(&container_caps)
-            .name("Container")
-            .add_profile(video_profile);
-
-        if container.no_audio {
-            profile_builder.build()
-        } else {
-            let audio_stream =
-                &self.info.container_info.audio_streams[container.audio_stream_idx as usize];
-
-            let audio_caps = audio_stream.codec.caps_builder().build();
-            let audio_profile = gst_pbutils::EncodingAudioProfile::builder(&audio_caps)
-                .name("audio_profile")
-                .build();
-
-            profile_builder.add_profile(audio_profile).build()
-        }
-    }
-
     pub fn export_video(
-        &self,
-        source_uri: String,
+        &mut self,
         save_uri: String,
         timeline_export_settings: TimelineExportSettings,
         controls_export_settings: ControlsExportSettings,
-        crop_export_settings: CropExportSettings,
         app_sender: ComponentSender<App>,
+        texture_receiver: mpsc::Receiver<gdk::Texture>,
     ) {
-        let now = SystemTime::now();
-        // todo: set bitrate to original video, to keep file size smaller at min
-        self.playbin.set_state(State::Null).unwrap();
+        self.set_is_playing(false);
 
-        let container_profile = self.build_container_profile(controls_export_settings.container);
-        let orientation = crop_export_settings.orientation;
-        let bounding_box = crop_export_settings.bounding_box;
+        // todo: call cleanup code for pipelines and setting seek correctly
+        export_video(
+            save_uri,
+            self.info.clone(),
+            controls_export_settings,
+            app_sender,
+            texture_receiver,
+        );
+        self.set_is_playing(true);
+    }
+}
 
-        let (native_width, native_height) = (self.info.width as i32, self.info.height as i32);
+fn build_container_profile(
+    info: &VideoInfo,
+    container: OutputContainerSettings,
+) -> EncodingContainerProfile {
+    let container_caps = container.container.caps_builder().build();
+    let video_caps = container.video_codec.caps_builder().build();
 
-        // Need to translate cropped regions top left corner to be at 0,0 (top left of new video),
-        // so we translate using negative coordinates of top left corner.
-        let pos_x = -(bounding_box.left_x * native_width as f32) as i32;
-        let pos_y = -(bounding_box.top_y * native_height as f32) as i32;
+    let video_profile = gst_pbutils::EncodingVideoProfile::builder(&video_caps)
+        .name("video_profile")
+        .build();
+    let container_builder = EncodingContainerProfile::builder(&container_caps)
+        .name("Container")
+        .add_profile(video_profile);
 
-        let (transformed_width, transformed_height) = if orientation.is_width_flipped() {
-            (native_height, native_width)
-        } else {
-            (native_width, native_height)
-        };
+    if container.no_audio {
+        container_builder.build()
+    } else {
+        let audio_stream = &info.container_info.audio_streams[container.audio_stream_idx as usize];
 
-        let output_width =
-            (transformed_width as f32 * (bounding_box.right_x - bounding_box.left_x)) as i32;
-        let output_height =
-            (transformed_height as f32 * (bounding_box.bottom_y - bounding_box.top_y)) as i32;
+        let audio_caps = audio_stream.codec.caps_builder().build();
+        let audio_profile = gst_pbutils::EncodingAudioProfile::builder(&audio_caps)
+            .name("audio_profile")
+            .build();
 
-        thread::spawn(move || {
-            // fixme: some videos are not exporting
-            let timeline = ges::Timeline::new_audio_video();
-            let layer = timeline.append_layer();
-            let pipeline = ges::Pipeline::new();
-            pipeline.set_timeline(&timeline).unwrap();
+        container_builder.add_profile(audio_profile).build()
+    }
+}
 
-            // clip needs to be aquired in seperate thread from playbin
-            // ges does not support selection
-            let clip = ges::UriClip::new(source_uri.as_str()).expect("Failed to create clip");
-            layer.add_clip(&clip).unwrap();
+fn export_video(
+    save_uri: String,
+    info: VideoInfo,
+    encoding_settings: ControlsExportSettings,
+    app_sender: ComponentSender<App>,
+    texture_receiver: mpsc::Receiver<gdk::Texture>,
+) {
+    let now = SystemTime::now();
+    let gst_video_info =
+        gst_video::VideoInfo::builder(gst_video::VideoFormat::Rgba, info.width, info.height)
+            .fps(info.framerate.clone())
+            .build()
+            .expect("Couldn't build video info");
+    let container_profile = build_container_profile(&info, encoding_settings.container);
 
-            let tracks = timeline.tracks();
-            let track = tracks.first().expect("No first track");
+    let pipeline = gst::Pipeline::default();
 
-            let caps = gst::Caps::builder("video/x-raw")
-                .field("width", output_width)
-                .field("height", output_height)
-                .field("pixel-aspect-ratio", gst::Fraction::new(1, 1))
-                .build();
-            track.update_restriction_caps(&caps);
+    let app_src = AppSrc::builder()
+        .caps(&gst_video_info.to_caps().unwrap())
+        .format(gst::Format::Time)
+        .build();
 
-            track.elements().into_iter().for_each(|track_element| {
-                // fixme: squished video when direction is changed. auto frame positioner kicks in.
-                track_element
-                    .set_child_property(
-                        "video-direction",
-                        &(orientation.to_gst_video_orientation().to_value()),
-                    )
-                    .unwrap();
-                track_element
-                    .set_child_property("width", &(native_width.to_value()))
-                    .unwrap();
-                track_element
-                    .set_child_property("height", &(native_height.to_value()))
-                    .unwrap();
-                track_element
-                    .set_child_property("posx", &(pos_x.to_value()))
-                    .unwrap();
-                track_element
-                    .set_child_property("posy", &(pos_y.to_value()))
-                    .unwrap();
-            });
+    let encode_bin = gst::ElementFactory::make("encodebin")
+        .property("profile", &container_profile)
+        .build()
+        .unwrap();
+    let file_sink = gst::ElementFactory::make("filesink")
+        .property("location", save_uri.as_str())
+        .build()
+        .unwrap();
 
-            pipeline
-                .set_render_settings(&save_uri.as_str(), &container_profile)
-                .expect("unable to set render settings");
+    pipeline
+        .add_many([app_src.upcast_ref(), &encode_bin, &file_sink])
+        .expect("Could not add elements to pipeline");
 
-            if !controls_export_settings.effect_parameters.is_default() {
-                let params = &controls_export_settings.effect_parameters;
-                // videobalance expects doubles
-                let color_balance_effect = ges::Effect::new(
-                    format! {"videobalance saturation={:.2} contrast={:.2} brightness={:.2}",
-                             params.saturation,
-                             params.contrast,
-                             params.brigthness,
-                    }
-                    .as_str(),
-                )
-                .unwrap();
-                clip.add(&color_balance_effect)
-                    .expect("could not add color balance");
-            }
+    gst::Element::link_many([&encode_bin, &file_sink]).unwrap();
 
-            //todo: use smart_render? (only when using original container info?)
-            let render_mode = PipelineFlags::RENDER;
+    let encode_video_sink = encode_bin.request_pad_simple("video_%u").unwrap();
+    let src_pad = &app_src.static_pad("src").expect("no src pad for appsrc");
+    src_pad.link(&encode_video_sink).unwrap();
 
-            pipeline
-                .set_mode(render_mode)
-                .expect("failed to set to render");
+    let mut frame_count = 0;
+    let frame_spacing = 1.0 / (info.framerate.numer() as f64 / info.framerate.denom() as f64);
 
-            clip.set_inpoint(timeline_export_settings.start);
-            clip.set_duration(timeline_export_settings.duration);
+    app_src.set_callbacks(
+        gst_app::AppSrcCallbacks::builder()
+            .need_data(move |appsrc, _| {
+                let Ok(texture) = texture_receiver.recv() else {
+                    let _ = appsrc.end_of_stream();
+                    return;
+                };
+                let timer = SystemTime::now();
+                let mut frame = vec![0u8; (info.width * info.height * 4) as usize];
+                texture.download(&mut frame, gst_video_info.stride()[0] as usize);
 
-            pipeline.set_state(State::Playing).unwrap();
+                let mut buffer = gst::Buffer::with_size(gst_video_info.size()).unwrap();
+                {
+                    let buffer = buffer.get_mut().unwrap();
+                    buffer.set_pts(ClockTime::from_seconds_f64(
+                        frame_count as f64 * frame_spacing,
+                    ));
 
-            let bus = pipeline.bus().unwrap();
+                    let mut vframe =
+                        gst_video::VideoFrameRef::from_buffer_ref_writable(buffer, &gst_video_info)
+                            .unwrap();
 
-            for msg in bus.iter_timed(ClockTime::NONE) {
-                use gst::MessageView;
-
-                match msg.view() {
-                    MessageView::Eos(..) => {
-                        println!("Done? in {:?}", now.elapsed());
-                        break;
-                    }
-                    MessageView::Error(err) => {
-                        println!(
-                            "Error from {:?}: {} ({:?})",
-                            err.src().map(|s| s.path_string()),
-                            err.error(),
-                            err.debug()
-                        );
-                        break;
-                    }
-                    _ => (),
+                    vframe
+                        .plane_data_mut(0)
+                        .unwrap()
+                        .copy_from_slice(&frame[..]);
                 }
+
+                println!("did frame #{frame_count} in {:?}", timer.elapsed().unwrap());
+                frame_count += 1;
+                let _ = appsrc.push_buffer(buffer);
+            })
+            .build(),
+    );
+
+    pipeline.set_state(State::Playing).unwrap();
+
+    thread::spawn(move || {
+        let bus = pipeline.bus().unwrap();
+
+        for msg in bus.iter_timed(ClockTime::NONE) {
+            use gst::MessageView;
+
+            match msg.view() {
+                MessageView::Eos(..) => {
+                    println!("Done? in {:?}", now.elapsed());
+                    break;
+                }
+                MessageView::Error(err) => {
+                    println!(
+                        "Error from {:?}: {} ({:?})",
+                        err.src().map(|s| s.path_string()),
+                        err.error(),
+                        err.debug()
+                    );
+                    break;
+                }
+                _ => (),
             }
-            app_sender.input(AppMsg::ExportDone);
-            pipeline.set_state(State::Null).unwrap();
-        });
+        }
+        app_sender.input(AppMsg::ExportDone);
+        pipeline.set_state(State::Null).unwrap();
+    });
+}
+
+#[cfg(test)]
+mod tests {
+    // todo: figure out how to get around needing relm4 sender for app for player
+    #[test]
+    fn export_basic_video() {
+        // let (handler, texture_receiver) = RendererHandler::new(RenderMode::MostRecentFrame);
+        // let player = Rc::new(RefCell::new(Player::new(
+        //     sender.clone(),
+        //     handler.render_cmd_sender(),
+        //     handler.timer_cmd_sender(),
+        // )));
     }
 }

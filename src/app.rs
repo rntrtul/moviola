@@ -17,19 +17,21 @@ use relm4::{
 };
 use std::cell::RefCell;
 use std::rc::Rc;
+use std::sync::mpsc;
 
 pub(super) struct App {
     renderer: RendererHandler,
     preview_frame: Controller<PreviewFrameModel>,
     sidebar_panel: Controller<ControlsModel>,
     video_controls: Controller<VideoControlModel>,
+    player: Rc<RefCell<Player>>,
     show_video: bool,
     show_spinner: bool,
     video_selected: bool,
     video_is_loaded: bool,
     video_is_exporting: bool,
-    player: Rc<RefCell<Player>>,
     uri: Option<String>,
+    export_sender: Option<mpsc::Sender<gdk::Texture>>,
 }
 
 #[derive(Debug)]
@@ -114,7 +116,9 @@ impl App {
                 Ok(f) => f,
                 Err(_) => return,
             };
-            sender.input(AppMsg::ExportVideo(file.uri().to_string()));
+            sender.input(AppMsg::ExportVideo(
+                file.path().unwrap().to_str().unwrap().to_string(),
+            ));
         });
     }
 }
@@ -300,6 +304,7 @@ impl Component for App {
             video_is_exporting: false,
             player,
             uri: path,
+            export_sender: None,
         };
 
         let widgets = view_output!();
@@ -365,20 +370,22 @@ impl Component for App {
                 self.show_video = false;
                 self.show_spinner = true;
 
-                self.video_is_exporting = true;
                 let timeline_export_settings = self
                     .video_controls
                     .model()
                     .get_export_settings(self.player.clone());
 
+                let (tex_sender, receiver) = mpsc::channel();
+                self.export_sender = Some(tex_sender);
+
                 self.player.borrow_mut().export_video(
-                    self.uri.as_ref().unwrap().clone(),
                     save_uri,
                     timeline_export_settings,
                     self.sidebar_panel.model().export_settings(),
-                    self.preview_frame.model().export_settings(),
                     sender.clone(),
+                    receiver,
                 );
+                self.video_is_exporting = true;
             }
             AppMsg::ExportDone => {
                 self.video_is_exporting = false;
@@ -389,6 +396,7 @@ impl Component for App {
 
                 self.player.borrow_mut().reset_pipeline();
                 self.video_controls.emit(VideoControlMsg::Reset);
+                self.export_sender = None;
             }
             AppMsg::TogglePlayPauseRequested => {
                 self.video_controls.emit(VideoControlMsg::TogglePlayPause)
@@ -396,7 +404,14 @@ impl Component for App {
             AppMsg::Seek(timestamp) => self.player.borrow().seek(timestamp),
             AppMsg::TogglePlayPause => self.player.borrow_mut().toggle_play_plause(),
             AppMsg::ToggleMute => self.player.borrow_mut().toggle_mute(),
-            AppMsg::VideoFinished => self.player.borrow_mut().set_is_finished(),
+            AppMsg::VideoFinished => {
+                // todo: have seperate event for segment finished
+                if self.video_is_exporting {
+                    self.export_sender = None;
+                } else {
+                    self.player.borrow_mut().set_is_finished()
+                }
+            }
             AppMsg::Orient(orientation) => {
                 self.preview_frame
                     .emit(PreviewFrameMsg::Orient(orientation));
@@ -475,8 +490,13 @@ impl Component for App {
                 self.preview_frame.widget().set_visible(true);
             }
             AppCommandMsg::FrameRendered(texture) => {
-                self.preview_frame
-                    .emit(PreviewFrameMsg::FrameRendered(texture));
+                if self.video_is_exporting {
+                    let tex_sender = self.export_sender.as_ref().unwrap();
+                    tex_sender.send(texture).unwrap();
+                } else {
+                    self.preview_frame
+                        .emit(PreviewFrameMsg::FrameRendered(texture));
+                }
             }
             AppCommandMsg::InitWithvideo => {
                 sender.input(AppMsg::SetVideo(self.uri.as_ref().unwrap().clone()));

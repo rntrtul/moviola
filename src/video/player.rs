@@ -23,9 +23,9 @@ pub struct Player {
     pub(crate) pipeline_ready: bool,
     pub(crate) is_mute: bool,
     pub(crate) is_playing: bool,
-    is_finished: bool,
     pub(crate) playbin: gst::Element,
     pub(crate) info: VideoInfo,
+    is_finished: bool,
 }
 
 impl Player {
@@ -186,6 +186,7 @@ impl Player {
             ClockTime::ZERO,
         );
 
+        // todo: call seek directly
         self.playbin.send_event(seek);
     }
 

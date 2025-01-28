@@ -1,6 +1,6 @@
 use crate::ui::preview::bounding_box::HandleType;
 use crate::ui::preview::preview::Preview;
-use ges::subclass::prelude::ObjectSubclassExt;
+use gst::subclass::prelude::ObjectSubclassExt;
 use relm4::gtk::prelude::{GestureDragExt, WidgetExt};
 use relm4::gtk::subclass::prelude::ObjectSubclassIsExt;
 use relm4::gtk::{glib, graphene};

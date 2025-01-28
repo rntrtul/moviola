@@ -1,7 +1,7 @@
 use crate::video;
 use anyhow::Error;
 use fast_image_resize::{PixelType, ResizeAlg, ResizeOptions, Resizer};
-use ges::glib;
+use gst::glib;
 use gst::prelude::{Cast, ElementExt, ElementExtManual, GstBinExt, ObjectExt};
 use gst::{ClockTime, SeekFlags, State};
 use gst_app::AppSink;

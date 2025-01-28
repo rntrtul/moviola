@@ -1,6 +1,6 @@
 use crate::range::Range;
-use ges::glib;
-use ges::subclass::prelude::{ObjectImpl, ObjectSubclass};
+use gst::glib;
+use gst::subclass::prelude::{ObjectImpl, ObjectSubclass};
 use relm4::adw;
 use relm4::gtk::prelude::{SnapshotExt, WidgetExt};
 use relm4::gtk::subclass::prelude::{ObjectSubclassExt, ObjectSubclassIsExt};

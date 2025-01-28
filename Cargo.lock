@@ -921,40 +921,10 @@ dependencies = [
 ]
 
 [[package]]
-name = "gstreamer-editing-services"
-version = "0.23.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cdb678d96a0c701a62581cc3df77b3c59f92446011d7f722ef65020d306c867e"
-dependencies = [
- "gio",
- "glib",
- "gstreamer",
- "gstreamer-base",
- "gstreamer-editing-services-sys",
- "gstreamer-pbutils",
- "libc",
-]
-
-[[package]]
-name = "gstreamer-editing-services-sys"
-version = "0.23.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "48c8056de79d985ab95107118a6613440f8fcb8e1a172d8d44717df4cb447167"
-dependencies = [
- "gio-sys",
- "glib-sys",
- "gobject-sys",
- "gstreamer-pbutils-sys",
- "gstreamer-sys",
- "libc",
- "system-deps",
-]
-
-[[package]]
 name = "gstreamer-pbutils"
-version = "0.23.0"
+version = "0.23.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "05155dded8d67ecae23d22b9e8cad67e16b46f9f9fec161cabfda804716bba4c"
+checksum = "d18b3a69ff575dd9fa65c9e813815f9e83e4bab8b89bf6118adada58be343e74"
 dependencies = [
  "glib",
  "gstreamer",
@@ -962,7 +932,7 @@ dependencies = [
  "gstreamer-pbutils-sys",
  "gstreamer-video",
  "libc",
- "thiserror 1.0.69",
+ "thiserror 2.0.11",
 ]
 
 [[package]]
@@ -1313,7 +1283,7 @@ dependencies = [
  "glib-build-tools",
  "gstreamer",
  "gstreamer-app",
- "gstreamer-editing-services",
+ "gstreamer-pbutils",
  "gstreamer-video",
  "image",
  "mint",

@@ -2,7 +2,7 @@ use crate::geometry;
 use crate::geometry::{point_distance, Corner, CornerType, Rectangle};
 use crate::ui::preview::input::DragType;
 use crate::ui::preview::preview::Preview;
-use ges::subclass::prelude::ObjectSubclassExt;
+use gst::subclass::prelude::ObjectSubclassExt;
 use relm4::gtk::graphene::{Point, Rect};
 use relm4::gtk::prelude::{SnapshotExt, SnapshotExtManual, WidgetExt};
 use relm4::gtk::{gdk, gsk};
