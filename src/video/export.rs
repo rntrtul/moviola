@@ -2,13 +2,15 @@ use crate::app::{App, AppMsg};
 use crate::ui::sidebar::{ControlsExportSettings, OutputContainerSettings};
 use crate::video::metadata::VideoInfo;
 use crate::video::player::Player;
-use gst::prelude::{Cast, ElementExt, ElementExtManual, GstBinExtManual, GstObjectExt, PadExt};
+use gst::prelude::{
+    Cast, ElementExt, ElementExtManual, GstBinExtManual, GstObjectExt, ObjectExt, PadExt,
+};
 use gst::{ClockTime, State};
 use gst_app::AppSrc;
 use gst_pbutils::prelude::EncodingProfileBuilder;
 use gst_pbutils::EncodingContainerProfile;
 use relm4::gtk::gdk;
-use relm4::gtk::prelude::TextureExtManual;
+use relm4::gtk::prelude::{TextureExt, TextureExtManual};
 use relm4::ComponentSender;
 use std::sync::mpsc;
 use std::thread;
@@ -17,21 +19,26 @@ use std::time::SystemTime;
 #[derive(Debug)]
 pub struct TimelineExportSettings {
     pub start: ClockTime,
-    pub duration: ClockTime,
+    pub end: ClockTime,
 }
 
 impl Player {
     pub fn export_video(
         &mut self,
         save_uri: String,
-        timeline_export_settings: TimelineExportSettings,
+        timeline_settings: TimelineExportSettings,
         controls_export_settings: ControlsExportSettings,
         app_sender: ComponentSender<App>,
         texture_receiver: mpsc::Receiver<gdk::Texture>,
     ) {
         self.set_is_playing(false);
 
-        // todo: call cleanup code for pipelines and setting seek correctly
+        self.app_sink.set_property("sync", false);
+        self.set_is_mute(true);
+
+        println!("seeking to: {timeline_settings:?}");
+        self.seek_segment(timeline_settings.start, timeline_settings.end);
+
         export_video(
             save_uri,
             self.info.clone(),
@@ -39,6 +46,7 @@ impl Player {
             app_sender,
             texture_receiver,
         );
+
         self.set_is_playing(true);
     }
 }
@@ -56,6 +64,8 @@ fn build_container_profile(
     let container_builder = EncodingContainerProfile::builder(&container_caps)
         .name("Container")
         .add_profile(video_profile);
+
+    return container_builder.build();
 
     if container.no_audio {
         container_builder.build()
@@ -122,6 +132,7 @@ fn export_video(
                     let _ = appsrc.end_of_stream();
                     return;
                 };
+
                 let timer = SystemTime::now();
                 let mut frame = vec![0u8; (info.width * info.height * 4) as usize];
                 texture.download(&mut frame, gst_video_info.stride()[0] as usize);
@@ -142,8 +153,7 @@ fn export_video(
                         .unwrap()
                         .copy_from_slice(&frame[..]);
                 }
-
-                println!("did frame #{frame_count} in {:?}", timer.elapsed().unwrap());
+                // println!("did frame #{frame_count} in {:?}", timer.elapsed().unwrap());
                 frame_count += 1;
                 let _ = appsrc.push_buffer(buffer);
             })

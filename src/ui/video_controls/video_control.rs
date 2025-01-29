@@ -297,9 +297,8 @@ impl VideoControlModel {
 
         let start = ClockTime::from_mseconds((duration_mseconds * self.start) as u64);
         let end = ClockTime::from_mseconds((duration_mseconds * self.end) as u64);
-        let duration = end - start;
 
-        TimelineExportSettings { start, duration }
+        TimelineExportSettings { start, end }
     }
 
     fn remove_timeline_thumbnails(timeline: &gtk::Box) {

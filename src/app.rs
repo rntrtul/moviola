@@ -370,6 +370,11 @@ impl Component for App {
                 self.show_video = false;
                 self.show_spinner = true;
 
+                self.player.borrow_mut().set_is_playing(false);
+                self.renderer
+                    .send_render_cmd(RenderCmd::ChangeRenderMode(RenderMode::AllFrames));
+
+                // todo: set frame position with scaling of 1.0
                 let timeline_export_settings = self
                     .video_controls
                     .model()
@@ -397,6 +402,8 @@ impl Component for App {
                 self.player.borrow_mut().reset_pipeline();
                 self.video_controls.emit(VideoControlMsg::Reset);
                 self.export_sender = None;
+                self.renderer
+                    .send_render_cmd(RenderCmd::ChangeRenderMode(RenderMode::MostRecentFrame));
             }
             AppMsg::TogglePlayPauseRequested => {
                 self.video_controls.emit(VideoControlMsg::TogglePlayPause)

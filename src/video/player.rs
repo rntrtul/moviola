@@ -8,6 +8,7 @@ use crate::video::metadata::{
 use gst::glib::FlagsClass;
 use gst::prelude::{ElementExt, ElementExtManual, ObjectExt, PadExt};
 use gst::{Bus, ClockTime, FlowSuccess, SeekFlags, State};
+use gst_app::AppSink;
 use relm4::ComponentSender;
 use std::fmt::Debug;
 use std::sync::mpsc;
@@ -26,6 +27,7 @@ pub struct Player {
     pub(crate) playbin: gst::Element,
     pub(crate) info: VideoInfo,
     is_finished: bool,
+    pub(crate) app_sink: AppSink,
 }
 
 impl Player {
@@ -102,6 +104,7 @@ impl Player {
             is_finished: false,
             playbin,
             info: Default::default(),
+            app_sink,
         }
     }
 
@@ -133,6 +136,7 @@ impl Player {
 
     pub fn reset_pipeline(&mut self) {
         self.playbin.set_state(State::Null).unwrap();
+        self.app_sink.set_property("sync", true);
         self.is_playing = false;
         self.is_mute = false;
         self.pipeline_ready = false;
@@ -176,18 +180,22 @@ impl Player {
     }
 
     pub fn seek(&self, timestamp: ClockTime) {
-        let time = gst::GenericFormattedValue::from(timestamp);
-        let seek = gst::event::Seek::new(
-            1.0,
-            SeekFlags::FLUSH | SeekFlags::KEY_UNIT,
-            gst::SeekType::Set,
-            time,
-            gst::SeekType::End,
-            ClockTime::ZERO,
-        );
+        self.playbin
+            .seek_simple(SeekFlags::FLUSH | SeekFlags::KEY_UNIT, timestamp)
+            .unwrap();
+    }
 
-        // todo: call seek directly
-        self.playbin.send_event(seek);
+    pub fn seek_segment(&self, start: ClockTime, end: ClockTime) {
+        self.playbin
+            .seek(
+                1.0,
+                SeekFlags::FLUSH | SeekFlags::ACCURATE,
+                gst::SeekType::Set,
+                start,
+                gst::SeekType::Set,
+                end,
+            )
+            .expect("could not seek");
     }
 
     pub fn play_uri(&mut self, uri: String) {

@@ -102,6 +102,7 @@ impl VideoContainerInfo {
 }
 
 // todo: use trait to make string_list, from_string_list_index, to_string_list_index generic
+// fixme: add e-ac3 support
 impl AudioCodec {
     pub fn display(&self) -> &str {
         match self {
