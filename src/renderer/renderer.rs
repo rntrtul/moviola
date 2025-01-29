@@ -442,7 +442,6 @@ impl Renderer {
     fn update_buffers_for_output_size(&mut self, output_frame_size: FrameSize) {
         self.update_render_target(output_frame_size);
         self.output_size = output_frame_size;
-        self.frame_position.set_output_size(output_frame_size);
     }
 
     fn sample_to_texture(&self, sample: &Sample) {
@@ -627,19 +626,19 @@ impl Renderer {
         // are relative to the sample/frame which is always 0deg.
         let (w, h) = self.frame_position.orientation.oriented_size(width, height);
         let size = FrameSize::new(w, h);
-        self.frame_position.set_output_size(size);
+        self.frame_position.scale_for_output_size(size);
         self.update_buffers_for_output_size(size);
     }
 
     pub fn orient(&mut self, orientation: Orientation) {
         self.frame_position.orientation = orientation;
-        let size = self.frame_position.positioned_frame_size();
+        let size = self.frame_position.output_frame_size();
         self.update_buffers_for_output_size(size);
     }
 
     pub fn position_frame(&mut self, frame_position: FramePosition) {
         self.frame_position = frame_position;
-        let output_size = self.frame_position.positioned_frame_size();
+        let output_size = self.frame_position.output_frame_size();
         self.update_buffers_for_output_size(output_size);
     }
 }
@@ -657,20 +656,19 @@ mod tests {
 
         let img = image::open(IMG_TEST_LANDSCAPE).unwrap();
         let mut frame_position = FramePosition::new(FrameSize::new(img.width(), img.height()));
-        frame_position.set_output_size(FrameSize::new(img.width() / 2, img.height() / 2));
+        frame_position.scale_for_output_size(FrameSize::new(img.width() / 2, img.height() / 2));
         frame_position.orientation = Orientation {
-            angle: 00.0,
+            angle: 90.0,
             base_angle: 0.0,
             mirrored: false,
         };
+        frame_position.straigthen_angle = 31f32.to_radians();
 
         let mut effects = EffectParameters::new();
         effects.saturation = 1.2;
 
         r.upload_new_image(&img);
         r.position_frame(frame_position);
-        // r.update_output_resolution((img.width()) / 2, (img.height()) / 2);
-        // r.update_output_resolution((img.width() - 100), (img.height() - 50));
         // r.update_effects(effects);
 
         let texture = r.render_frame().await;

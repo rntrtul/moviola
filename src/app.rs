@@ -406,7 +406,7 @@ impl Component for App {
                     save_uri,
                     timeline_export_settings,
                     self.sidebar_panel.model().export_settings(),
-                    position.positioned_frame_size(),
+                    position.output_frame_size(),
                     sender.clone(),
                     receiver,
                 );

@@ -6,7 +6,7 @@ use wgpu::util::DeviceExt;
 #[derive(ShaderType)]
 pub struct FramePositionUniform {
     translate: mint::Vector2<i32>,
-    scale: mint::Vector2<f32>,
+    scale: f32,
     rotation: f32,
     orientation: f32,
     mirrored: u32,
@@ -17,11 +17,10 @@ pub struct FramePositionUniform {
 pub struct FramePosition {
     pub(crate) crop_edges: [u32; 4],
     pub(crate) translate: [i32; 2],
-    pub(crate) scale: [f32; 2],
+    pub(crate) scale: f32,
     pub(crate) orientation: Orientation,
     pub(crate) straigthen_angle: f32,
     pub(crate) original_frame_size: FrameSize,
-    output_frame_size: FrameSize,
 }
 
 impl FramePosition {
@@ -29,11 +28,10 @@ impl FramePosition {
         Self {
             crop_edges: [0; 4],
             translate: [0; 2],
-            scale: [1.0; 2],
+            scale: 1.0,
             orientation: Orientation::default(),
             straigthen_angle: 0.0,
             original_frame_size: frame_size,
-            output_frame_size: frame_size,
         }
     }
 
@@ -48,7 +46,7 @@ impl FramePosition {
             orientation: self.orientation.absolute_angle(),
             mirrored: if self.orientation.mirrored { 1 } else { 0 },
             translate,
-            scale: mint::Vector2::from(self.scale),
+            scale: self.scale,
         };
 
         let mut buffer = UniformBuffer::new(Vec::<u8>::new());
@@ -62,18 +60,17 @@ impl FramePosition {
         })
     }
 
-    pub fn set_output_size(&mut self, output_size: FrameSize) {
-        self.scale = [
-            self.original_frame_size.width as f32 / output_size.width as f32,
-            self.original_frame_size.height as f32 / output_size.height as f32,
-        ];
-        self.output_frame_size = output_size;
+    pub fn scale_for_output_size(&mut self, output_size: FrameSize) {
+        self.scale = self.original_frame_size.width as f32 / output_size.width as f32;
     }
 
-    pub fn positioned_frame_size(&self) -> FrameSize {
-        let (mut width, mut height) = self
-            .orientation
-            .oriented_size(self.output_frame_size.width, self.output_frame_size.height);
+    pub fn output_frame_size(&self) -> FrameSize {
+        let (mut width, mut height) = (
+            (self.original_frame_size.width as f32 / self.scale) as u32,
+            (self.original_frame_size.height as f32 / self.scale) as u32,
+        );
+
+        (width, height) = self.orientation.oriented_size(width, height);
         width = width - (self.crop_edges[0] + self.crop_edges[2]);
         height = height - (self.crop_edges[1] + self.crop_edges[3]);
 

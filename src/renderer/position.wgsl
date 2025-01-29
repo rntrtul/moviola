@@ -1,6 +1,6 @@
 struct PositionUniform {
     translate: vec2i,
-    scale: vec2f,
+    scale: f32,
     rotation: f32,
     orientation: f32,
     mirrored: u32,
