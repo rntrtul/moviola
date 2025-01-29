@@ -1,4 +1,6 @@
 use crate::app::{App, AppMsg};
+use crate::renderer::renderer::U32_SIZE;
+use crate::renderer::FrameSize;
 use crate::ui::sidebar::{ControlsExportSettings, OutputContainerSettings};
 use crate::video::metadata::VideoInfo;
 use crate::video::player::Player;
@@ -28,6 +30,7 @@ impl Player {
         save_uri: String,
         timeline_settings: TimelineExportSettings,
         controls_export_settings: ControlsExportSettings,
+        output_size: FrameSize,
         app_sender: ComponentSender<App>,
         texture_receiver: mpsc::Receiver<gdk::Texture>,
     ) {
@@ -42,6 +45,7 @@ impl Player {
         export_video(
             save_uri,
             self.info.clone(),
+            output_size,
             controls_export_settings,
             app_sender,
             texture_receiver,
@@ -82,16 +86,20 @@ fn build_container_profile(
 fn export_video(
     save_uri: String,
     info: VideoInfo,
+    output_size: FrameSize,
     encoding_settings: ControlsExportSettings,
     app_sender: ComponentSender<App>,
     texture_receiver: mpsc::Receiver<gdk::Texture>,
 ) {
     let now = SystemTime::now();
-    let gst_video_info =
-        gst_video::VideoInfo::builder(gst_video::VideoFormat::Rgba, info.width, info.height)
-            .fps(info.framerate.clone())
-            .build()
-            .expect("Couldn't build video info");
+    let gst_video_info = gst_video::VideoInfo::builder(
+        gst_video::VideoFormat::Rgba,
+        output_size.width,
+        output_size.height,
+    )
+    .fps(info.framerate.clone())
+    .build()
+    .expect("Couldn't build video info");
     let container_profile = build_container_profile(&info, encoding_settings.container);
 
     let pipeline = gst::Pipeline::default();
@@ -123,6 +131,8 @@ fn export_video(
     let mut frame_count = 0;
     let frame_spacing = 1.0 / (info.framerate.numer() as f64 / info.framerate.denom() as f64);
 
+    let pixel_size = 4 * U32_SIZE as usize;
+
     app_src.set_callbacks(
         gst_app::AppSrcCallbacks::builder()
             .need_data(move |appsrc, _| {
@@ -132,10 +142,12 @@ fn export_video(
                 };
 
                 let timer = SystemTime::now();
-                let mut frame = vec![0u8; (info.width * info.height * 4) as usize];
+                let mut frame = vec![0u8; (output_size.width * output_size.height * 4) as usize];
                 texture.download(&mut frame, gst_video_info.stride()[0] as usize);
+                println!("format: {:?}", texture.format());
 
-                let mut buffer = gst::Buffer::with_size(gst_video_info.size()).unwrap();
+                let mut buffer =
+                    gst::Buffer::with_size(output_size.frame_buffer_size(pixel_size)).unwrap();
                 {
                     let buffer = buffer.get_mut().unwrap();
                     buffer.set_pts(ClockTime::from_seconds_f64(
@@ -151,7 +163,7 @@ fn export_video(
                         .unwrap()
                         .copy_from_slice(&frame[..]);
                 }
-                // println!("did frame #{frame_count} in {:?}", timer.elapsed().unwrap());
+                println!("did frame #{frame_count} in {:?}", timer.elapsed().unwrap());
                 frame_count += 1;
                 let _ = appsrc.push_buffer(buffer);
             })

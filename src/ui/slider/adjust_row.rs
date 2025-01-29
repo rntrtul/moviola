@@ -11,6 +11,7 @@ pub struct AdjustRowModel {
     show_label: bool,
     show_value: bool,
     display_range: Range,
+    value: f64,
 }
 
 #[derive(Debug)]
@@ -126,6 +127,7 @@ impl Component for AdjustRowModel {
             show_label: init.show_label,
             show_value: init.show_value,
             display_range: init.display_range,
+            value: init.value_range.default,
         };
 
         let widgets = view_output!();
@@ -156,7 +158,10 @@ impl Component for AdjustRowModel {
                         .unwrap();
                 }
             }
-            AdjustRowMsg::DragEnd => sender.output(AdjustRowOutput::DragEnd).unwrap(),
+            AdjustRowMsg::DragEnd => {
+                self.value = widgets.slider.value();
+                sender.output(AdjustRowOutput::DragEnd).unwrap();
+            }
             AdjustRowMsg::Reset => {
                 widgets.slider.reset();
                 self.update_label_from_slider(&widgets.slider, &widgets.value_label);
@@ -175,6 +180,10 @@ impl Component for AdjustRowModel {
 }
 
 impl AdjustRowModel {
+    pub fn slider_value(&self) -> f64 {
+        self.value
+    }
+
     fn update_label_from_slider(&self, slider: &Slider, label: &relm4::gtk::Label) {
         let display_value = slider.map_value_to_range(self.display_range);
         let display_str = self.format_display_value(display_value);

@@ -199,6 +199,13 @@ impl ControlsModel {
         }
     }
 
+    // todo: return in a struct or better name
+    pub fn orientation_and_angle(&self) -> (Orientation, f32) {
+        let orientation = self.crop_page.model().orientation();
+        let angle = self.crop_page.model().rotation_angle();
+        (orientation, angle)
+    }
+
     pub fn connect_switcher_to_stack(&self, switcher: &adw::ViewSwitcherBar) {
         switcher.set_stack(Some(&self.stack))
     }

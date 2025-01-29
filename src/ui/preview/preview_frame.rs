@@ -1,5 +1,5 @@
 use crate::renderer::{TimerCmd, TimerEvent};
-use crate::ui::preview::{CropMode, Orientation, Preview};
+use crate::ui::preview::{CropMode, Preview};
 use crate::ui::sidebar::CropExportSettings;
 use relm4::gtk::gdk;
 use relm4::gtk::prelude::WidgetExt;
@@ -17,9 +17,8 @@ pub struct PreviewFrameModel {
 
 #[derive(Debug)]
 pub enum PreviewFrameMsg {
-    VideoLoaded(u32, u32),
+    VideoLoaded,
     FrameRendered(gdk::Texture),
-    Orient(Orientation),
     StraightenStart,
     Straighten(f64),
     StraightenEnd,
@@ -96,11 +95,10 @@ impl Component for PreviewFrameModel {
         root: &Self::Root,
     ) {
         match message {
-            PreviewFrameMsg::VideoLoaded(width, height) => {
-                self.is_playing = true;
+            PreviewFrameMsg::VideoLoaded => {
                 self.video_is_loaded = true;
+                self.is_playing = true;
                 root.last_child().unwrap().set_visible(true);
-                self.preview.update_native_resolution(width, height);
             }
             PreviewFrameMsg::FrameRendered(texture) => {
                 self.preview.update_texture(texture);
@@ -112,7 +110,6 @@ impl Component for PreviewFrameModel {
                     .send(TimerCmd::Stop(TimerEvent::Transmission, now))
                     .unwrap();
             }
-            PreviewFrameMsg::Orient(orientation) => self.preview.set_orientation(orientation),
             PreviewFrameMsg::StraightenStart => self.preview.straigtening_begun(),
             PreviewFrameMsg::Straighten(angle) => {
                 self.preview.set_straigten_angle(angle);
@@ -136,6 +133,6 @@ impl PreviewFrameModel {
     }
 
     pub fn export_settings(&self) -> CropExportSettings {
-        self.preview.export_settings()
+        self.preview.crop_settings()
     }
 }

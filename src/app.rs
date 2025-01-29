@@ -1,4 +1,6 @@
-use crate::renderer::{EffectParameters, RenderCmd, RenderMode, RendererHandler};
+use crate::renderer::{
+    EffectParameters, FramePosition, FrameSize, RenderCmd, RenderMode, RendererHandler,
+};
 use crate::ui::preview::preview_frame::{PreviewFrameModel, PreviewFrameMsg, PreviewFrameOutput};
 use crate::ui::preview::{CropMode, Orientation};
 use crate::ui::sidebar::sidebar::{ControlsModel, ControlsMsg, ControlsOutput};
@@ -120,6 +122,20 @@ impl App {
                 file.path().unwrap().to_str().unwrap().to_string(),
             ));
         });
+    }
+
+    fn export_frame_position(&self) -> FramePosition {
+        // todo: convert crop percents into pixel values.
+        let crop_settings = self.preview_frame.model().export_settings();
+        let (orientation, angel) = self.sidebar_panel.model().orientation_and_angle();
+        let info = self.player.borrow().info();
+        let size = FrameSize::new(info.width, info.height);
+
+        let mut position = FramePosition::new(size);
+        position.orientation = orientation;
+        position.straigthen_angle = angel.to_radians();
+
+        position
     }
 }
 
@@ -374,7 +390,10 @@ impl Component for App {
                 self.renderer
                     .send_render_cmd(RenderCmd::ChangeRenderMode(RenderMode::AllFrames));
 
-                // todo: set frame position with scaling of 1.0
+                let position = self.export_frame_position();
+                self.renderer
+                    .send_render_cmd(RenderCmd::PositionFrame(position));
+
                 let timeline_export_settings = self
                     .video_controls
                     .model()
@@ -387,6 +406,7 @@ impl Component for App {
                     save_uri,
                     timeline_export_settings,
                     self.sidebar_panel.model().export_settings(),
+                    position.positioned_frame_size(),
                     sender.clone(),
                     receiver,
                 );
@@ -420,8 +440,6 @@ impl Component for App {
                 }
             }
             AppMsg::Orient(orientation) => {
-                self.preview_frame
-                    .emit(PreviewFrameMsg::Orient(orientation));
                 self.renderer
                     .send_render_cmd(RenderCmd::UpdateOrientation(orientation));
 
@@ -489,10 +507,7 @@ impl Component for App {
                     .send_render_cmd(RenderCmd::UpdateOutputResolution(width, height));
 
                 self.video_controls.emit(VideoControlMsg::VideoLoaded);
-                self.preview_frame.emit(PreviewFrameMsg::VideoLoaded(
-                    player.info.width,
-                    player.info.height,
-                ));
+                self.preview_frame.emit(PreviewFrameMsg::VideoLoaded);
 
                 self.preview_frame.widget().set_visible(true);
             }
@@ -520,4 +535,5 @@ fn preview_size(info: &VideoInfo) -> (u32, u32) {
     let scaled_height = (info.height as f32 / scale_factor) as u32;
 
     (scaled_width, scaled_height)
+    // (info.width, info.height)
 }

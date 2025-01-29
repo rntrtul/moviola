@@ -138,7 +138,7 @@ impl Player {
         self.playbin.set_state(State::Null).unwrap();
         self.app_sink.set_property("sync", true);
         self.is_playing = false;
-        self.is_mute = false;
+        self.set_is_mute(false);
         self.pipeline_ready = false;
     }
 

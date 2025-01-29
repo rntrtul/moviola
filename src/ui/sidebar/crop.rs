@@ -191,3 +191,13 @@ impl Component for CropPageModel {
         }
     }
 }
+
+impl CropPageModel {
+    pub fn orientation(&self) -> Orientation {
+        self.orientation
+    }
+
+    pub fn rotation_angle(&self) -> f32 {
+        self.straighten_slider.model().slider_value() as f32
+    }
+}

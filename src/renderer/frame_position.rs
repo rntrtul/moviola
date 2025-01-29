@@ -13,6 +13,7 @@ pub struct FramePositionUniform {
 }
 
 // todo: send a matrix for rotation and translate
+#[derive(Copy, Clone, Debug)]
 pub struct FramePosition {
     pub(crate) crop_edges: [u32; 4],
     pub(crate) translate: [i32; 2],
@@ -102,5 +103,9 @@ impl FrameSize {
             contents: bytemuck::cast_slice(&[*self]),
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         })
+    }
+
+    pub fn frame_buffer_size(&self, pixel_size: usize) -> usize {
+        self.width as usize * pixel_size * self.height as usize
     }
 }

@@ -1,5 +1,5 @@
 use crate::renderer::EffectParameters;
-use crate::ui::preview::{BoundingBoxDimensions, Orientation};
+use crate::ui::preview::BoundingBoxDimensions;
 use crate::video::metadata::{AudioCodec, ContainerFormat, VideoCodec};
 
 mod adjust;
@@ -21,7 +21,6 @@ pub struct OutputContainerSettings {
 
 pub struct CropExportSettings {
     pub(crate) bounding_box: BoundingBoxDimensions,
-    pub(crate) orientation: Orientation,
 }
 
 pub struct ControlsExportSettings {

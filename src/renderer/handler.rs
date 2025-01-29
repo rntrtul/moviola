@@ -1,3 +1,4 @@
+use crate::renderer::frame_position::FramePosition;
 use crate::renderer::renderer::Renderer;
 use crate::renderer::timer::Timer;
 use crate::renderer::{EffectParameters, TimerEvent};
@@ -13,6 +14,7 @@ use tokio::sync::Mutex;
 
 pub enum RenderCmd {
     ChangeRenderMode(RenderMode),
+    PositionFrame(FramePosition),
     RenderFrame,
     RenderSample(gst::Sample),
     UpdateEffects(EffectParameters),
@@ -127,6 +129,12 @@ async fn render_loop(
                     renderer.update_effects(queued_effect_params.take().unwrap());
                 } else {
                     render_queued.store(true, std::sync::atomic::Ordering::Relaxed);
+                }
+            }
+            RenderCmd::PositionFrame(position) => {
+                // todo: handle when renderer locked.
+                if let Ok(mut renderer) = renderer.try_lock() {
+                    renderer.position_frame(position);
                 }
             }
             RenderCmd::RenderSample(sample) => {

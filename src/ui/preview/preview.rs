@@ -7,6 +7,7 @@ use gst::glib;
 use gst::subclass::prelude::ObjectSubclassIsExt;
 use gst::subclass::prelude::{ObjectImpl, ObjectSubclass};
 use relm4::gtk::graphene::Point;
+use relm4::gtk::prelude::TextureExt;
 use relm4::gtk::prelude::{PaintableExt, SnapshotExt, WidgetExt};
 use relm4::gtk::subclass::prelude::ObjectSubclassExt;
 use relm4::gtk::subclass::widget::WidgetImpl;
@@ -29,15 +30,11 @@ pub struct Preview {
     pub(crate) crop_mode: Cell<CropMode>,
     pub(crate) show_crop_box: Cell<bool>,
     pub(crate) show_zoom: Cell<bool>,
-    pub(crate) orientation: Cell<crate::ui::preview::Orientation>,
     pub(crate) straighten_angle: Cell<f64>,
     pub(crate) texture: RefCell<Option<gdk::Texture>>,
     pub(crate) is_cropped: Cell<bool>,
     pub(crate) is_new_drag: Cell<bool>,
     pub(crate) original_aspect_ratio: Cell<f32>,
-    //todo: only using native frame to calc aspect ratio
-    pub(crate) native_frame_width: Cell<u32>,
-    pub(crate) native_frame_height: Cell<u32>,
 }
 
 impl Default for Preview {
@@ -55,14 +52,11 @@ impl Default for Preview {
             crop_mode: Cell::new(CropMode::Free),
             show_crop_box: Cell::new(false),
             show_zoom: Cell::new(true),
-            orientation: Cell::new(crate::ui::preview::Orientation::default()),
             straighten_angle: Cell::new(0f64),
             texture: RefCell::new(None),
             is_cropped: Cell::new(false),
             is_new_drag: Cell::new(true),
             original_aspect_ratio: Cell::new(1.77f32),
-            native_frame_width: Cell::new(0),
-            native_frame_height: Cell::new(0),
         }
     }
 }
@@ -156,12 +150,9 @@ impl Preview {
         self.obj().height() as f32 - (BOX_HANDLE_WIDTH * 2f32)
     }
 
+    // todo: remove function
     fn current_aspect_ratio(&self) -> f32 {
-        if self.orientation.get().is_width_flipped() {
-            self.native_frame_height.get() as f32 / self.native_frame_width.get() as f32
-        } else {
-            self.original_aspect_ratio.get()
-        }
+        self.original_aspect_ratio.get()
     }
 
     // returns (width, height)
@@ -274,19 +265,14 @@ impl crate::ui::preview::Preview {
     }
 
     pub fn update_texture(&self, texture: gdk::Texture) {
+        self.imp()
+            .original_aspect_ratio
+            .set(texture.width() as f32 / texture.height() as f32);
         self.imp().update_texture(texture);
         self.queue_draw();
     }
 
-    pub fn update_native_resolution(&self, width: u32, height: u32) {
-        self.imp().native_frame_width.set(width);
-        self.imp().native_frame_height.set(height);
-        self.imp()
-            .original_aspect_ratio
-            .set(width as f32 / height as f32)
-    }
-
-    pub fn export_settings(&self) -> CropExportSettings {
+    pub fn crop_settings(&self) -> CropExportSettings {
         CropExportSettings {
             bounding_box: BoundingBoxDimensions {
                 left_x: self.imp().left_x.get(),
@@ -294,7 +280,6 @@ impl crate::ui::preview::Preview {
                 right_x: self.imp().right_x.get(),
                 bottom_y: self.imp().bottom_y.get(),
             },
-            orientation: self.imp().orientation.get(),
         }
     }
 
@@ -305,8 +290,5 @@ impl crate::ui::preview::Preview {
         self.imp().bottom_y.set(1.0);
 
         self.imp().zoom.set(1.0);
-        self.imp()
-            .orientation
-            .set(crate::ui::preview::Orientation::default());
     }
 }
