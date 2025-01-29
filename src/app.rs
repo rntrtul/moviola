@@ -512,7 +512,7 @@ impl Component for App {
                 self.preview_frame.widget().set_visible(true);
             }
             AppCommandMsg::FrameRendered(texture) => {
-                if self.video_is_exporting {
+                if self.video_is_exporting && self.export_sender.is_some() {
                     let tex_sender = self.export_sender.as_ref().unwrap();
                     tex_sender.send(texture).unwrap();
                 } else {
@@ -535,5 +535,4 @@ fn preview_size(info: &VideoInfo) -> (u32, u32) {
     let scaled_height = (info.height as f32 / scale_factor) as u32;
 
     (scaled_width, scaled_height)
-    // (info.width, info.height)
 }
