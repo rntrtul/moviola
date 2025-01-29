@@ -57,14 +57,12 @@ impl Default for VideoInfo {
     }
 }
 
-//
-// todo: check flatpak has plugins for each codec
-// e-ac-3 (atsc) and dts non-free no encoder in gstreamer. i think
-//      ffmpeg supports both
 #[derive(Debug, Clone, Copy)]
 pub enum AudioCodec {
     AAC,
     AC3,
+    DTS,
+    EAC3,
     OPUS,
     RAW,
     Unknown,
@@ -108,6 +106,8 @@ impl AudioCodec {
         match self {
             AudioCodec::AAC => "AAC",
             AudioCodec::AC3 => "AC-3",
+            AudioCodec::DTS => "DTS",
+            AudioCodec::EAC3 => "E-AC-3",
             AudioCodec::OPUS => "Opus",
             AudioCodec::RAW => "Raw",
             AudioCodec::Unknown => "Unknown",
@@ -119,6 +119,8 @@ impl AudioCodec {
         match self {
             AudioCodec::AAC => gst::Caps::builder("audio/mpeg"),
             AudioCodec::AC3 => gst::Caps::builder("audio/x-ac3"),
+            AudioCodec::DTS => gst::Caps::builder("audio/x-dts"),
+            AudioCodec::EAC3 => gst::Caps::builder("audio/x-eac3"),
             AudioCodec::OPUS => gst::Caps::builder("audio/x-opus"),
             AudioCodec::RAW => gst::Caps::builder("audio/x-raw"),
             AudioCodec::Unknown => gst::Caps::builder(""),
@@ -129,8 +131,10 @@ impl AudioCodec {
     pub fn string_list() -> gtk::StringList {
         gtk::StringList::new(&[
             AudioCodec::AAC.display(),
-            AudioCodec::OPUS.display(),
             AudioCodec::AC3.display(),
+            AudioCodec::DTS.display(),
+            AudioCodec::EAC3.display(),
+            AudioCodec::OPUS.display(),
             AudioCodec::RAW.display(),
         ])
     }
@@ -138,9 +142,11 @@ impl AudioCodec {
     pub fn from_string_list_index(idx: u32) -> Self {
         match idx {
             0 => AudioCodec::AAC,
-            1 => AudioCodec::OPUS,
-            2 => AudioCodec::AC3,
-            3 => AudioCodec::RAW,
+            1 => AudioCodec::AC3,
+            2 => AudioCodec::DTS,
+            3 => AudioCodec::EAC3,
+            4 => AudioCodec::OPUS,
+            5 => AudioCodec::RAW,
             _ => AudioCodec::Unknown,
         }
     }
@@ -148,9 +154,11 @@ impl AudioCodec {
     pub fn to_string_list_index(&self) -> u32 {
         match self {
             AudioCodec::AAC => 0,
-            AudioCodec::OPUS => 1,
-            AudioCodec::AC3 => 2,
-            AudioCodec::RAW => 3,
+            AudioCodec::AC3 => 1,
+            AudioCodec::DTS => 2,
+            AudioCodec::EAC3 => 3,
+            AudioCodec::OPUS => 4,
+            AudioCodec::RAW => 5,
             AudioCodec::Unknown => 100,
             AudioCodec::NoAudio => 100,
         }
@@ -161,6 +169,8 @@ impl AudioCodec {
             desc if desc.starts_with("MPEG") => AudioCodec::AAC,
             desc if desc.starts_with("Opus") => AudioCodec::OPUS,
             desc if desc.starts_with("AC-3") => AudioCodec::AC3,
+            desc if desc.starts_with("E-AC-3") => AudioCodec::EAC3,
+            desc if desc.starts_with("DTS") => AudioCodec::DTS,
             desc if desc.starts_with("Raw") || desc.starts_with("Uncompressed") => AudioCodec::RAW,
             _ => AudioCodec::Unknown,
         }

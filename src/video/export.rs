@@ -65,8 +65,6 @@ fn build_container_profile(
         .name("Container")
         .add_profile(video_profile);
 
-    return container_builder.build();
-
     if container.no_audio {
         container_builder.build()
     } else {
