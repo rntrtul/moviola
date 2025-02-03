@@ -434,6 +434,8 @@ impl Component for App {
             AppMsg::VideoFinished => {
                 // todo: have seperate event for segment finished
                 if self.video_is_exporting {
+                    // fixme: ensure that render queue is empty before setting to none.
+                    //  also need way to get msg of cleared queue
                     self.export_sender = None;
                 } else {
                     self.player.borrow_mut().set_is_finished()

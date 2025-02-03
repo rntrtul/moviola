@@ -68,8 +68,11 @@ fn main(@builtin(global_invocation_id) global_invocation_id: vec3<u32>) {
         tex_coords = vec2f(abs(tex_coords.x - f_tex_dimensions.x), tex_coords.y);
     }
 
-    let tex_center = f_tex_dimensions / 2.0;
-    tex_coords = rotate(tex_coords - tex_center, position.rotation) + tex_center;
+    if position.rotation != 0.0 {
+        let tex_center = f_tex_dimensions / 2.0;
+        tex_coords = rotate(tex_coords - tex_center, position.rotation) + tex_center;
+    }
+    
     tex_coords = tex_coords - vec2f(position.translate);
 
     if all(vec2f(0,0) <= tex_coords) && all(tex_coords < f_tex_dimensions) {
