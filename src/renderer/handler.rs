@@ -1,4 +1,5 @@
 use crate::renderer::frame_position::FramePosition;
+use crate::renderer::handler::RenderResopnse::FrameRendered;
 use crate::renderer::renderer::Renderer;
 use crate::renderer::timer::Timer;
 use crate::renderer::{EffectParameters, TimerEvent};
@@ -22,6 +23,11 @@ pub enum RenderCmd {
     UpdateOrientation(Orientation),
 }
 
+pub enum RenderResopnse {
+    FrameRendered(gdk::Texture),
+    QueueEmpty,
+}
+
 // todo: rename outputresult
 pub enum TimerCmd {
     Start(TimerEvent, Instant),
@@ -37,7 +43,7 @@ pub enum RenderMode {
 }
 
 fn render_frame(
-    sender: mpsc::Sender<gdk::Texture>,
+    sender: mpsc::Sender<RenderResopnse>,
     renderer: Arc<Mutex<Renderer>>,
     render_queued: Arc<AtomicBool>,
     render_cmd_sender: mpsc::Sender<RenderCmd>,
@@ -52,7 +58,7 @@ fn render_frame(
                 .send(TimerCmd::Stop(TimerEvent::Renderer, Instant::now()))
                 .unwrap();
         }
-        sender.send(tex).unwrap();
+        sender.send(FrameRendered(tex)).unwrap();
         timer_cmd_sender
             .send(TimerCmd::Start(TimerEvent::Transmission, Instant::now()))
             .unwrap();
@@ -90,7 +96,7 @@ async fn update_queued(
 }
 
 async fn render_loop(
-    texture_sender: mpsc::Sender<gdk::Texture>,
+    responder: mpsc::Sender<RenderResopnse>,
     timer_sender: mpsc::Sender<TimerCmd>,
     cmd_recv: mpsc::Receiver<RenderCmd>,
     renderer_cmd_sender: mpsc::Sender<RenderCmd>,
@@ -148,7 +154,7 @@ async fn render_loop(
                     drop(guarded_renderer);
 
                     render_frame(
-                        texture_sender.clone(),
+                        responder.clone(),
                         renderer.clone(),
                         render_queued.clone(),
                         renderer_cmd_sender.clone(),
@@ -186,7 +192,7 @@ async fn render_loop(
                     }
 
                     render_frame(
-                        texture_sender.clone(),
+                        responder.clone(),
                         renderer.clone(),
                         render_queued.clone(),
                         renderer_cmd_sender.clone(),
@@ -219,6 +225,10 @@ async fn render_loop(
             RenderCmd::ChangeRenderMode(mode) => {
                 render_mode = mode;
             }
+        }
+
+        if render_mode == RenderMode::AllFrames && samples.is_empty() {
+            responder.send(RenderResopnse::QueueEmpty).unwrap();
         }
     }
 }
@@ -255,9 +265,9 @@ pub struct RendererHandler {
 }
 
 impl RendererHandler {
-    pub fn new(mode: RenderMode) -> (Self, mpsc::Receiver<gdk::Texture>) {
+    pub fn new(mode: RenderMode) -> (Self, mpsc::Receiver<RenderResopnse>) {
         let (cmd_sender, cmd_recv) = mpsc::channel::<RenderCmd>();
-        let (output_sender, output_receiver) = mpsc::channel::<gdk::Texture>();
+        let (response_sender, response_reciever) = mpsc::channel::<RenderResopnse>();
         let (timer_sender, timer_receiver) = mpsc::channel::<TimerCmd>();
 
         let renderer_cmd_sender = cmd_sender.clone();
@@ -269,7 +279,7 @@ impl RendererHandler {
             runtime.spawn(timer_loop(timer_receiver));
 
             runtime.block_on(render_loop(
-                output_sender,
+                response_sender,
                 timer_cmd_sender.clone(),
                 cmd_recv,
                 renderer_cmd_sender,
@@ -285,7 +295,7 @@ impl RendererHandler {
             timer_sender,
         };
 
-        (handler, output_receiver)
+        (handler, response_reciever)
     }
 
     pub fn render_cmd_sender(&self) -> mpsc::Sender<RenderCmd> {

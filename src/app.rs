@@ -1,5 +1,6 @@
 use crate::renderer::{
-    EffectParameters, FramePosition, FrameSize, RenderCmd, RenderMode, RendererHandler,
+    EffectParameters, FramePosition, FrameSize, RenderCmd, RenderMode, RenderResopnse,
+    RendererHandler,
 };
 use crate::ui::preview::preview_frame::{PreviewFrameModel, PreviewFrameMsg, PreviewFrameOutput};
 use crate::ui::preview::{CropMode, Orientation};
@@ -34,6 +35,7 @@ pub(super) struct App {
     video_is_exporting: bool,
     uri: Option<String>,
     export_sender: Option<mpsc::Sender<gdk::Texture>>,
+    export_video_decode_finished: bool,
 }
 
 #[derive(Debug)]
@@ -69,6 +71,7 @@ pub enum AppCommandMsg {
     InitWithvideo,
     VideoLoaded,
     FrameRendered(gdk::Texture),
+    RenderQueueEmpty,
 }
 
 impl App {
@@ -257,7 +260,7 @@ impl Component for App {
         root: Self::Root,
         sender: ComponentSender<Self>,
     ) -> ComponentParts<Self> {
-        let (handler, texture_receiver) = RendererHandler::new(RenderMode::MostRecentFrame);
+        let (handler, render_response) = RendererHandler::new(RenderMode::MostRecentFrame);
 
         let preview_frame: Controller<PreviewFrameModel> = PreviewFrameModel::builder()
             .launch(handler.timer_cmd_sender())
@@ -299,10 +302,16 @@ impl Component for App {
             shutdown
                 .register(async move {
                     loop {
-                        let Ok(tex) = texture_receiver.recv() else {
+                        let Ok(response) = render_response.recv() else {
                             break;
                         };
-                        out.send(AppCommandMsg::FrameRendered(tex)).unwrap();
+
+                        let app_msg = match response {
+                            RenderResopnse::FrameRendered(tex) => AppCommandMsg::FrameRendered(tex),
+                            RenderResopnse::QueueEmpty => AppCommandMsg::RenderQueueEmpty,
+                        };
+
+                        out.send(app_msg).unwrap();
                     }
                 })
                 .drop_on_shutdown()
@@ -321,6 +330,7 @@ impl Component for App {
             player,
             uri: path,
             export_sender: None,
+            export_video_decode_finished: false,
         };
 
         let widgets = view_output!();
@@ -414,6 +424,7 @@ impl Component for App {
             }
             AppMsg::ExportDone => {
                 self.video_is_exporting = false;
+                self.export_video_decode_finished = false;
                 self.video_selected = false;
                 self.video_is_loaded = false;
                 self.show_spinner = false;
@@ -436,7 +447,7 @@ impl Component for App {
                 if self.video_is_exporting {
                     // fixme: ensure that render queue is empty before setting to none.
                     //  also need way to get msg of cleared queue
-                    self.export_sender = None;
+                    self.export_video_decode_finished = true;
                 } else {
                     self.player.borrow_mut().set_is_finished()
                 }
@@ -520,6 +531,11 @@ impl Component for App {
                 } else {
                     self.preview_frame
                         .emit(PreviewFrameMsg::FrameRendered(texture));
+                }
+            }
+            AppCommandMsg::RenderQueueEmpty => {
+                if self.export_video_decode_finished {
+                    self.export_sender = None;
                 }
             }
             AppCommandMsg::InitWithvideo => {
