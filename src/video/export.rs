@@ -5,9 +5,10 @@ use crate::ui::sidebar::{ControlsExportSettings, OutputContainerSettings};
 use crate::video::metadata::VideoInfo;
 use crate::video::player::Player;
 use gst::prelude::{
-    Cast, ElementExt, ElementExtManual, GstBinExt, GstBinExtManual, GstObjectExt, ObjectExt, PadExt,
+    Cast, ElementExt, ElementExtManual, GstBinExt, GstBinExtManual, GstObjectExt, ObjectExt,
+    PadExt, PadExtManual,
 };
-use gst::{ClockTime, FlowSuccess};
+use gst::{ClockTime, SeekFlags};
 use gst_app::AppSrc;
 use gst_pbutils::prelude::{EncodingProfileBuilder, EncodingProfileExt};
 use gst_pbutils::EncodingContainerProfile;
@@ -25,9 +26,16 @@ pub struct TimelineExportSettings {
     pub end: ClockTime,
 }
 
+impl TimelineExportSettings {
+    pub fn duration(&self) -> ClockTime {
+        self.end - self.start
+    }
+}
+
 impl Player {
     pub fn export_video(
         &mut self,
+        source_uri: String,
         save_uri: String,
         timeline_settings: TimelineExportSettings,
         controls_export_settings: ControlsExportSettings,
@@ -36,48 +44,21 @@ impl Player {
         texture_receiver: mpsc::Receiver<gdk::Texture>,
     ) {
         self.set_is_playing(false);
-
-        let audio_app_sink = gst_app::AppSink::builder()
-            .enable_last_sample(true)
-            .max_buffers(1)
-            .caps(&gst::Caps::new_any())
-            .build();
-        self.bin.add(&audio_app_sink).unwrap();
-
-        let export_audio_src = self.audio_selector.request_pad_simple("src_%u").unwrap();
-        let export_audio_sink = audio_app_sink.static_pad("sink").unwrap();
-        export_audio_src.link(&export_audio_sink).unwrap();
-
-        self.audio_selector
-            .set_property("active_pad", &export_audio_src);
-
-        let (sender, receiver) = mpsc::channel();
-        let eos_sender = sender.clone();
-        audio_app_sink.set_callbacks(
-            gst_app::AppSinkCallbacks::builder()
-                .new_sample(move |app| {
-                    let sample = app.pull_sample().unwrap();
-                    sender
-                        .send(Some(sample))
-                        .expect("failed to send audio sample");
-                    Ok(FlowSuccess::Ok)
-                })
-                .eos(move |_| eos_sender.send(None).unwrap())
-                .build(),
-        );
+        self.seek_segment(timeline_settings.start, timeline_settings.end);
 
         self.app_sink.set_property("sync", false);
-        audio_app_sink.set_property("sync", false);
-        // fixme: seek hangs with audio_sink added
-        // self.seek_segment(timeline_settings.start, timeline_settings.end);
+        self.set_is_mute(true);
+
+        let audio_src = gst::Bin::with_name("audio_export_src");
 
         let pipeline = export_video(
+            source_uri,
             save_uri,
+            timeline_settings,
             self.info.clone(),
             output_size,
             controls_export_settings,
             texture_receiver,
-            receiver,
         );
 
         thread::spawn(move || {
@@ -141,12 +122,13 @@ fn build_container_profile(
 }
 
 fn export_video(
+    source_uri: String,
     save_uri: String,
+    timeline_settings: TimelineExportSettings,
     info: VideoInfo,
     output_size: FrameSize,
     encoding_settings: ControlsExportSettings,
     texture_receiver: mpsc::Receiver<gdk::Texture>,
-    audio_receiver: mpsc::Receiver<Option<gst::Sample>>,
 ) -> gst::Pipeline {
     let gst_video_info = gst_video::VideoInfo::builder(
         gst_video::VideoFormat::Rgba,
@@ -158,28 +140,30 @@ fn export_video(
     .expect("Couldn't build video info");
     let container_profile = build_container_profile(&info, encoding_settings.container);
 
-    let pipeline = gst::Pipeline::new();
+    let pipeline = gst::Pipeline::with_name("export_pipeline");
 
     let video_app_src = AppSrc::builder()
         .caps(&gst_video_info.to_caps().unwrap())
         .format(gst::Format::Time)
         .build();
-    let audio_app_src = AppSrc::builder()
-        .caps(&gst::Caps::new_any())
-        .format(gst::Format::Time)
-        .build();
+    let audio_decodebin = gst::ElementFactory::make("uridecodebin3")
+        .property("instant-uri", true)
+        .property("uri", &source_uri)
+        .build()
+        .unwrap();
     let encode_bin = gst::ElementFactory::make("encodebin")
         .property("profile", &container_profile)
         .build()
         .unwrap();
     let file_sink = gst::ElementFactory::make("filesink")
         .property("location", save_uri.as_str())
+        .property("sync", false)
         .build()
         .unwrap();
 
     let export_elements = [
+        &audio_decodebin,
         video_app_src.upcast_ref(),
-        audio_app_src.upcast_ref(),
         &encode_bin,
         &file_sink,
     ];
@@ -196,14 +180,15 @@ fn export_video(
     video_src.link(&encode_video_sink).unwrap();
 
     let encode_audio_sink = encode_bin.request_pad_simple("audio_%u").unwrap();
-    let audio_src = &audio_app_src
-        .static_pad("src")
-        .expect("no src pad for audio appsrc");
-    audio_src.link(&encode_audio_sink).unwrap();
+    audio_decodebin.connect_pad_added(move |_, pad| {
+        if pad.name().starts_with("audio") {
+            // fixme: attach correct audio stream
+            pad.link(&encode_audio_sink).unwrap();
+        }
+    });
 
     let mut frame_count = 0;
     let frame_spacing = 1.0 / (info.framerate.numer() as f64 / info.framerate.denom() as f64);
-
     let pixel_size = 4 * U32_SIZE as usize;
 
     video_app_src.set_callbacks(
@@ -211,6 +196,7 @@ fn export_video(
             .need_data(move |appsrc, _| {
                 let Ok(texture) = texture_receiver.recv() else {
                     let _ = appsrc.end_of_stream();
+                    println!("end of stream");
                     return;
                 };
 
@@ -243,17 +229,17 @@ fn export_video(
             .build(),
     );
 
-    audio_app_src.set_callbacks(
-        gst_app::AppSrcCallbacks::builder()
-            .need_data(move |appsrc, _| {
-                let Ok(Some(audio_sample)) = audio_receiver.recv() else {
-                    let _ = appsrc.end_of_stream();
-                    return;
-                };
-                let _ = appsrc.push_sample(&audio_sample);
-            })
-            .build(),
-    );
+    pipeline.set_state(gst::State::Paused).unwrap();
+    file_sink
+        .seek(
+            1.0,
+            SeekFlags::FLUSH | SeekFlags::ACCURATE,
+            gst::SeekType::Set,
+            timeline_settings.start,
+            gst::SeekType::Set,
+            timeline_settings.end,
+        )
+        .expect("could not seek");
 
     pipeline.set_state(gst::State::Playing).unwrap();
     pipeline

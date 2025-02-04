@@ -6,9 +6,7 @@ use crate::video::metadata::{
     AUDIO_BITRATE_DEFAULT, VIDEO_BITRATE_DEFAULT,
 };
 use gst::glib::FlagsClass;
-use gst::prelude::{
-    ElementExt, ElementExtManual, GstBinExtManual, GstObjectExt, ObjectExt, PadExt,
-};
+use gst::prelude::{ElementExt, ElementExtManual, GstObjectExt, ObjectExt, PadExt};
 use gst::{Bus, ClockTime, FlowSuccess, SeekFlags, State};
 use gst_app::AppSink;
 use relm4::ComponentSender;
@@ -30,9 +28,6 @@ pub struct Player {
     pub(crate) info: VideoInfo,
     is_finished: bool,
     pub(crate) app_sink: AppSink,
-    pub(crate) bin: gst::Bin, // todo: rename bin
-    pub(crate) audio_selector: gst::Element,
-    pub(crate) audio_preview_src: gst::Pad,
 }
 
 impl Player {
@@ -71,7 +66,6 @@ impl Player {
 
         let preroll_sender = sample_sender.clone();
         let preroll_timer_sender = timer_sender.clone();
-
         app_sink.set_callbacks(
             gst_app::AppSinkCallbacks::builder()
                 .new_sample(move |appsink| {
@@ -100,33 +94,6 @@ impl Player {
 
         playbin.set_property("video-sink", &app_sink);
 
-        let audio_bin = gst::Bin::new();
-
-        let audio_selector = gst::ElementFactory::make("output-selector")
-            .name("audio_output_selector")
-            .property_from_str("pad-negotiation-mode", "active")
-            .build()
-            .unwrap();
-        let preview_sink = gst::ElementFactory::make("autoaudiosink").build().unwrap();
-
-        let audio_elements = [&audio_selector, &preview_sink];
-        audio_bin.add_many(&audio_elements).unwrap();
-
-        let preview_audio_src = audio_selector.request_pad_simple("src_%u").unwrap();
-        let preview_audio_sink = preview_sink.static_pad("sink").unwrap();
-        preview_audio_src.link(&preview_audio_sink).unwrap();
-
-        let output_selector_sink = audio_selector.static_pad("sink").unwrap();
-        let bin_ghost_pad = gst::GhostPad::builder_with_target(&output_selector_sink)
-            .unwrap()
-            .build();
-        bin_ghost_pad.set_active(true).unwrap();
-        audio_bin.add_pad(&bin_ghost_pad).unwrap();
-
-        audio_selector.set_property("active_pad", &preview_audio_src);
-
-        playbin.set_property("audio-sink", &audio_bin);
-
         playbin.set_state(State::Ready).unwrap();
 
         Self {
@@ -137,9 +104,6 @@ impl Player {
             playbin,
             info: Default::default(),
             app_sink,
-            bin: audio_bin,
-            audio_selector,
-            audio_preview_src: preview_audio_src,
         }
     }
 
@@ -172,8 +136,6 @@ impl Player {
     pub fn reset_pipeline(&mut self) {
         self.playbin.set_state(State::Null).unwrap();
         self.app_sink.set_property("sync", true);
-        self.audio_selector
-            .set_property("active_pad", &self.audio_preview_src);
         self.is_playing = false;
         self.set_is_mute(false);
         self.pipeline_ready = false;

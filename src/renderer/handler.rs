@@ -25,7 +25,6 @@ pub enum RenderCmd {
 
 pub enum RenderResopnse {
     FrameRendered(gdk::Texture),
-    QueueEmpty,
 }
 
 // todo: rename outputresult
@@ -225,10 +224,6 @@ async fn render_loop(
             RenderCmd::ChangeRenderMode(mode) => {
                 render_mode = mode;
             }
-        }
-
-        if render_mode == RenderMode::AllFrames && samples.is_empty() {
-            responder.send(RenderResopnse::QueueEmpty).unwrap();
         }
     }
 }

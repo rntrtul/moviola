@@ -24,17 +24,6 @@ cleanup:
   - "*.la"
   - "*.a"
 modules:
-  - name: gstreamer
-    builddir: true
-    buildsystem: meson
-    config-opts:
-      - "-Ddoc=disabled"
-    sources:
-      - type: git
-        tag: "1.24.9"
-        url: "https://gitlab.freedesktop.org/gstreamer/gstreamer.git"
-        commit: b309f90bfde36e6d175b70bfa0c941f2829dd6a5
-        disable-submodules: false
   - name: moviola
     builddir: true
     buildsystem: simple

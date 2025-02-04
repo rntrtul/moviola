@@ -36,6 +36,8 @@ pub(super) struct App {
     uri: Option<String>,
     export_sender: Option<mpsc::Sender<gdk::Texture>>,
     export_video_decode_finished: bool,
+    frames_exported: u32,
+    export_target_frame_count: u32,
 }
 
 #[derive(Debug)]
@@ -71,7 +73,6 @@ pub enum AppCommandMsg {
     InitWithvideo,
     VideoLoaded,
     FrameRendered(gdk::Texture),
-    RenderQueueEmpty,
 }
 
 impl App {
@@ -308,7 +309,6 @@ impl Component for App {
 
                         let app_msg = match response {
                             RenderResopnse::FrameRendered(tex) => AppCommandMsg::FrameRendered(tex),
-                            RenderResopnse::QueueEmpty => AppCommandMsg::RenderQueueEmpty,
                         };
 
                         out.send(app_msg).unwrap();
@@ -331,6 +331,8 @@ impl Component for App {
             uri: path,
             export_sender: None,
             export_video_decode_finished: false,
+            frames_exported: 0,
+            export_target_frame_count: 0,
         };
 
         let widgets = view_output!();
@@ -412,7 +414,16 @@ impl Component for App {
                 let (tex_sender, receiver) = mpsc::channel();
                 self.export_sender = Some(tex_sender);
 
+                let duration = timeline_export_settings.duration();
+                let framerate = self.player.borrow().info.framerate;
+                let fps = framerate.numer() as f64 / framerate.denom() as f64;
+                let target_frames = (duration.seconds_f64() * fps).ceil() as u32;
+                println!("for duration: {duration} @ {fps}fps. total frames: {target_frames}",);
+                self.export_target_frame_count = target_frames;
+                self.frames_exported = 0;
+
                 self.player.borrow_mut().export_video(
+                    self.uri.as_ref().unwrap().clone(),
                     save_uri,
                     timeline_export_settings,
                     self.sidebar_panel.model().export_settings(),
@@ -445,8 +456,7 @@ impl Component for App {
             AppMsg::VideoFinished => {
                 // todo: have seperate event for segment finished
                 if self.video_is_exporting {
-                    // fixme: ensure that render queue is empty before setting to none.
-                    //  also need way to get msg of cleared queue
+                    println!("video finished");
                     self.export_video_decode_finished = true;
                 } else {
                     self.player.borrow_mut().set_is_finished()
@@ -525,17 +535,20 @@ impl Component for App {
                 self.preview_frame.widget().set_visible(true);
             }
             AppCommandMsg::FrameRendered(texture) => {
-                if self.video_is_exporting && self.export_sender.is_some() {
-                    let tex_sender = self.export_sender.as_ref().unwrap();
-                    tex_sender.send(texture).unwrap();
+                if self.video_is_exporting {
+                    self.frames_exported += 1;
+                    println!("recv export frame: {}", self.frames_exported);
+
+                    if let Some(sender) = self.export_sender.as_ref() {
+                        sender.send(texture).unwrap();
+                    };
+
+                    if self.frames_exported == self.export_target_frame_count {
+                        self.export_sender = None;
+                    }
                 } else {
                     self.preview_frame
                         .emit(PreviewFrameMsg::FrameRendered(texture));
-                }
-            }
-            AppCommandMsg::RenderQueueEmpty => {
-                if self.export_video_decode_finished {
-                    self.export_sender = None;
                 }
             }
             AppCommandMsg::InitWithvideo => {
