@@ -1,5 +1,4 @@
 use crate::app::{App, AppMsg};
-use crate::renderer::renderer::U32_SIZE;
 use crate::renderer::FrameSize;
 use crate::ui::sidebar::{ControlsExportSettings, OutputContainerSettings};
 use crate::video::metadata::VideoInfo;
@@ -8,7 +7,7 @@ use gst::prelude::{
     Cast, ElementExt, ElementExtManual, GstBinExt, GstBinExtManual, GstObjectExt, ObjectExt,
     PadExt, PadExtManual,
 };
-use gst::{ClockTime, SeekFlags};
+use gst::ClockTime;
 use gst_app::AppSrc;
 use gst_pbutils::prelude::{EncodingProfileBuilder, EncodingProfileExt};
 use gst_pbutils::EncodingContainerProfile;
@@ -48,8 +47,6 @@ impl Player {
 
         self.app_sink.set_property("sync", false);
         self.set_is_mute(true);
-
-        let audio_src = gst::Bin::with_name("audio_export_src");
 
         let pipeline = export_video(
             source_uri,
@@ -189,14 +186,12 @@ fn export_video(
 
     let mut frame_count = 0;
     let frame_spacing = 1.0 / (info.framerate.numer() as f64 / info.framerate.denom() as f64);
-    let pixel_size = 4 * U32_SIZE as usize;
 
     video_app_src.set_callbacks(
         gst_app::AppSrcCallbacks::builder()
             .need_data(move |appsrc, _| {
                 let Ok(texture) = texture_receiver.recv() else {
                     let _ = appsrc.end_of_stream();
-                    println!("end of stream");
                     return;
                 };
 
@@ -205,41 +200,20 @@ fn export_video(
                 let mut frame = vec![0u8; (output_size.width * output_size.height * 4) as usize];
                 texture.download(&mut frame, gst_video_info.stride()[0] as usize);
 
-                let mut buffer =
-                    gst::Buffer::with_size(output_size.frame_buffer_size(pixel_size)).unwrap();
+                let mut buffer = gst::Buffer::from_slice(frame);
                 {
                     let buffer = buffer.get_mut().unwrap();
                     buffer.set_pts(ClockTime::from_seconds_f64(
                         frame_count as f64 * frame_spacing,
                     ));
-
-                    let mut vframe =
-                        gst_video::VideoFrameRef::from_buffer_ref_writable(buffer, &gst_video_info)
-                            .unwrap();
-
-                    vframe
-                        .plane_data_mut(0)
-                        .unwrap()
-                        .copy_from_slice(&frame[..]);
                 }
+
                 frame_count += 1;
                 let _ = appsrc.push_buffer(buffer);
-                println!("did frame #{frame_count} in {:?}", timer.elapsed().unwrap());
+                // println!("did frame #{frame_count} in {:?}", timer.elapsed().unwrap());
             })
             .build(),
     );
-
-    pipeline.set_state(gst::State::Paused).unwrap();
-    file_sink
-        .seek(
-            1.0,
-            SeekFlags::FLUSH | SeekFlags::ACCURATE,
-            gst::SeekType::Set,
-            timeline_settings.start,
-            gst::SeekType::Set,
-            timeline_settings.end,
-        )
-        .expect("could not seek");
 
     pipeline.set_state(gst::State::Playing).unwrap();
     pipeline

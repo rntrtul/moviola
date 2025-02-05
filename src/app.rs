@@ -454,9 +454,7 @@ impl Component for App {
             AppMsg::TogglePlayPause => self.player.borrow_mut().toggle_play_plause(),
             AppMsg::ToggleMute => self.player.borrow_mut().toggle_mute(),
             AppMsg::VideoFinished => {
-                // todo: have seperate event for segment finished
                 if self.video_is_exporting {
-                    println!("video finished");
                     self.export_video_decode_finished = true;
                 } else {
                     self.player.borrow_mut().set_is_finished()
@@ -537,8 +535,6 @@ impl Component for App {
             AppCommandMsg::FrameRendered(texture) => {
                 if self.video_is_exporting {
                     self.frames_exported += 1;
-                    println!("recv export frame: {}", self.frames_exported);
-
                     if let Some(sender) = self.export_sender.as_ref() {
                         sender.send(texture).unwrap();
                     };
