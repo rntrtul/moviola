@@ -272,101 +272,88 @@ impl Preview {
         }
     }
 
-    fn nearest_point_on_rect_form_point(
-        rect: &Rectangle,
-        point: Point,
-        corner_type: CornerType,
-    ) -> Point {
-        let (vertical_edge, horizontal_edge) = corner_type.edges();
-        let vertical_point = rect.closest_point_on_edge(vertical_edge, point);
-        let horizontal_point = rect.closest_point_on_edge(horizontal_edge, point);
+    pub(crate) fn constrain_crop_box_to_visible_preview(&self) {
+        let crop_box = self.bounding_box_rect();
+        let preview = self.visible_preview_rect();
 
-        if point_distance(vertical_point, point) > point_distance(horizontal_point, point) {
-            horizontal_point
-        } else {
-            vertical_point
-        }
-    }
+        let mut left = None;
+        let mut top = None;
+        let mut right = None;
+        let mut bottom = None;
 
-    fn nearest_point_rect(&self) -> Rectangle {
-        let visible = self.visible_preview_rect();
-        let rect = self.bounding_box_rect();
+        let nearest_points = nearest_point_rect(&preview, &crop_box);
 
-        let top_left =
-            Self::nearest_point_on_rect_form_point(&visible, rect.top_left(), CornerType::TopLeft);
-        let bottom_left = Self::nearest_point_on_rect_form_point(
-            &visible,
-            rect.bottom_left(),
-            CornerType::BottomLeft,
-        );
-        let top_right = Self::nearest_point_on_rect_form_point(
-            &visible,
-            rect.top_right(),
-            CornerType::TopRight,
-        );
-        let bottom_right = Self::nearest_point_on_rect_form_point(
-            &visible,
-            rect.bottom_right(),
-            CornerType::BottomRight,
-        );
-
-        Rectangle {
-            top_left,
-            top_right,
-            bottom_left,
-            bottom_right,
-            angle: 0.0,
-        }
-    }
-
-    pub(crate) fn update_to_fit_in_visible_frame(&self) {
-        // fixme: respect aspect ratio
-        let rect = self.bounding_box_rect();
-        let visible = self.visible_preview_rect();
-
-        let mut left = f32::NEG_INFINITY;
-        let mut top = f32::NEG_INFINITY;
-        let mut right = f32::INFINITY;
-        let mut bottom = f32::INFINITY;
-
-        let nearest_points = self.nearest_point_rect();
-
-        if !visible.contains(rect.top_left()) {
-            let (left_x, top_y) = self.point_as_percent(nearest_points.top_left);
-            top = top_y;
-            left = left_x;
+        if !preview.contains(crop_box.top_left()) {
+            let (x, y) = (nearest_points.top_left.x(), nearest_points.top_left.y());
+            top = Some(y);
+            left = Some(x);
         }
 
-        if !visible.contains(rect.top_right()) {
-            let (x, y) = self.point_as_percent(nearest_points.top_right);
-            top = top.max(y);
-            right = x;
+        if !preview.contains(crop_box.top_right()) {
+            let (x, y) = (nearest_points.top_right.x(), nearest_points.top_right.y());
+            top = Some(top.map_or(y, |t| t.max(y)));
+            right = Some(x);
         }
 
-        if !visible.contains(rect.bottom_left()) {
-            let (x, y) = self.point_as_percent(nearest_points.bottom_left);
-            left = left.max(x);
-            bottom = y;
+        if !preview.contains(crop_box.bottom_left()) {
+            let (x, y) = (
+                nearest_points.bottom_left.x(),
+                nearest_points.bottom_left.y(),
+            );
+            left = Some(left.map_or(x, |l| l.max(x)));
+            bottom = Some(y);
         }
 
-        if !visible.contains(rect.bottom_right()) {
-            let (x, y) = self.point_as_percent(nearest_points.bottom_right);
-            right = right.min(x);
-            bottom = bottom.min(y);
+        if !preview.contains(crop_box.bottom_right()) {
+            let (x, y) = (
+                nearest_points.bottom_right.x(),
+                nearest_points.bottom_right.y(),
+            );
+            right = Some(right.map_or(x, |r| r.min(x)));
+            bottom = Some(bottom.map_or(y, |b| b.min(y)));
         }
 
-        if left != f32::NEG_INFINITY {
-            self.left_x.set(left);
+        if left.is_none() && top.is_none() && right.is_none() && bottom.is_none() {
+            return;
         }
-        if top != f32::NEG_INFINITY {
-            self.top_y.set(top);
+
+        let mut left_offset = left.map_or(0.0, |l| l - crop_box.x());
+        let mut right_offset = right.map_or(0.0, |r| r - (crop_box.x() + crop_box.width()));
+        let mut top_offset = top.map_or(0.0, |t| t - crop_box.y());
+        let mut bottom_offset = bottom.map_or(0.0, |b| b - (crop_box.y() + crop_box.height()));
+
+        let total_x_offset = left_offset - right_offset;
+        let total_y_offset = top_offset - bottom_offset;
+        let aspect_ratio = (total_x_offset / total_y_offset).abs();
+
+        let target_aspect_ratio = self.crop_aspect_ratio();
+
+        if self.crop_mode.get() != CropMode::Free && target_aspect_ratio != aspect_ratio {
+            if aspect_ratio > target_aspect_ratio {
+                let target_y_offset = total_y_offset / target_aspect_ratio;
+                if target_y_offset.is_sign_negative() {
+                    bottom_offset = -(target_y_offset.abs() - top_offset);
+                } else {
+                    top_offset = target_y_offset.abs() - bottom_offset.abs();
+                }
+            } else {
+                let target_x_offset = total_y_offset * target_aspect_ratio;
+                if target_x_offset.is_sign_negative() {
+                    right_offset = -(target_x_offset.abs() - left_offset);
+                } else {
+                    left_offset = target_x_offset.abs() - right_offset.abs();
+                }
+            }
         }
-        if right != f32::INFINITY {
-            self.right_x.set(right);
-        }
-        if bottom != f32::INFINITY {
-            self.bottom_y.set(bottom);
-        }
+
+        self.left_x
+            .set(self.left_x.get() + self.x_as_percent(left_offset));
+        self.right_x
+            .set(self.right_x.get() + self.x_as_percent(right_offset));
+        self.top_y
+            .set(self.top_y.get() + self.y_as_percent(top_offset));
+        self.bottom_y
+            .set(self.bottom_y.get() + self.y_as_percent(bottom_offset));
     }
 
     pub fn aspect_ratio_respecting_offset(&self, offset: Point) -> (f32, f32) {
@@ -708,6 +695,40 @@ fn constrained_rect_bounds(
         bottom: finite_abs_min(&[bottom_1, bottom_2]),
         left: finite_abs_min(&[left_1, left_2]),
         right: finite_abs_min(&[right_1, right_2]),
+    }
+}
+
+fn nearest_point_on_rect_form_point(
+    rect: &Rectangle,
+    point: Point,
+    corner_type: CornerType,
+) -> Point {
+    let (vertical_edge, horizontal_edge) = corner_type.edges();
+    let vertical_point = rect.closest_point_on_edge(vertical_edge, point);
+    let horizontal_point = rect.closest_point_on_edge(horizontal_edge, point);
+
+    if point_distance(vertical_point, point) > point_distance(horizontal_point, point) {
+        horizontal_point
+    } else {
+        vertical_point
+    }
+}
+
+fn nearest_point_rect(visible: &Rectangle, rect: &graphene::Rect) -> Rectangle {
+    let top_left = nearest_point_on_rect_form_point(&visible, rect.top_left(), CornerType::TopLeft);
+    let bottom_left =
+        nearest_point_on_rect_form_point(&visible, rect.bottom_left(), CornerType::BottomLeft);
+    let top_right =
+        nearest_point_on_rect_form_point(&visible, rect.top_right(), CornerType::TopRight);
+    let bottom_right =
+        nearest_point_on_rect_form_point(&visible, rect.bottom_right(), CornerType::BottomRight);
+
+    Rectangle {
+        top_left,
+        top_right,
+        bottom_left,
+        bottom_right,
+        angle: 0.0,
     }
 }
 

@@ -139,4 +139,15 @@ impl Preview {
     pub(crate) fn y_as_percent(&self, y: f32) -> f32 {
         self.size_as_percent(0.0, y).1
     }
+
+    pub(crate) fn percent_as_x(&self, percent: f32) -> f32 {
+        let preview = self.display_preview_rect();
+
+        preview.width() * percent + preview.x()
+    }
+
+    pub(crate) fn percent_as_y(&self, percent: f32) -> f32 {
+        let preview = self.display_preview_rect();
+        preview.height() * percent + preview.y()
+    }
 }

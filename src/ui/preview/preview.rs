@@ -255,7 +255,7 @@ impl crate::ui::preview::Preview {
 
     pub fn set_straigten_angle(&self, angle: f64) {
         self.imp().straighten_angle.set(angle);
-        self.imp().update_to_fit_in_visible_frame();
+        self.imp().constrain_crop_box_to_visible_preview();
         self.queue_draw();
     }
 
