@@ -205,70 +205,34 @@ impl Preview {
         ]
     }
 
-    pub fn maintain_aspect_ratio(&self) {
+    pub fn shrink_box_to_new_aspect_ratio(&self) {
         if self.crop_mode.get() == CropMode::Free {
             return;
         }
 
-        let target_aspect_ratio = if self.crop_mode.get() == CropMode::Original {
-            self.original_aspect_ratio.get()
-        } else {
-            self.crop_mode.get().value()
-        };
+        let target_aspect_ratio = self.crop_aspect_ratio();
+        let rect = self.bounding_box_rect();
 
-        let crop_rect = if self.active_drag_type.get().is_active() {
-            self.bounding_box_rect()
-        } else {
-            self.preview_rect()
-        };
-
-        let right_x = crop_rect.x() + crop_rect.width();
-        let bottom_y = crop_rect.y() + crop_rect.height();
-
-        let is_width_constrained = crop_rect.width() < (crop_rect.height() * target_aspect_ratio);
-
+        let is_width_constrained = rect.width() < (rect.height() * target_aspect_ratio);
         let (new_width, new_height) = if is_width_constrained {
-            let new_height = crop_rect.width() / target_aspect_ratio;
-            (crop_rect.width(), new_height)
+            let new_height = rect.width() / target_aspect_ratio;
+            (rect.width(), new_height)
         } else {
-            let new_width = crop_rect.height() * target_aspect_ratio;
-            (new_width, crop_rect.height())
+            let new_width = rect.height() * target_aspect_ratio;
+            (new_width, rect.height())
         };
 
-        let preview = self.preview_rect();
+        let (new_left, new_top) = self.centered_start(new_width, new_height);
 
-        // todo: combine this and get_cordinate_percent_from_drag logic into point_in_percent_preview_relative
-        let adjusted_left_x =
-            (right_x - new_width - preview.x()).clamp(0., preview.width()) / preview.width();
-        let adjusted_right_x =
-            (crop_rect.x() + new_width - preview.x()).clamp(0., preview.width()) / preview.width();
-        let adjusted_top_y =
-            (bottom_y - new_height - preview.y()).clamp(0., preview.height()) / preview.height();
-        let adjusted_bottom_y = (crop_rect.y() + new_height - preview.y())
-            .clamp(0., preview.height())
-            / preview.height();
+        let (width, height) = self.size_as_percent(new_width, new_height);
+        let (left, top) = self.size_as_percent(new_left, new_top);
 
-        match self.active_handle.get() {
-            HandleType::TopLeft => {
-                self.left_x.set(adjusted_left_x);
-                self.top_y.set(adjusted_top_y);
-            }
-            HandleType::TopRight => {
-                self.right_x.set(adjusted_right_x);
-                self.top_y.set(adjusted_top_y);
-            }
-            HandleType::BottomLeft => {
-                self.left_x.set(adjusted_left_x);
-                self.bottom_y.set(adjusted_bottom_y);
-            }
-            HandleType::BottomRight => {
-                self.right_x.set(adjusted_right_x);
-                self.bottom_y.set(adjusted_bottom_y);
-            }
-            HandleType::None => {
-                self.right_x.set(adjusted_right_x);
-                self.bottom_y.set(adjusted_bottom_y);
-            }
+        if is_width_constrained {
+            self.top_y.set(top);
+            self.bottom_y.set(top + height);
+        } else {
+            self.left_x.set(left);
+            self.right_x.set(left + width);
         }
     }
 

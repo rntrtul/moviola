@@ -113,7 +113,6 @@ impl WidgetImpl for Preview {
 
         if let Some(ref texture) = *self.texture.borrow() {
             if self.is_straightened() {
-                // todo: try and get higher res frame when straightend.
                 // todo: grey out outside region
                 snapshot.save();
                 snapshot.translate(&Point::new(preview.width() / 2.0, preview.height() / 2.0));
@@ -235,7 +234,7 @@ impl crate::ui::preview::Preview {
 
     pub fn set_crop_mode(&self, crop_modes: CropMode) {
         self.imp().crop_mode.set(crop_modes);
-        self.imp().maintain_aspect_ratio();
+        self.imp().shrink_box_to_new_aspect_ratio();
         self.queue_draw();
     }
 

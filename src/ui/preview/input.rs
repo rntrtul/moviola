@@ -123,31 +123,11 @@ impl Preview {
         (x / preview.width(), y / preview.height())
     }
 
-    pub(crate) fn point_as_percent(&self, point: graphene::Point) -> (f32, f32) {
-        let preview = self.display_preview_rect();
-
-        (
-            (point.x() - preview.x()) / preview.width(),
-            (point.y() - preview.y()) / preview.height(),
-        )
-    }
-
     pub(crate) fn x_as_percent(&self, x: f32) -> f32 {
         self.size_as_percent(x, 0.0).0
     }
 
     pub(crate) fn y_as_percent(&self, y: f32) -> f32 {
         self.size_as_percent(0.0, y).1
-    }
-
-    pub(crate) fn percent_as_x(&self, percent: f32) -> f32 {
-        let preview = self.display_preview_rect();
-
-        preview.width() * percent + preview.x()
-    }
-
-    pub(crate) fn percent_as_y(&self, percent: f32) -> f32 {
-        let preview = self.display_preview_rect();
-        preview.height() * percent + preview.y()
     }
 }
