@@ -3,6 +3,7 @@ use crate::renderer::handler::TimerCmd;
 use crate::renderer::timer::{GpuTimer, QuerySet};
 use crate::renderer::{texture, EffectParameters, TimerEvent};
 use crate::ui::preview::Orientation;
+use ash::vk;
 use gst::Sample;
 use image::DynamicImage;
 use relm4::gtk::prelude::Cast;
@@ -11,13 +12,11 @@ use std::cell::RefCell;
 use std::default::Default;
 use std::sync::mpsc;
 use std::time::Instant;
-use wgpu::include_wgsl;
+use wgpu::{hal, include_wgsl};
 
 pub static U32_SIZE: u32 = size_of::<u32>() as u32;
 
 pub struct Renderer {
-    device: wgpu::Device,
-    queue: wgpu::Queue,
     output_size: FrameSize,
     frame_position: FramePosition,
     effect_parameters: EffectParameters,
@@ -35,6 +34,10 @@ pub struct Renderer {
     final_output_buffer: wgpu::Buffer,
     pub(crate) gpu_timer: GpuTimer,
     timer_sender: mpsc::Sender<TimerCmd>,
+    device: wgpu::Device,
+    queue: wgpu::Queue,
+    adapter: wgpu::Adapter,
+    instance: wgpu::Instance,
 }
 
 impl Renderer {
@@ -53,19 +56,12 @@ impl Renderer {
             .await
             .unwrap();
 
-        let (device, queue) = adapter
-            .request_device(
-                &wgpu::DeviceDescriptor {
-                    required_features: wgpu::Features::TIMESTAMP_QUERY
-                        | wgpu::Features::TEXTURE_ADAPTER_SPECIFIC_FORMAT_FEATURES,
-                    required_limits: wgpu::Limits::default(),
-                    label: None,
-                    memory_hints: wgpu::MemoryHints::Performance,
-                },
-                None,
-            )
-            .await
-            .unwrap();
+        let (device, queue) = create_device_queue_allocator(
+            &instance,
+            &adapter,
+            wgpu::Features::TIMESTAMP_QUERY
+                | wgpu::Features::TEXTURE_ADAPTER_SPECIFIC_FORMAT_FEATURES,
+        );
 
         // assuming timestamp feature available always
         let timer = GpuTimer::new(&device);
@@ -232,6 +228,8 @@ impl Renderer {
             });
 
         Self {
+            instance,
+            adapter,
             device,
             queue,
             output_size,
@@ -641,6 +639,89 @@ impl Renderer {
         let output_size = self.frame_position.output_frame_size();
         self.update_buffers_for_output_size(output_size);
     }
+}
+
+fn create_device_queue_allocator(
+    instance: &wgpu::Instance,
+    adapter: &wgpu::Adapter,
+    required_features: wgpu::Features,
+) -> (wgpu::Device, wgpu::Queue) {
+    let instance = unsafe {
+        if let Some(instance) = instance.as_hal::<hal::api::Vulkan>() {
+            instance.shared_instance().raw_instance()
+        } else {
+            panic!("Failed to find instance");
+        }
+    };
+
+    let mut open_device = None;
+    let all_features = adapter.features() | required_features;
+    unsafe {
+        adapter.as_hal::<hal::api::Vulkan, _, _>(|adapter| {
+            if let Some(adapter) = adapter {
+                let raw = adapter.raw_physical_device();
+
+                let mut enabled_extensions = adapter.required_device_extensions(all_features);
+                enabled_extensions.push(vk::EXT_EXTERNAL_MEMORY_DMA_BUF_NAME);
+                enabled_extensions.push(vk::KHR_EXTERNAL_MEMORY_FD_NAME);
+                enabled_extensions.push(vk::KHR_EXTERNAL_MEMORY_NAME);
+
+                let mut enabled_phd_features =
+                    adapter.physical_device_features(&enabled_extensions, all_features);
+
+                let queue_create_info = vk::DeviceQueueCreateInfo::default()
+                    .queue_family_index(0)
+                    .queue_priorities(&[1.0]);
+                let queue_family_infos = [queue_create_info];
+
+                let str_pointers = enabled_extensions
+                    .iter()
+                    .map(|&s| s.as_ptr())
+                    .collect::<Vec<_>>();
+
+                let pre_info = vk::DeviceCreateInfo::default()
+                    .queue_create_infos(&queue_family_infos)
+                    .enabled_extension_names(&str_pointers);
+
+                let device_create_info = enabled_phd_features.add_to_device_create(pre_info);
+
+                let raw_device = instance
+                    .create_device(raw, &device_create_info, None)
+                    .expect("Failed to create device");
+
+                open_device = Some(
+                    adapter
+                        .device_from_raw(
+                            raw_device,
+                            None,
+                            &enabled_extensions,
+                            required_features,
+                            &wgpu::MemoryHints::Performance,
+                            0,
+                            0,
+                        )
+                        .expect("Failed to create adapter"),
+                );
+            }
+        })
+    };
+
+    let (device, queue) = unsafe {
+        adapter
+            .create_device_from_hal(
+                open_device.unwrap(),
+                &wgpu::DeviceDescriptor {
+                    required_features,
+                    required_limits: wgpu::Limits::default(),
+                    label: None,
+                    memory_hints: wgpu::MemoryHints::Performance,
+                },
+                None,
+            )
+            .expect("Failed to create device and queue from hal")
+    };
+
+    (device, queue)
 }
 
 #[cfg(test)]
