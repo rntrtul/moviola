@@ -22,6 +22,8 @@ approx = { version = "0.5.1" }
 argh = { version = "0.1.13", features = ["help"], default-features = false }
 encase = { version = "0.10.0", features = ["mint"] }
 mint = "0.5.9"
+ash = "0.38.0"
+vk-mem = "0.4.0"
 
 [build-dependencies]
 glib-build-tools = "0.20.0"

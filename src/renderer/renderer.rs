@@ -1,3 +1,4 @@
+use crate::renderer::export_buffer::ExportBuffer;
 use crate::renderer::frame_position::{FramePosition, FrameSize};
 use crate::renderer::handler::TimerCmd;
 use crate::renderer::timer::{GpuTimer, QuerySet};
@@ -6,12 +7,13 @@ use crate::ui::preview::Orientation;
 use ash::vk;
 use gst::Sample;
 use image::DynamicImage;
-use relm4::gtk::prelude::Cast;
-use relm4::gtk::{gdk, glib};
+use relm4::gtk::gdk;
+use relm4::gtk::prelude::{Cast, DisplayExt};
 use std::cell::RefCell;
 use std::default::Default;
-use std::sync::mpsc;
+use std::sync::{mpsc, Arc};
 use std::time::Instant;
+use vk_mem::Alloc;
 use wgpu::{hal, include_wgsl};
 
 pub static U32_SIZE: u32 = size_of::<u32>() as u32;
@@ -32,6 +34,10 @@ pub struct Renderer {
     effects_buffer: wgpu::Buffer,
     effects_output_buffer: wgpu::Buffer,
     final_output_buffer: wgpu::Buffer,
+    final_output_export_buffer: Option<ExportBuffer>,
+    export_mem_info: vk::ExportMemoryAllocateInfo<'static>,
+    allocator_pool: vk_mem::AllocatorPool,
+    allocator: Arc<vk_mem::Allocator>,
     pub(crate) gpu_timer: GpuTimer,
     timer_sender: mpsc::Sender<TimerCmd>,
     device: wgpu::Device,
@@ -56,12 +62,16 @@ impl Renderer {
             .await
             .unwrap();
 
-        let (device, queue) = create_device_queue_allocator(
+        let (device, queue, allocator) = create_device_queue_allocator(
             &instance,
             &adapter,
             wgpu::Features::TIMESTAMP_QUERY
                 | wgpu::Features::TEXTURE_ADAPTER_SPECIFIC_FORMAT_FEATURES,
         );
+        let mut export_mem_info = vk::ExportMemoryAllocateInfo::default()
+            .handle_types(vk::ExternalMemoryHandleTypeFlags::DMA_BUF_EXT);
+        let allocator = Arc::new(allocator);
+        let allocator_pool = create_external_buffer_pool(&allocator, &mut export_mem_info);
 
         // assuming timestamp feature available always
         let timer = GpuTimer::new(&device);
@@ -169,10 +179,18 @@ impl Renderer {
         let effect_parameters = EffectParameters::new();
         let effects_buffer = effect_parameters.buffer(&device);
 
-        let texture = texture::Texture::new_for_size(1, 1, &device, "").unwrap();
-
         let output_size = FrameSize::new(512, 288);
+        let input_texture =
+            texture::Texture::new_for_size(output_size.width, output_size.height, &device, "")
+                .unwrap();
+
         let frame_position = FramePosition::new(output_size);
+        let final_output_export_buffer = ExportBuffer::new(
+            &device,
+            &allocator,
+            &allocator_pool,
+            output_size.texture_size(),
+        );
 
         let (
             positioned_frame_buffer,
@@ -187,7 +205,7 @@ impl Renderer {
             &effects_bind_group_layout,
             &frame_position_bind_group_layout,
             &frame_position,
-            &texture,
+            &input_texture,
             &device,
         );
 
@@ -235,7 +253,7 @@ impl Renderer {
             output_size,
             frame_position,
             effect_parameters,
-            video_frame_texture: RefCell::new(texture),
+            video_frame_texture: RefCell::new(input_texture),
             frame_position_pipeline,
             frame_position_bind_group_layout,
             frame_position_bind_group,
@@ -247,6 +265,10 @@ impl Renderer {
             effects_buffer,
             effects_output_buffer,
             final_output_buffer,
+            final_output_export_buffer: Some(final_output_export_buffer),
+            export_mem_info,
+            allocator,
+            allocator_pool,
             gpu_timer: timer,
             timer_sender,
         }
@@ -417,6 +439,12 @@ impl Renderer {
         );
 
         self.final_output_buffer = final_output_buffer;
+        self.final_output_export_buffer.replace(ExportBuffer::new(
+            &self.device,
+            &self.allocator,
+            &self.allocator_pool,
+            output_frame_size.texture_size(),
+        ));
         self.effects_output_buffer = effects_output_buffer;
         self.effects_bind_group = effects_bind_group;
         self.frame_position_buffer = frame_position_buffer;
@@ -491,13 +519,22 @@ impl Renderer {
             output_source_buffer = &self.effects_output_buffer;
         }
 
+        let presentation_buffer = ExportBuffer::new(
+            &self.device,
+            &self.allocator,
+            &self.allocator_pool,
+            self.output_size.texture_size(),
+        );
+
         encoder.copy_buffer_to_buffer(
             &output_source_buffer,
             0,
-            &self.final_output_buffer,
+            &presentation_buffer.buffer,
             0,
-            self.final_output_buffer.size(),
+            presentation_buffer.buffer.size(),
         );
+
+        self.final_output_export_buffer.replace(presentation_buffer);
 
         encoder.resolve_query_set(
             &self.gpu_timer.query_set,
@@ -525,16 +562,10 @@ impl Renderer {
         let gdk_texture: gdk::Texture;
 
         {
-            let (sender, receiver) = mpsc::channel();
-            let slice = self.final_output_buffer.slice(..);
-
             self.timer_sender
                 .send(TimerCmd::Start(TimerEvent::BuffMap, Instant::now()))
                 .unwrap();
-
-            slice.map_async(wgpu::MapMode::Read, move |r| sender.send(r).unwrap());
             self.device.poll(wgpu::Maintain::wait()).panic_on_timeout();
-            receiver.recv().unwrap().unwrap();
 
             self.timer_sender
                 .send(TimerCmd::Stop(TimerEvent::BuffMap, Instant::now()))
@@ -544,16 +575,25 @@ impl Renderer {
                 self.timer_sender
                     .send(TimerCmd::Start(TimerEvent::TextureCreate, Instant::now()))
                     .unwrap();
-                let view = slice.get_mapped_range();
 
-                gdk_texture = gdk::MemoryTexture::new(
-                    self.output_size.width as i32,
-                    self.output_size.height as i32,
-                    gdk::MemoryFormat::R8g8b8a8,
-                    &glib::Bytes::from(&view.iter().as_slice()),
-                    self.output_size.width as usize * 4,
-                )
-                .upcast::<gdk::Texture>();
+                // todo: build a dmabuf texture
+                let buffer = self.final_output_export_buffer.take().unwrap();
+                let builder = gdk::DmabufTextureBuilder::new();
+
+                builder.set_display(&gdk::Display::default().unwrap());
+                builder.set_fourcc(875708754); // fixme: don't hardcode rgba (RA24, but backwards)
+                builder.set_width(self.output_size.width);
+                builder.set_height(self.output_size.height);
+                builder.set_n_planes(1);
+                builder.set_fd(0, buffer.fd(&self.device, &self.instance));
+                builder.set_offset(0, 0);
+                builder.set_stride(0, 4);
+
+                gdk_texture = unsafe {
+                    builder
+                        .build_with_release_func(move || drop(buffer))
+                        .expect("unable to build texture")
+                };
 
                 self.timer_sender
                     .send(TimerCmd::Stop(TimerEvent::TextureCreate, Instant::now()))
@@ -561,8 +601,6 @@ impl Renderer {
             }
             self.gpu_timer
                 .collect_query_results(&self.device, &self.queue);
-
-            self.final_output_buffer.unmap();
         }
 
         Ok(gdk_texture)
@@ -641,19 +679,24 @@ impl Renderer {
     }
 }
 
+fn instance_as_vulkan_instance(instance: &wgpu::Instance) -> &ash::Instance {
+    unsafe {
+        if let Some(instance) = instance.as_hal::<hal::api::Vulkan>() {
+            instance.shared_instance().raw_instance()
+        } else {
+            panic!("Failed to get vulakn hal instance");
+        }
+    }
+}
+
 fn create_device_queue_allocator(
     instance: &wgpu::Instance,
     adapter: &wgpu::Adapter,
     required_features: wgpu::Features,
-) -> (wgpu::Device, wgpu::Queue) {
-    let instance = unsafe {
-        if let Some(instance) = instance.as_hal::<hal::api::Vulkan>() {
-            instance.shared_instance().raw_instance()
-        } else {
-            panic!("Failed to find instance");
-        }
-    };
+) -> (wgpu::Device, wgpu::Queue, vk_mem::Allocator) {
+    let instance = instance_as_vulkan_instance(instance);
 
+    let mut allocator = None;
     let mut open_device = None;
     let all_features = adapter.features() | required_features;
     unsafe {
@@ -689,6 +732,10 @@ fn create_device_queue_allocator(
                     .create_device(raw, &device_create_info, None)
                     .expect("Failed to create device");
 
+                let alloc_create_info =
+                    vk_mem::AllocatorCreateInfo::new(&instance, &raw_device, raw);
+                allocator = Some(vk_mem::Allocator::new(alloc_create_info).unwrap());
+
                 open_device = Some(
                     adapter
                         .device_from_raw(
@@ -721,7 +768,39 @@ fn create_device_queue_allocator(
             .expect("Failed to create device and queue from hal")
     };
 
-    (device, queue)
+    (device, queue, allocator.unwrap())
+}
+
+fn create_external_buffer_pool(
+    allocator: &Arc<vk_mem::Allocator>,
+    export_mem_alloc_info: &mut vk::ExportMemoryAllocateInfo,
+) -> vk_mem::AllocatorPool {
+    let mut external_image_info = vk::ExternalMemoryBufferCreateInfo::default()
+        .handle_types(vk::ExternalMemoryHandleTypeFlags::DMA_BUF_EXT);
+
+    let buffer_create_info = vk::BufferCreateInfo::default()
+        .push_next(&mut external_image_info)
+        .usage(vk::BufferUsageFlags::TRANSFER_DST);
+
+    let mem_type_index = unsafe {
+        allocator
+            .find_memory_type_index_for_buffer_info(
+                &buffer_create_info,
+                &vk_mem::AllocationCreateInfo {
+                    usage: vk_mem::MemoryUsage::AutoPreferDevice,
+                    ..Default::default()
+                },
+            )
+            .expect("Failed to find memory type")
+    };
+
+    let mut pool_info = vk_mem::PoolCreateInfo::default();
+    pool_info.push_next(export_mem_alloc_info);
+    pool_info.memory_type_index = mem_type_index;
+
+    allocator
+        .create_pool(&pool_info)
+        .expect("Failed to create pool")
 }
 
 #[cfg(test)]
