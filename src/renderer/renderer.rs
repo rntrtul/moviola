@@ -11,9 +11,8 @@ use relm4::gtk::gdk;
 use relm4::gtk::prelude::{Cast, DisplayExt};
 use std::cell::RefCell;
 use std::default::Default;
-use std::sync::{mpsc, Arc};
+use std::sync::mpsc;
 use std::time::Instant;
-use vk_mem::Alloc;
 use wgpu::{hal, include_wgsl};
 
 pub static U32_SIZE: u32 = size_of::<u32>() as u32;
@@ -34,10 +33,10 @@ pub struct Renderer {
     effects_buffer: wgpu::Buffer,
     effects_output_buffer: wgpu::Buffer,
     final_output_buffer: wgpu::Buffer,
-    final_output_export_buffer: Option<ExportBuffer>,
-    export_mem_info: vk::ExportMemoryAllocateInfo<'static>,
-    allocator_pool: vk_mem::AllocatorPool,
-    allocator: Arc<vk_mem::Allocator>,
+    // todo: put these 2 in one struct and call it to get curr buff. Or rename
+    final_output_export_buffer: ExportBuffer,
+    final_output_export_buffer_2: ExportBuffer,
+    frame_count: u32,
     pub(crate) gpu_timer: GpuTimer,
     timer_sender: mpsc::Sender<TimerCmd>,
     device: wgpu::Device,
@@ -62,7 +61,7 @@ impl Renderer {
             .await
             .unwrap();
 
-        let (device, queue, allocator) = create_device_queue_allocator(
+        let (device, queue) = create_device_queue(
             &instance,
             &adapter,
             wgpu::Features::TIMESTAMP_QUERY
@@ -70,8 +69,6 @@ impl Renderer {
         );
         let mut export_mem_info = vk::ExportMemoryAllocateInfo::default()
             .handle_types(vk::ExternalMemoryHandleTypeFlags::DMA_BUF_EXT);
-        let allocator = Arc::new(allocator);
-        let allocator_pool = create_external_buffer_pool(&allocator, &mut export_mem_info);
 
         // assuming timestamp feature available always
         let timer = GpuTimer::new(&device);
@@ -185,12 +182,10 @@ impl Renderer {
                 .unwrap();
 
         let frame_position = FramePosition::new(output_size);
-        let final_output_export_buffer = ExportBuffer::new(
-            &device,
-            &allocator,
-            &allocator_pool,
-            output_size.texture_size(),
-        );
+        let final_output_export_buffer =
+            ExportBuffer::new(&device, &instance, output_size.texture_size());
+        let final_output_export_buffer_2 =
+            ExportBuffer::new(&device, &instance, output_size.texture_size());
 
         let (
             positioned_frame_buffer,
@@ -265,12 +260,11 @@ impl Renderer {
             effects_buffer,
             effects_output_buffer,
             final_output_buffer,
-            final_output_export_buffer: Some(final_output_export_buffer),
-            export_mem_info,
-            allocator,
-            allocator_pool,
+            final_output_export_buffer: final_output_export_buffer,
+            final_output_export_buffer_2: final_output_export_buffer_2,
             gpu_timer: timer,
             timer_sender,
+            frame_count: 0,
         }
     }
 
@@ -439,12 +433,16 @@ impl Renderer {
         );
 
         self.final_output_buffer = final_output_buffer;
-        self.final_output_export_buffer.replace(ExportBuffer::new(
+        self.final_output_export_buffer = ExportBuffer::new(
             &self.device,
-            &self.allocator,
-            &self.allocator_pool,
+            &self.instance,
             output_frame_size.texture_size(),
-        ));
+        );
+        self.final_output_export_buffer_2 = ExportBuffer::new(
+            &self.device,
+            &self.instance,
+            output_frame_size.texture_size(),
+        );
         self.effects_output_buffer = effects_output_buffer;
         self.effects_bind_group = effects_bind_group;
         self.frame_position_buffer = frame_position_buffer;
@@ -519,12 +517,11 @@ impl Renderer {
             output_source_buffer = &self.effects_output_buffer;
         }
 
-        let presentation_buffer = ExportBuffer::new(
-            &self.device,
-            &self.allocator,
-            &self.allocator_pool,
-            self.output_size.texture_size(),
-        );
+        let presentation_buffer = if self.frame_count % 2 == 0 {
+            &self.final_output_export_buffer
+        } else {
+            &self.final_output_export_buffer_2
+        };
 
         encoder.copy_buffer_to_buffer(
             &output_source_buffer,
@@ -533,8 +530,6 @@ impl Renderer {
             0,
             presentation_buffer.buffer.size(),
         );
-
-        self.final_output_export_buffer.replace(presentation_buffer);
 
         encoder.resolve_query_set(
             &self.gpu_timer.query_set,
@@ -576,23 +571,26 @@ impl Renderer {
                     .send(TimerCmd::Start(TimerEvent::TextureCreate, Instant::now()))
                     .unwrap();
 
-                // todo: build a dmabuf texture
-                let buffer = self.final_output_export_buffer.take().unwrap();
-                let builder = gdk::DmabufTextureBuilder::new();
+                let buffer = if self.frame_count % 2 == 0 {
+                    &self.final_output_export_buffer
+                } else {
+                    &self.final_output_export_buffer_2
+                };
 
+                // fixme: fix red overcast.
+                let builder = gdk::DmabufTextureBuilder::new();
                 builder.set_display(&gdk::Display::default().unwrap());
                 builder.set_fourcc(875708754); // fixme: don't hardcode rgba (RA24, but backwards)
                 builder.set_width(self.output_size.width);
                 builder.set_height(self.output_size.height);
                 builder.set_n_planes(1);
-                builder.set_fd(0, buffer.fd(&self.device, &self.instance));
+                builder.set_fd(0, buffer.fd);
                 builder.set_offset(0, 0);
                 builder.set_stride(0, 4);
 
                 gdk_texture = unsafe {
-                    builder
-                        .build_with_release_func(move || drop(buffer))
-                        .expect("unable to build texture")
+                    // first build is very slow ~100ms
+                    builder.build().expect("unable to build texture")
                 };
 
                 self.timer_sender
@@ -602,7 +600,7 @@ impl Renderer {
             self.gpu_timer
                 .collect_query_results(&self.device, &self.queue);
         }
-
+        self.frame_count += 1;
         Ok(gdk_texture)
     }
 
@@ -689,14 +687,13 @@ fn instance_as_vulkan_instance(instance: &wgpu::Instance) -> &ash::Instance {
     }
 }
 
-fn create_device_queue_allocator(
+fn create_device_queue(
     instance: &wgpu::Instance,
     adapter: &wgpu::Adapter,
     required_features: wgpu::Features,
-) -> (wgpu::Device, wgpu::Queue, vk_mem::Allocator) {
+) -> (wgpu::Device, wgpu::Queue) {
     let instance = instance_as_vulkan_instance(instance);
 
-    let mut allocator = None;
     let mut open_device = None;
     let all_features = adapter.features() | required_features;
     unsafe {
@@ -732,10 +729,6 @@ fn create_device_queue_allocator(
                     .create_device(raw, &device_create_info, None)
                     .expect("Failed to create device");
 
-                let alloc_create_info =
-                    vk_mem::AllocatorCreateInfo::new(&instance, &raw_device, raw);
-                allocator = Some(vk_mem::Allocator::new(alloc_create_info).unwrap());
-
                 open_device = Some(
                     adapter
                         .device_from_raw(
@@ -768,39 +761,7 @@ fn create_device_queue_allocator(
             .expect("Failed to create device and queue from hal")
     };
 
-    (device, queue, allocator.unwrap())
-}
-
-fn create_external_buffer_pool(
-    allocator: &Arc<vk_mem::Allocator>,
-    export_mem_alloc_info: &mut vk::ExportMemoryAllocateInfo,
-) -> vk_mem::AllocatorPool {
-    let mut external_image_info = vk::ExternalMemoryBufferCreateInfo::default()
-        .handle_types(vk::ExternalMemoryHandleTypeFlags::DMA_BUF_EXT);
-
-    let buffer_create_info = vk::BufferCreateInfo::default()
-        .push_next(&mut external_image_info)
-        .usage(vk::BufferUsageFlags::TRANSFER_DST);
-
-    let mem_type_index = unsafe {
-        allocator
-            .find_memory_type_index_for_buffer_info(
-                &buffer_create_info,
-                &vk_mem::AllocationCreateInfo {
-                    usage: vk_mem::MemoryUsage::AutoPreferDevice,
-                    ..Default::default()
-                },
-            )
-            .expect("Failed to find memory type")
-    };
-
-    let mut pool_info = vk_mem::PoolCreateInfo::default();
-    pool_info.push_next(export_mem_alloc_info);
-    pool_info.memory_type_index = mem_type_index;
-
-    allocator
-        .create_pool(&pool_info)
-        .expect("Failed to create pool")
+    (device, queue)
 }
 
 #[cfg(test)]
