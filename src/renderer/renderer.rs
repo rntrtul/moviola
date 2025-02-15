@@ -1,4 +1,4 @@
-use crate::renderer::export_buffer::ExportBuffer;
+use crate::renderer::export_buffer::ExportTexture;
 use crate::renderer::frame_position::{FramePosition, FrameSize};
 use crate::renderer::handler::TimerCmd;
 use crate::renderer::timer::{GpuTimer, QuerySet};
@@ -34,8 +34,8 @@ pub struct Renderer {
     effects_output_buffer: wgpu::Buffer,
     final_output_buffer: wgpu::Buffer,
     // todo: put these 2 in one struct and call it to get curr buff. Or rename
-    final_output_export_buffer: ExportBuffer,
-    final_output_export_buffer_2: ExportBuffer,
+    final_output_export_buffer: ExportTexture,
+    final_output_export_buffer_2: ExportTexture,
     frame_count: u32,
     pub(crate) gpu_timer: GpuTimer,
     timer_sender: mpsc::Sender<TimerCmd>,
@@ -67,8 +67,6 @@ impl Renderer {
             wgpu::Features::TIMESTAMP_QUERY
                 | wgpu::Features::TEXTURE_ADAPTER_SPECIFIC_FORMAT_FEATURES,
         );
-        let mut export_mem_info = vk::ExportMemoryAllocateInfo::default()
-            .handle_types(vk::ExternalMemoryHandleTypeFlags::DMA_BUF_EXT);
 
         // assuming timestamp feature available always
         let timer = GpuTimer::new(&device);
@@ -182,10 +180,9 @@ impl Renderer {
                 .unwrap();
 
         let frame_position = FramePosition::new(output_size);
-        let final_output_export_buffer =
-            ExportBuffer::new(&device, &instance, output_size.texture_size());
+        let final_output_export_buffer = ExportTexture::new(&device, &instance, output_size.into());
         let final_output_export_buffer_2 =
-            ExportBuffer::new(&device, &instance, output_size.texture_size());
+            ExportTexture::new(&device, &instance, output_size.into());
 
         let (
             positioned_frame_buffer,
@@ -433,16 +430,10 @@ impl Renderer {
         );
 
         self.final_output_buffer = final_output_buffer;
-        self.final_output_export_buffer = ExportBuffer::new(
-            &self.device,
-            &self.instance,
-            output_frame_size.texture_size(),
-        );
-        self.final_output_export_buffer_2 = ExportBuffer::new(
-            &self.device,
-            &self.instance,
-            output_frame_size.texture_size(),
-        );
+        self.final_output_export_buffer =
+            ExportTexture::new(&self.device, &self.instance, output_frame_size.into());
+        self.final_output_export_buffer_2 =
+            ExportTexture::new(&self.device, &self.instance, output_frame_size.into());
         self.effects_output_buffer = effects_output_buffer;
         self.effects_bind_group = effects_bind_group;
         self.frame_position_buffer = frame_position_buffer;
@@ -523,12 +514,22 @@ impl Renderer {
             &self.final_output_export_buffer_2
         };
 
-        encoder.copy_buffer_to_buffer(
-            &output_source_buffer,
-            0,
-            &presentation_buffer.buffer,
-            0,
-            presentation_buffer.buffer.size(),
+        encoder.copy_buffer_to_texture(
+            wgpu::TexelCopyBufferInfo {
+                buffer: &output_source_buffer,
+                layout: wgpu::TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(self.output_size.width * 4),
+                    rows_per_image: Some(self.output_size.height),
+                },
+            },
+            wgpu::TexelCopyTextureInfo {
+                texture: &presentation_buffer.texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            presentation_buffer.texture.size(),
         );
 
         encoder.resolve_query_set(
@@ -554,52 +555,50 @@ impl Renderer {
         command_buffer: wgpu::CommandBuffer,
     ) -> Result<gdk::Texture, wgpu::SurfaceError> {
         self.queue.submit(Some(command_buffer));
-        let gdk_texture: gdk::Texture;
 
-        {
-            self.timer_sender
-                .send(TimerCmd::Start(TimerEvent::BuffMap, Instant::now()))
-                .unwrap();
-            self.device.poll(wgpu::Maintain::wait()).panic_on_timeout();
+        self.timer_sender
+            .send(TimerCmd::Start(TimerEvent::BuffMap, Instant::now()))
+            .unwrap();
+        self.device.poll(wgpu::Maintain::wait()).panic_on_timeout();
+        self.timer_sender
+            .send(TimerCmd::Stop(TimerEvent::BuffMap, Instant::now()))
+            .unwrap();
 
-            self.timer_sender
-                .send(TimerCmd::Stop(TimerEvent::BuffMap, Instant::now()))
-                .unwrap();
+        self.timer_sender
+            .send(TimerCmd::Start(TimerEvent::TextureCreate, Instant::now()))
+            .unwrap();
 
-            {
-                self.timer_sender
-                    .send(TimerCmd::Start(TimerEvent::TextureCreate, Instant::now()))
-                    .unwrap();
+        let buffer = if self.frame_count % 2 == 0 {
+            &self.final_output_export_buffer
+        } else {
+            &self.final_output_export_buffer_2
+        };
 
-                let buffer = if self.frame_count % 2 == 0 {
-                    &self.final_output_export_buffer
-                } else {
-                    &self.final_output_export_buffer_2
-                };
+        let builder = gdk::DmabufTextureBuilder::new();
 
-                // fixme: fix red overcast.
-                let builder = gdk::DmabufTextureBuilder::new();
-                builder.set_display(&gdk::Display::default().unwrap());
-                builder.set_fourcc(875708754); // fixme: don't hardcode rgba (RA24, but backwards)
-                builder.set_width(self.output_size.width);
-                builder.set_height(self.output_size.height);
-                builder.set_n_planes(1);
-                builder.set_fd(0, buffer.fd);
-                builder.set_offset(0, 0);
-                builder.set_stride(0, 4);
+        builder.set_display(&gdk::Display::default().unwrap());
+        builder.set_fourcc(875709016); // fixme: don't hardcode xbgr
+        builder.set_modifier(0);
+        builder.set_width(self.output_size.width);
+        builder.set_height(self.output_size.height);
+        builder.set_n_planes(1);
+        builder.set_fd(0, buffer.fd);
+        builder.set_offset(0, 0);
+        builder.set_stride(0, 4);
 
-                gdk_texture = unsafe {
-                    // first build is very slow ~100ms
-                    builder.build().expect("unable to build texture")
-                };
+        let gdk_texture = unsafe {
+            // first build is very slow ~100ms
+            builder.build().expect("unable to build texture")
+        };
 
-                self.timer_sender
-                    .send(TimerCmd::Stop(TimerEvent::TextureCreate, Instant::now()))
-                    .unwrap();
-            }
-            self.gpu_timer
-                .collect_query_results(&self.device, &self.queue);
-        }
+        self.timer_sender
+            .send(TimerCmd::Stop(TimerEvent::TextureCreate, Instant::now()))
+            .unwrap();
+
+        self.device.poll(wgpu::Maintain::wait()).panic_on_timeout();
+        self.gpu_timer
+            .collect_query_results(&self.device, &self.queue);
+
         self.frame_count += 1;
         Ok(gdk_texture)
     }
@@ -677,22 +676,18 @@ impl Renderer {
     }
 }
 
-fn instance_as_vulkan_instance(instance: &wgpu::Instance) -> &ash::Instance {
-    unsafe {
-        if let Some(instance) = instance.as_hal::<hal::api::Vulkan>() {
-            instance.shared_instance().raw_instance()
-        } else {
-            panic!("Failed to get vulakn hal instance");
-        }
-    }
-}
-
 fn create_device_queue(
     instance: &wgpu::Instance,
     adapter: &wgpu::Adapter,
     required_features: wgpu::Features,
 ) -> (wgpu::Device, wgpu::Queue) {
-    let instance = instance_as_vulkan_instance(instance);
+    let instance = unsafe {
+        if let Some(instance) = instance.as_hal::<hal::api::Vulkan>() {
+            instance.shared_instance().raw_instance()
+        } else {
+            panic!("Failed to get vulakn hal instance");
+        }
+    };
 
     let mut open_device = None;
     let all_features = adapter.features() | required_features;
@@ -705,6 +700,7 @@ fn create_device_queue(
                 enabled_extensions.push(vk::EXT_EXTERNAL_MEMORY_DMA_BUF_NAME);
                 enabled_extensions.push(vk::KHR_EXTERNAL_MEMORY_FD_NAME);
                 enabled_extensions.push(vk::KHR_EXTERNAL_MEMORY_NAME);
+                enabled_extensions.push(vk::EXT_IMAGE_DRM_FORMAT_MODIFIER_NAME);
 
                 let mut enabled_phd_features =
                     adapter.physical_device_features(&enabled_extensions, all_features);

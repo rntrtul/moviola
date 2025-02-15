@@ -2,18 +2,18 @@ use ash::vk;
 use std::os::fd::RawFd;
 use wgpu::hal;
 
-pub(crate) struct ExportBuffer {
-    _raw_buffer: vk::Buffer,
+pub(crate) struct ExportTexture {
+    _raw_texture: vk::Image,
     device_memory: vk::DeviceMemory,
-    pub buffer: wgpu::Buffer,
+    pub texture: wgpu::Texture,
     pub fd: RawFd,
     device: wgpu::Device,
 }
 
-impl ExportBuffer {
-    pub fn new(device: &wgpu::Device, instance: &wgpu::Instance, size: vk::DeviceSize) -> Self {
-        let (raw_buffer, device_memory) = create_buffer(&device, size);
-        let buffer = upgrade_raw_buffer_to_wgpu(raw_buffer, size, &device);
+impl ExportTexture {
+    pub fn new(device: &wgpu::Device, instance: &wgpu::Instance, size: wgpu::Extent3d) -> Self {
+        let (raw_buffer, device_memory) = create_image(&device, size);
+        let texture = upgrade_raw_image_to_wgpu(raw_buffer, size, &device);
 
         let mut fd = None;
         unsafe {
@@ -42,19 +42,19 @@ impl ExportBuffer {
         };
 
         Self {
-            _raw_buffer: raw_buffer,
+            _raw_texture: raw_buffer,
             device_memory,
-            buffer,
+            texture,
             device: device.clone(),
             fd: fd.unwrap(),
         }
     }
 }
 
-impl Drop for ExportBuffer {
+impl Drop for ExportTexture {
     fn drop(&mut self) {
         // todo: cleanup rawfd. or see if don't need to.
-        self.buffer.destroy();
+        self.texture.destroy();
         unsafe {
             self.device.as_hal::<hal::api::Vulkan, _, _>(|device| {
                 if let Some(device) = device {
@@ -65,61 +65,100 @@ impl Drop for ExportBuffer {
     }
 }
 
-fn create_buffer(device: &wgpu::Device, size: vk::DeviceSize) -> (vk::Buffer, vk::DeviceMemory) {
-    let mut external_image_info = vk::ExternalMemoryBufferCreateInfo::default()
+fn create_image(device: &wgpu::Device, size: wgpu::Extent3d) -> (vk::Image, vk::DeviceMemory) {
+    let mut drm_form =
+        vk::ImageDrmFormatModifierListCreateInfoEXT::default().drm_format_modifiers(&[0]);
+
+    let mut external_image_info = vk::ExternalMemoryImageCreateInfo::default()
         .handle_types(vk::ExternalMemoryHandleTypeFlags::DMA_BUF_EXT);
 
-    let buffer_create_info = vk::BufferCreateInfo::default()
+    let image_create_info = vk::ImageCreateInfo::default()
+        .image_type(vk::ImageType::TYPE_2D)
+        .format(vk::Format::R8G8B8A8_UNORM)
+        .extent(
+            vk::Extent3D::default()
+                .width(size.width)
+                .height(size.height)
+                .depth(size.depth_or_array_layers),
+        )
+        .mip_levels(1)
+        .array_layers(1)
+        .samples(vk::SampleCountFlags::TYPE_1)
+        .tiling(vk::ImageTiling::DRM_FORMAT_MODIFIER_EXT)
+        .usage(vk::ImageUsageFlags::TRANSFER_DST)
+        .sharing_mode(vk::SharingMode::EXCLUSIVE)
         .push_next(&mut external_image_info)
-        .usage(vk::BufferUsageFlags::TRANSFER_DST)
-        .size(size);
+        .push_next(&mut drm_form);
 
     let mut allocation = None;
-    let mut raw_buffer = None;
+    let mut raw_image = None;
 
     unsafe {
         device.as_hal::<hal::api::Vulkan, _, _>(|device| {
             if let Some(device) = device {
                 let raw_device = device.raw_device();
-                let buffer = raw_device.create_buffer(&buffer_create_info, None).unwrap();
+                let image = raw_device.create_image(&image_create_info, None).unwrap();
+                let mem_req = raw_device.get_image_memory_requirements(image);
 
                 let mut export_mem_alloc_info = vk::ExportMemoryAllocateInfo::default()
                     .handle_types(vk::ExternalMemoryHandleTypeFlags::DMA_BUF_EXT);
 
                 let mem_alloc_info = vk::MemoryAllocateInfo::default()
                     .push_next(&mut export_mem_alloc_info)
-                    .allocation_size(size);
+                    .allocation_size(mem_req.size);
 
                 let device_memory = raw_device.allocate_memory(&mem_alloc_info, None).unwrap();
 
                 raw_device
-                    .bind_buffer_memory(buffer, device_memory, 0)
-                    .unwrap();
+                    .bind_image_memory(image, device_memory, 0)
+                    .expect("failed to bind image memory");
 
-                raw_buffer = Some(buffer);
+                raw_image = Some(image);
                 allocation = Some(device_memory);
             }
         })
     };
 
-    (raw_buffer.unwrap(), allocation.unwrap())
+    (raw_image.unwrap(), allocation.unwrap())
 }
 
-fn upgrade_raw_buffer_to_wgpu(
-    buffer: vk::Buffer,
-    buffer_size: vk::DeviceSize,
+fn upgrade_raw_image_to_wgpu(
+    image: vk::Image,
+    size: wgpu::Extent3d,
     device: &wgpu::Device,
-) -> wgpu::Buffer {
-    let hal_buffer = unsafe { <hal::api::Vulkan as hal::Api>::Device::buffer_from_raw(buffer) };
+) -> wgpu::Texture {
+    let format = wgpu::TextureFormat::Rgba8Unorm;
+
+    let hal_texture = unsafe {
+        <hal::api::Vulkan as hal::Api>::Device::texture_from_raw(
+            image,
+            &wgpu::hal::TextureDescriptor {
+                label: Some("imported image"),
+                size,
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format,
+                view_formats: vec![],
+                usage: wgpu::hal::TextureUses::COPY_DST,
+                memory_flags: wgpu::hal::MemoryFlags::empty(),
+            },
+            None,
+        )
+    };
 
     unsafe {
-        device.create_buffer_from_hal::<hal::api::Vulkan>(
-            hal_buffer,
-            &wgpu::BufferDescriptor {
-                label: Some("exportable texture"),
-                size: buffer_size,
-                usage: wgpu::BufferUsages::COPY_DST,
-                mapped_at_creation: false,
+        device.create_texture_from_hal::<hal::api::Vulkan>(
+            hal_texture,
+            &wgpu::TextureDescriptor {
+                label: Some("exported image"),
+                size,
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format,
+                view_formats: &[],
+                usage: wgpu::TextureUsages::COPY_DST,
             },
         )
     }

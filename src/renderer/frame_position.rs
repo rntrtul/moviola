@@ -106,3 +106,19 @@ impl FrameSize {
         self.width as usize * pixel_size * self.height as usize
     }
 }
+
+impl From<wgpu::Extent3d> for FrameSize {
+    fn from(extent: wgpu::Extent3d) -> Self {
+        Self::new(extent.width, extent.height)
+    }
+}
+
+impl Into<wgpu::Extent3d> for FrameSize {
+    fn into(self) -> wgpu::Extent3d {
+        wgpu::Extent3d {
+            width: self.width,
+            height: self.height,
+            depth_or_array_layers: 1,
+        }
+    }
+}
