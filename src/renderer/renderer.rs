@@ -17,6 +17,8 @@ use wgpu::{hal, include_wgsl};
 
 pub static U32_SIZE: u32 = size_of::<u32>() as u32;
 
+// todo: switch to using textures instead of buffers again. No copying into buffer at end, sampling will be better.
+
 pub struct Renderer {
     output_size: FrameSize,
     frame_position: FramePosition,
@@ -33,12 +35,13 @@ pub struct Renderer {
     effects_buffer: wgpu::Buffer,
     effects_output_buffer: wgpu::Buffer,
     final_output_buffer: wgpu::Buffer,
-    // todo: put these 2 in one struct and call it to get curr buff. Or rename
+    // todo: put these 2 in one struct and call it to get curr buff. Or rename.
+    //  Create a presentatin buffer struct. Just ask for next_presentation_buff and it will internally swap back and forth.
     final_output_export_buffer: ExportTexture,
     final_output_export_buffer_2: ExportTexture,
     frame_count: u32,
     pub(crate) gpu_timer: GpuTimer,
-    timer_sender: mpsc::Sender<TimerCmd>,
+    timer: mpsc::Sender<TimerCmd>,
     device: wgpu::Device,
     queue: wgpu::Queue,
     adapter: wgpu::Adapter,
@@ -260,7 +263,7 @@ impl Renderer {
             final_output_export_buffer: final_output_export_buffer,
             final_output_export_buffer_2: final_output_export_buffer_2,
             gpu_timer: timer,
-            timer_sender,
+            timer: timer_sender,
             frame_count: 0,
         }
     }
@@ -460,10 +463,16 @@ impl Renderer {
     }
 
     fn sample_to_texture(&self, sample: &Sample) {
+        self.timer
+            .send(TimerCmd::Start(TimerEvent::SampleImport, Instant::now()))
+            .unwrap();
         self.video_frame_texture
             .borrow()
             .write_from_sample(&self.queue, sample);
         self.queue.submit([]);
+        self.timer
+            .send(TimerCmd::Stop(TimerEvent::SampleImport, Instant::now()))
+            .unwrap();
     }
 
     fn prepare_video_frame_render_pass(&mut self) -> wgpu::CommandBuffer {
@@ -556,15 +565,7 @@ impl Renderer {
     ) -> Result<gdk::Texture, wgpu::SurfaceError> {
         self.queue.submit(Some(command_buffer));
 
-        self.timer_sender
-            .send(TimerCmd::Start(TimerEvent::BuffMap, Instant::now()))
-            .unwrap();
-        self.device.poll(wgpu::Maintain::wait()).panic_on_timeout();
-        self.timer_sender
-            .send(TimerCmd::Stop(TimerEvent::BuffMap, Instant::now()))
-            .unwrap();
-
-        self.timer_sender
+        self.timer
             .send(TimerCmd::Start(TimerEvent::TextureCreate, Instant::now()))
             .unwrap();
 
@@ -591,11 +592,18 @@ impl Renderer {
             builder.build().expect("unable to build texture")
         };
 
-        self.timer_sender
+        self.timer
             .send(TimerCmd::Stop(TimerEvent::TextureCreate, Instant::now()))
             .unwrap();
 
+        self.timer
+            .send(TimerCmd::Start(TimerEvent::QueueEmpty, Instant::now()))
+            .unwrap();
         self.device.poll(wgpu::Maintain::wait()).panic_on_timeout();
+        self.timer
+            .send(TimerCmd::Stop(TimerEvent::QueueEmpty, Instant::now()))
+            .unwrap();
+
         self.gpu_timer
             .collect_query_results(&self.device, &self.queue);
 
@@ -604,7 +612,7 @@ impl Renderer {
     }
 
     pub fn upload_new_sample(&mut self, sample: &Sample) {
-        self.timer_sender
+        self.timer
             .send(TimerCmd::Start(TimerEvent::Renderer, Instant::now()))
             .unwrap();
         let caps = sample.caps().expect("sample without caps");
@@ -768,6 +776,7 @@ mod tests {
 
     #[tokio::test]
     async fn render_to_image() {
+        // fixme: find way to have a gdk display avail for dma output to work
         let (sender, _recv) = mpsc::channel();
         let mut r = Renderer::new(sender).await;
 

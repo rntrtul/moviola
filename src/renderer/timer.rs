@@ -1,12 +1,13 @@
 use std::collections::{HashMap, VecDeque};
 use std::time::{Duration, Instant};
 
-static SAMPLES_FOR_AVG: u32 = 1280;
+static SAMPLES_FOR_AVG: u32 = 24;
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum TimerEvent {
     FrameTime,
-    BuffMap,
+    QueueEmpty,
+    SampleImport,
     TextureCreate,
     Transmission,
     Renderer,
@@ -16,8 +17,9 @@ impl TimerEvent {
     pub fn label(&self) -> &str {
         match self {
             TimerEvent::FrameTime => "Frame time",
-            TimerEvent::BuffMap => "buffer map",
+            TimerEvent::QueueEmpty => "Queue empty",
             TimerEvent::TextureCreate => "gdk texture",
+            TimerEvent::SampleImport => "sample import",
             TimerEvent::Transmission => "transmission to preview",
             TimerEvent::Renderer => "renderer",
         }
@@ -284,7 +286,8 @@ impl Timer {
 
         self.append_event_to_msg(&mut msg, TimerEvent::FrameTime);
         self.append_event_to_msg(&mut msg, TimerEvent::Renderer);
-        self.append_event_to_msg(&mut msg, TimerEvent::BuffMap);
+        self.append_event_to_msg(&mut msg, TimerEvent::SampleImport);
+        self.append_event_to_msg(&mut msg, TimerEvent::QueueEmpty);
         self.append_event_to_msg(&mut msg, TimerEvent::TextureCreate);
         self.append_event_to_msg(&mut msg, TimerEvent::Transmission);
 
