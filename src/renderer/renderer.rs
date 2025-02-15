@@ -1,6 +1,6 @@
-use crate::renderer::export_buffer::ExportTexture;
 use crate::renderer::frame_position::{FramePosition, FrameSize};
 use crate::renderer::handler::TimerCmd;
+use crate::renderer::presenter::Presenter;
 use crate::renderer::timer::{GpuTimer, QuerySet};
 use crate::renderer::{texture, EffectParameters, TimerEvent};
 use crate::ui::preview::Orientation;
@@ -34,12 +34,7 @@ pub struct Renderer {
     effects_bind_group: wgpu::BindGroup,
     effects_buffer: wgpu::Buffer,
     effects_output_buffer: wgpu::Buffer,
-    final_output_buffer: wgpu::Buffer,
-    // todo: put these 2 in one struct and call it to get curr buff. Or rename.
-    //  Create a presentatin buffer struct. Just ask for next_presentation_buff and it will internally swap back and forth.
-    final_output_export_buffer: ExportTexture,
-    final_output_export_buffer_2: ExportTexture,
-    frame_count: u32,
+    presenter: Presenter,
     pub(crate) gpu_timer: GpuTimer,
     timer: mpsc::Sender<TimerCmd>,
     device: wgpu::Device,
@@ -183,9 +178,7 @@ impl Renderer {
                 .unwrap();
 
         let frame_position = FramePosition::new(output_size);
-        let final_output_export_buffer = ExportTexture::new(&device, &instance, output_size.into());
-        let final_output_export_buffer_2 =
-            ExportTexture::new(&device, &instance, output_size.into());
+        let presenter = Presenter::new(2, &device, &instance, output_size.into());
 
         let (
             positioned_frame_buffer,
@@ -193,7 +186,6 @@ impl Renderer {
             frame_position_bind_group,
             effects_output_buffer,
             effects_bind_group,
-            final_output_buffer,
         ) = Self::create_render_target(
             output_size,
             &effects_buffer,
@@ -259,12 +251,9 @@ impl Renderer {
             effects_bind_group,
             effects_buffer,
             effects_output_buffer,
-            final_output_buffer,
-            final_output_export_buffer: final_output_export_buffer,
-            final_output_export_buffer_2: final_output_export_buffer_2,
+            presenter,
             gpu_timer: timer,
             timer: timer_sender,
-            frame_count: 0,
         }
     }
 
@@ -374,7 +363,6 @@ impl Renderer {
         wgpu::BindGroup,
         wgpu::Buffer,
         wgpu::BindGroup,
-        wgpu::Buffer,
     ) {
         let frame_size_buffer = output_frame_size.buffer(&device);
 
@@ -397,20 +385,12 @@ impl Renderer {
             &frame_size_buffer,
         );
 
-        let final_output_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("Output staging Buffer"),
-            size: output_frame_size.texture_size(),
-            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
-            mapped_at_creation: false,
-        });
-
         (
             positioned_frame_buffer,
             frame_position_buffer,
             frame_position_bind_group,
             effects_output_buffer,
             effects_bind_group,
-            final_output_buffer,
         )
     }
 
@@ -421,7 +401,6 @@ impl Renderer {
             frame_postion_bind_group,
             effects_output_buffer,
             effects_bind_group,
-            final_output_buffer,
         ) = Self::create_render_target(
             output_frame_size,
             &self.effects_buffer,
@@ -432,11 +411,8 @@ impl Renderer {
             &self.device,
         );
 
-        self.final_output_buffer = final_output_buffer;
-        self.final_output_export_buffer =
-            ExportTexture::new(&self.device, &self.instance, output_frame_size.into());
-        self.final_output_export_buffer_2 =
-            ExportTexture::new(&self.device, &self.instance, output_frame_size.into());
+        self.presenter
+            .resize_outputs(&self.device, &self.instance, output_frame_size.into());
         self.effects_output_buffer = effects_output_buffer;
         self.effects_bind_group = effects_bind_group;
         self.frame_position_buffer = frame_position_buffer;
@@ -517,11 +493,7 @@ impl Renderer {
             output_source_buffer = &self.effects_output_buffer;
         }
 
-        let presentation_buffer = if self.frame_count % 2 == 0 {
-            &self.final_output_export_buffer
-        } else {
-            &self.final_output_export_buffer_2
-        };
+        let final_output = self.presenter.next_presentation_texture();
 
         encoder.copy_buffer_to_texture(
             wgpu::TexelCopyBufferInfo {
@@ -533,12 +505,12 @@ impl Renderer {
                 },
             },
             wgpu::TexelCopyTextureInfo {
-                texture: &presentation_buffer.texture,
+                texture: &final_output.texture,
                 mip_level: 0,
                 origin: wgpu::Origin3d::ZERO,
                 aspect: wgpu::TextureAspect::All,
             },
-            presentation_buffer.texture.size(),
+            final_output.texture.size(),
         );
 
         encoder.resolve_query_set(
@@ -569,21 +541,16 @@ impl Renderer {
             .send(TimerCmd::Start(TimerEvent::TextureCreate, Instant::now()))
             .unwrap();
 
-        let buffer = if self.frame_count % 2 == 0 {
-            &self.final_output_export_buffer
-        } else {
-            &self.final_output_export_buffer_2
-        };
+        let output = self.presenter.current_presentation_texture();
 
         let builder = gdk::DmabufTextureBuilder::new();
-
         builder.set_display(&gdk::Display::default().unwrap());
         builder.set_fourcc(875709016); // fixme: don't hardcode xbgr
         builder.set_modifier(0);
         builder.set_width(self.output_size.width);
         builder.set_height(self.output_size.height);
         builder.set_n_planes(1);
-        builder.set_fd(0, buffer.fd);
+        builder.set_fd(0, output.fd);
         builder.set_offset(0, 0);
         builder.set_stride(0, 4);
 
@@ -607,7 +574,6 @@ impl Renderer {
         self.gpu_timer
             .collect_query_results(&self.device, &self.queue);
 
-        self.frame_count += 1;
         Ok(gdk_texture)
     }
 
