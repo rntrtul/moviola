@@ -1,4 +1,3 @@
-use crate::renderer::renderer::U32_SIZE;
 use crate::ui::preview::Orientation;
 use encase::{ShaderType, UniformBuffer};
 use wgpu::util::DeviceExt;
@@ -79,31 +78,16 @@ impl FramePosition {
 }
 
 #[repr(C)]
-#[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
+#[derive(Debug, Copy, Clone)]
 pub struct FrameSize {
     pub width: u32,
     pub height: u32,
 }
 
 impl FrameSize {
+    // todo: remove new?
     pub fn new(width: u32, height: u32) -> Self {
         Self { width, height }
-    }
-
-    pub fn texture_size(&self) -> u64 {
-        (self.width * self.height * U32_SIZE) as u64
-    }
-
-    pub fn buffer(&self, device: &wgpu::Device) -> wgpu::Buffer {
-        device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Frame Size Buffer"),
-            contents: bytemuck::cast_slice(&[*self]),
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-        })
-    }
-
-    pub fn frame_buffer_size(&self, pixel_size: usize) -> usize {
-        self.width as usize * pixel_size * self.height as usize
     }
 }
 

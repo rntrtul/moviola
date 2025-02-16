@@ -6,16 +6,10 @@ struct PositionUniform {
     mirrored: u32,
 }
 
-struct FrameSize{
-    width: u32,
-    height: u32,
-}
-
-@group(0) @binding(0) var texture: texture_2d<f32>;
+@group(0) @binding(0) var frame: texture_2d<f32>;
 @group(0) @binding(1) var s_texture: sampler;
 @group(0) @binding(2) var<uniform> position: PositionUniform;
-@group(0) @binding(3) var<uniform> size: FrameSize;
-@group(0) @binding(4) var<storage, read_write> output: array<u32>;
+@group(0) @binding(3) var output: texture_storage_2d<rgba8unorm, write>;
 
 const rotate_90: mat2x2f = mat2x2(0, -1, 1, 0);
 const rotate_180: mat2x2f = mat2x2(-1, 0, 0, -1);
@@ -32,11 +26,8 @@ fn rotate(p: vec2f, angle: f32) -> vec2f {
 @compute
 @workgroup_size(256, 1, 1)
 fn main(@builtin(global_invocation_id) global_invocation_id: vec3<u32>) {
-    let tex_dimensions = textureDimensions(texture);
-    let output_dimensions = vec2u(size.width, size.height);
-
-    let f_tex_dimensions = vec2f(tex_dimensions);
-    let f_output_dimensions = vec2f(output_dimensions);
+    let f_tex_dimensions = vec2f(textureDimensions(frame));
+    let f_output_dimensions = vec2f(textureDimensions(output));
     var tex_coords = vec2f(global_invocation_id.xy);
 
     if !all(tex_coords < f_output_dimensions) {
@@ -77,8 +68,7 @@ fn main(@builtin(global_invocation_id) global_invocation_id: vec3<u32>) {
 
     if all(vec2f(0,0) <= tex_coords) && all(tex_coords < f_tex_dimensions) {
         let uv = (tex_coords + 0.5) / f_tex_dimensions;
-        let colour = textureSampleLevel(texture, s_texture, uv, 0.0);
-        let index = (global_invocation_id.y * size.width) + global_invocation_id.x;
-        output[index] = pack4x8unorm(colour);
+        let colour = textureSampleLevel(frame, s_texture, uv, 0.0);
+        textureStore(output, global_invocation_id.xy, colour);
     }
 }
