@@ -399,7 +399,11 @@ impl Renderer {
         self.video_frame_texture.replace(
             Texture::new(
                 &self.device,
-                self.output_size.into(),
+                wgpu::Extent3d {
+                    width,
+                    height,
+                    depth_or_array_layers: 1,
+                },
                 *INPUT_TEXTURE_USAGE,
                 Some("video frame texture"),
             )
@@ -408,7 +412,7 @@ impl Renderer {
         self.frame_position.original_frame_size = FrameSize::new(width, height);
 
         // need to update positioning bind group for new texture view.
-        // todo: just update position/step (effects not changed by output size change)
+        // todo: just update position/step (effects not changed by input size change)
         self.update_render_target(self.output_size);
     }
 
