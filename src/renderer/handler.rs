@@ -1,6 +1,6 @@
 use crate::renderer::frame_position::FramePosition;
 use crate::renderer::handler::RenderResopnse::FrameRendered;
-use crate::renderer::renderer::Renderer;
+use crate::renderer::renderer::{RenderedFrame, Renderer};
 use crate::renderer::timer::Timer;
 use crate::renderer::{EffectParameters, TimerEvent};
 use crate::ui::preview::Orientation;
@@ -23,8 +23,9 @@ pub enum RenderCmd {
     UpdateOrientation(Orientation),
 }
 
+#[derive(Debug)]
 pub enum RenderResopnse {
-    FrameRendered(gdk::Texture),
+    FrameRendered(RenderedFrame),
 }
 
 // todo: rename outputresult
@@ -49,15 +50,15 @@ fn render_frame(
     timer_cmd_sender: mpsc::Sender<TimerCmd>,
 ) {
     tokio::spawn(async move {
-        let tex;
+        let frame;
         {
             let mut renderer = renderer.lock().await;
-            tex = renderer.render_frame().await;
+            frame = renderer.render_frame().await;
             timer_cmd_sender
                 .send(TimerCmd::Stop(TimerEvent::Renderer, Instant::now()))
                 .unwrap();
         }
-        sender.send(FrameRendered(tex)).unwrap();
+        sender.send(FrameRendered(frame)).unwrap();
         timer_cmd_sender
             .send(TimerCmd::Start(TimerEvent::Transmission, Instant::now()))
             .unwrap();

@@ -1,3 +1,4 @@
+use crate::renderer::renderer::RenderedFrame;
 use crate::renderer::{
     EffectParameters, FramePosition, FrameSize, RenderCmd, RenderMode, RenderResopnse,
     RendererHandler,
@@ -13,7 +14,7 @@ use gtk::prelude::{ApplicationExt, WidgetExt};
 use relm4::gtk::prelude::{
     ButtonExt, FileExt, GtkApplicationExt, GtkWindowExt, OrientableExt, RangeExt,
 };
-use relm4::gtk::{gdk, gio, glib};
+use relm4::gtk::{gio, glib};
 use relm4::{
     adw, gtk, main_application, Component, ComponentController, ComponentParts, ComponentSender,
     Controller, RelmWidgetExt,
@@ -34,7 +35,7 @@ pub(super) struct App {
     video_is_loaded: bool,
     video_is_exporting: bool,
     uri: Option<String>,
-    export_sender: Option<mpsc::Sender<gdk::Texture>>,
+    export_sender: Option<mpsc::Sender<RenderedFrame>>,
     export_video_decode_finished: bool,
     frames_exported: u32,
     export_target_frame_count: u32,
@@ -72,7 +73,7 @@ pub(super) enum AppMsg {
 pub enum AppCommandMsg {
     InitWithvideo,
     VideoLoaded,
-    FrameRendered(gdk::Texture),
+    FrameRendered(RenderedFrame),
 }
 
 impl App {
@@ -308,7 +309,9 @@ impl Component for App {
                         };
 
                         let app_msg = match response {
-                            RenderResopnse::FrameRendered(tex) => AppCommandMsg::FrameRendered(tex),
+                            RenderResopnse::FrameRendered(frame) => {
+                                AppCommandMsg::FrameRendered(frame)
+                            }
                         };
 
                         out.send(app_msg).unwrap();
@@ -532,17 +535,18 @@ impl Component for App {
 
                 self.preview_frame.widget().set_visible(true);
             }
-            AppCommandMsg::FrameRendered(texture) => {
+            AppCommandMsg::FrameRendered(frame) => {
                 if self.video_is_exporting {
                     self.frames_exported += 1;
                     if let Some(sender) = self.export_sender.as_ref() {
-                        sender.send(texture).unwrap();
+                        sender.send(frame).unwrap();
                     };
 
                     if self.frames_exported == self.export_target_frame_count {
                         self.export_sender = None;
                     }
                 } else {
+                    let texture = frame.build_gdk_texture();
                     self.preview_frame
                         .emit(PreviewFrameMsg::FrameRendered(texture));
                 }

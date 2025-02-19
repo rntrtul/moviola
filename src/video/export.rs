@@ -1,4 +1,5 @@
 use crate::app::{App, AppMsg};
+use crate::renderer::renderer::RenderedFrame;
 use crate::renderer::FrameSize;
 use crate::ui::sidebar::{ControlsExportSettings, OutputContainerSettings};
 use crate::video::metadata::VideoInfo;
@@ -12,7 +13,6 @@ use gst_app::AppSrc;
 use gst_pbutils::prelude::{EncodingProfileBuilder, EncodingProfileExt};
 use gst_pbutils::EncodingContainerProfile;
 use gst_video::VideoFrameExt;
-use relm4::gtk::gdk;
 use relm4::gtk::prelude::{TextureExt, TextureExtManual};
 use relm4::ComponentSender;
 use std::sync::mpsc;
@@ -40,7 +40,7 @@ impl Player {
         controls_export_settings: ControlsExportSettings,
         output_size: FrameSize,
         app_sender: ComponentSender<App>,
-        texture_receiver: mpsc::Receiver<gdk::Texture>,
+        frame_receiver: mpsc::Receiver<RenderedFrame>,
     ) {
         self.set_is_playing(false);
         self.seek_segment(timeline_settings.start, timeline_settings.end);
@@ -49,13 +49,11 @@ impl Player {
         self.set_is_mute(true);
 
         let pipeline = export_video(
-            source_uri,
             save_uri,
-            timeline_settings,
             self.info.clone(),
             output_size,
             controls_export_settings,
-            texture_receiver,
+            frame_receiver,
         );
 
         thread::spawn(move || {
@@ -119,13 +117,11 @@ fn build_container_profile(
 }
 
 fn export_video(
-    source_uri: String,
     save_uri: String,
-    timeline_settings: TimelineExportSettings,
     info: VideoInfo,
     output_size: FrameSize,
     encoding_settings: ControlsExportSettings,
-    texture_receiver: mpsc::Receiver<gdk::Texture>,
+    frame_receiver: mpsc::Receiver<RenderedFrame>,
 ) -> gst::Pipeline {
     let gst_video_info = gst_video::VideoInfo::builder(
         gst_video::VideoFormat::Rgba,
@@ -143,11 +139,6 @@ fn export_video(
         .caps(&gst_video_info.to_caps().unwrap())
         .format(gst::Format::Time)
         .build();
-    let audio_decodebin = gst::ElementFactory::make("uridecodebin3")
-        .property("instant-uri", true)
-        .property("uri", &source_uri)
-        .build()
-        .unwrap();
     let encode_bin = gst::ElementFactory::make("encodebin")
         .property("profile", &container_profile)
         .build()
@@ -158,12 +149,7 @@ fn export_video(
         .build()
         .unwrap();
 
-    let export_elements = [
-        &audio_decodebin,
-        video_app_src.upcast_ref(),
-        &encode_bin,
-        &file_sink,
-    ];
+    let export_elements = [video_app_src.upcast_ref(), &encode_bin, &file_sink];
 
     pipeline
         .add_many(&export_elements)
@@ -176,33 +162,35 @@ fn export_video(
         .expect("no src pad for video appsrc");
     video_src.link(&encode_video_sink).unwrap();
 
-    let encode_audio_sink = encode_bin.request_pad_simple("audio_%u").unwrap();
-    audio_decodebin.connect_pad_added(move |_, pad| {
-        if pad.name().starts_with("audio") {
-            // fixme: attach correct audio stream
-            pad.link(&encode_audio_sink).unwrap();
-        }
-    });
-
     let mut frame_count = 0;
     let frame_spacing = 1.0 / (info.framerate.numer() as f64 / info.framerate.denom() as f64);
+
+    let alloc = gst_allocator::DmaBufAllocator::new();
 
     video_app_src.set_callbacks(
         gst_app::AppSrcCallbacks::builder()
             .need_data(move |appsrc, _| {
-                let Ok(texture) = texture_receiver.recv() else {
+                let Ok(frame) = frame_receiver.recv() else {
                     let _ = appsrc.end_of_stream();
                     return;
                 };
 
                 let timer = SystemTime::now();
-                // todo: resue buffer by allocating it once
-                let mut frame = vec![0u8; (output_size.width * output_size.height * 4) as usize];
-                texture.download(&mut frame, gst_video_info.stride()[0] as usize);
 
-                let mut buffer = gst::Buffer::from_slice(frame);
+                let mut buffer = gst::Buffer::new();
+                let mem = unsafe {
+                    alloc
+                        .alloc_with_flags(
+                            frame.fd,
+                            (output_size.width * output_size.height * 4) as usize,
+                            gst_allocator::FdMemoryFlags::DONT_CLOSE,
+                        )
+                        .expect("Failed to allocate buffer")
+                };
+
                 {
                     let buffer = buffer.get_mut().unwrap();
+                    buffer.append_memory(mem);
                     buffer.set_pts(ClockTime::from_seconds_f64(
                         frame_count as f64 * frame_spacing,
                     ));

@@ -11,12 +11,45 @@ use image::DynamicImage;
 use relm4::gtk::gdk;
 use std::cell::RefCell;
 use std::default::Default;
+use std::os::fd::RawFd;
 use std::sync::{mpsc, LazyLock};
 use std::time::Instant;
 use wgpu::{hal, include_wgsl};
 
 static INPUT_TEXTURE_USAGE: LazyLock<wgpu::TextureUsages> =
     LazyLock::new(|| wgpu::TextureUsages::COPY_DST | wgpu::TextureUsages::TEXTURE_BINDING);
+
+#[derive(Debug)]
+pub struct RenderedFrame {
+    pub fd: RawFd,
+    fourcc: u32,
+    modifer: u64,
+    width: u32,
+    height: u32,
+    planes: u32,
+    stride: u32,
+}
+
+impl RenderedFrame {
+    pub fn build_gdk_texture(&self) -> gdk::Texture {
+        let builder = gdk::DmabufTextureBuilder::new();
+
+        builder.set_display(&gdk::Display::default().unwrap());
+        builder.set_fd(0, self.fd as i32);
+        builder.set_fourcc(self.fourcc);
+        builder.set_modifier(self.modifer);
+        builder.set_width(self.width);
+        builder.set_height(self.height);
+        builder.set_n_planes(self.planes);
+        builder.set_offset(0, 0);
+        builder.set_stride(0, self.stride);
+
+        unsafe {
+            // first build is very slow ~100ms
+            builder.build().expect("unable to build texture")
+        }
+    }
+}
 
 pub struct Renderer {
     output_size: FrameSize,
@@ -509,7 +542,7 @@ impl Renderer {
     async fn render(
         &mut self,
         command_buffer: wgpu::CommandBuffer,
-    ) -> Result<gdk::Texture, wgpu::SurfaceError> {
+    ) -> Result<RenderedFrame, wgpu::SurfaceError> {
         self.queue.submit(Some(command_buffer));
 
         self.timer
@@ -517,21 +550,14 @@ impl Renderer {
             .unwrap();
 
         let output = self.presenter.current_presentation_texture();
-
-        let builder = gdk::DmabufTextureBuilder::new();
-        builder.set_display(&gdk::Display::default().unwrap());
-        builder.set_fourcc(875709016); // fixme: don't hardcode xbgr
-        builder.set_modifier(0);
-        builder.set_width(self.output_size.width);
-        builder.set_height(self.output_size.height);
-        builder.set_n_planes(1);
-        builder.set_fd(0, output.fd);
-        builder.set_offset(0, 0);
-        builder.set_stride(0, 4);
-
-        let gdk_texture = unsafe {
-            // first build is very slow ~100ms
-            builder.build().expect("unable to build texture")
+        let frame = RenderedFrame {
+            fd: output.fd,
+            fourcc: 875709016,
+            modifer: 0,
+            width: self.output_size.width,
+            height: self.output_size.height,
+            planes: 1,
+            stride: 4,
         };
 
         self.timer
@@ -549,7 +575,7 @@ impl Renderer {
         self.gpu_timer
             .collect_query_results(&self.device, &self.queue);
 
-        Ok(gdk_texture)
+        Ok(frame)
     }
 
     pub fn upload_new_sample(&mut self, sample: &Sample) {
@@ -604,7 +630,7 @@ impl Renderer {
         buffer.clone_from_slice(bytemuck::cast_slice(&[self.effect_parameters]));
     }
 
-    pub async fn render_frame(&mut self) -> gdk::Texture {
+    pub async fn render_frame(&mut self) -> RenderedFrame {
         let command_buffer = self.prepare_video_frame_render_pass();
         self.render(command_buffer).await.expect("Could not render")
     }
@@ -744,8 +770,11 @@ mod tests {
         r.position_frame(frame_position);
         // r.update_effects(effects);
 
-        let texture = r.render_frame().await;
+        let frame = r.render_frame().await;
         println!("time to render: {}", r.gpu_timer.frame_time_msg());
-        texture.save_to_png("test_image.png").unwrap();
+        frame
+            .build_gdk_texture()
+            .save_to_png("test_image.png")
+            .unwrap();
     }
 }
