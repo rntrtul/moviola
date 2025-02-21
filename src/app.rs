@@ -431,8 +431,10 @@ impl Component for App {
                     timeline_export_settings,
                     self.sidebar_panel.model().export_settings(),
                     position.output_frame_size(),
-                    sender.clone(),
                     receiver,
+                    sender.clone(),
+                    self.renderer.render_cmd_sender(),
+                    self.renderer.timer_cmd_sender(),
                 );
                 self.video_is_exporting = true;
             }
