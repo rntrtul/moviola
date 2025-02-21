@@ -54,42 +54,11 @@ impl Player {
             .unwrap();
         playbin.set_property_from_value("flags", &flags);
 
-        let app_sink = gst_app::AppSink::builder()
-            .enable_last_sample(true)
-            .max_buffers(1)
-            .caps(
-                &gst_video::VideoCapsBuilder::new()
-                    .format(gst_video::VideoFormat::Rgba)
-                    .build(),
-            )
-            .build();
-
-        let preroll_sender = sample_sender.clone();
-        let preroll_timer_sender = timer_sender.clone();
-        app_sink.set_callbacks(
-            gst_app::AppSinkCallbacks::builder()
-                .new_sample(move |appsink| {
-                    let sample = appsink.pull_sample().unwrap();
-                    sample_sender.send(RenderCmd::RenderSample(sample)).unwrap();
-                    timer_sender
-                        .send(TimerCmd::Start(TimerEvent::FrameTime, Instant::now()))
-                        .unwrap();
-                    Ok(FlowSuccess::Ok)
-                })
-                .new_preroll(move |appsink| {
-                    let sample = appsink.pull_preroll().unwrap();
-                    preroll_sender
-                        .send(RenderCmd::RenderSample(sample))
-                        .unwrap();
-                    preroll_timer_sender
-                        .send(TimerCmd::Start(TimerEvent::FrameTime, Instant::now()))
-                        .unwrap();
-                    Ok(FlowSuccess::Ok)
-                })
-                .eos(move |_| {
-                    app_sender.input(AppMsg::VideoFinished);
-                })
-                .build(),
+        let app_sink = video_appsink(
+            app_sender,
+            sample_sender,
+            timer_sender,
+            AppSinkUsage::Preview,
         );
 
         playbin.set_property("video-sink", &app_sink);
@@ -135,7 +104,6 @@ impl Player {
 
     pub fn reset_pipeline(&mut self) {
         self.playbin.set_state(State::Null).unwrap();
-        self.app_sink.set_property("sync", true);
         self.is_playing = false;
         self.set_is_mute(false);
         self.pipeline_ready = false;
@@ -182,19 +150,6 @@ impl Player {
         self.playbin
             .seek_simple(SeekFlags::FLUSH | SeekFlags::KEY_UNIT, timestamp)
             .unwrap();
-    }
-
-    pub fn seek_segment(&self, start: ClockTime, end: ClockTime) {
-        self.playbin
-            .seek(
-                1.0,
-                SeekFlags::FLUSH | SeekFlags::ACCURATE,
-                gst::SeekType::Set,
-                start,
-                gst::SeekType::Set,
-                end,
-            )
-            .expect("could not seek");
     }
 
     pub fn play_uri(&mut self, uri: String) {
@@ -328,4 +283,62 @@ impl Player {
             }
         }
     }
+}
+
+pub(crate) enum AppSinkUsage {
+    Export,
+    Preview,
+}
+
+pub(crate) fn video_appsink(
+    app_sender: ComponentSender<App>,
+    sample_sender: mpsc::Sender<RenderCmd>,
+    timer_sender: mpsc::Sender<TimerCmd>,
+    usage: AppSinkUsage,
+) -> AppSink {
+    // todo: way to customize eos message
+    //  (for preview want app_sendr, for export want to just send none to stop appsrc)
+    //  if export set sync to false?
+
+    let preroll_sender = sample_sender.clone();
+    let preroll_timer_sender = timer_sender.clone();
+    gst_app::AppSink::builder()
+        .enable_last_sample(true)
+        .max_buffers(1)
+        .caps(
+            &gst_video::VideoCapsBuilder::new()
+                .format(gst_video::VideoFormat::Rgba)
+                .build(),
+        )
+        .callbacks(
+            gst_app::AppSinkCallbacks::builder()
+                .new_sample(move |appsink| {
+                    let sample = appsink.pull_sample().unwrap();
+                    sample_sender.send(RenderCmd::RenderSample(sample)).unwrap();
+                    timer_sender
+                        .send(TimerCmd::Start(TimerEvent::FrameTime, Instant::now()))
+                        .unwrap();
+                    Ok(FlowSuccess::Ok)
+                })
+                .new_preroll(move |appsink| {
+                    let sample = appsink.pull_preroll().unwrap();
+                    preroll_sender
+                        .send(RenderCmd::RenderSample(sample))
+                        .unwrap();
+                    preroll_timer_sender
+                        .send(TimerCmd::Start(TimerEvent::FrameTime, Instant::now()))
+                        .unwrap();
+                    Ok(FlowSuccess::Ok)
+                })
+                .eos(move |_| {
+                    // todo: implement a ExportingVideoFinished
+                    let msg = match usage {
+                        AppSinkUsage::Export => AppMsg::VideoFinished,
+                        AppSinkUsage::Preview => AppMsg::VideoFinished,
+                    };
+                    app_sender.input(msg);
+                })
+                .build(),
+        )
+        .build()
 }
