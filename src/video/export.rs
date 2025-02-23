@@ -65,32 +65,38 @@ impl Player {
         );
 
         thread::spawn(move || {
-            let now = SystemTime::now();
             let bus = pipeline.bus().unwrap();
+            wait_for_eos(bus);
 
-            for msg in bus.iter_timed(ClockTime::NONE) {
-                use gst::MessageView;
-
-                match msg.view() {
-                    MessageView::Eos(..) => {
-                        println!("Done? in {:?}", now.elapsed());
-                        break;
-                    }
-                    MessageView::Error(err) => {
-                        println!(
-                            "Error from {:?}: {} ({:?})",
-                            err.src().map(|s| s.path_string()),
-                            err.error(),
-                            err.debug()
-                        );
-                        break;
-                    }
-                    _ => (),
-                }
-            }
             pipeline.set_state(gst::State::Null).unwrap();
             app_sender.input(AppMsg::ExportDone);
         });
+    }
+}
+
+fn wait_for_eos(bus: gst::Bus) {
+    let now = SystemTime::now();
+
+    for msg in bus.iter_timed(ClockTime::NONE) {
+        use gst::MessageView;
+        println!("msg: {msg:?}");
+
+        match msg.view() {
+            MessageView::Eos(..) => {
+                println!("Done? in {:?}", now.elapsed());
+                break;
+            }
+            MessageView::Error(err) => {
+                println!(
+                    "Error from {:?}: {} ({:?})",
+                    err.src().map(|s| s.path_string()),
+                    err.error(),
+                    err.debug()
+                );
+                break;
+            }
+            _ => (),
+        }
     }
 }
 
@@ -196,7 +202,7 @@ fn export_video(
 
                     frame_count += 1;
                     let _ = appsrc.push_buffer(buffer);
-                    // println!("did frame #{frame_count} in {:?}", timer.elapsed().unwrap());
+                    println!("did vframe #{frame_count} in {:?}", timer.elapsed());
                 })
                 .build(),
         )
@@ -220,6 +226,7 @@ fn export_video(
 
     let pipeline_weak = pipeline.downgrade();
 
+    let exporting_audio = !encoding_settings.container.no_audio;
     decodebin.connect_pad_added(move |decode, src_pad| {
         let Some(pipeline) = pipeline_weak.upgrade() else {
             return;
@@ -230,7 +237,7 @@ fn export_video(
             src_pad.name().starts_with("video"),
         );
 
-        if is_audio {
+        if exporting_audio && is_audio {
             let encode_audio_sink = encode_bin.request_pad_simple("audio_%u").unwrap();
             src_pad.link(&encode_audio_sink).unwrap();
         } else if is_video {
@@ -269,16 +276,129 @@ fn export_video(
 
 #[cfg(test)]
 mod tests {
-    // todo: figure out how to get around needing relm4 sender for app for player
-    //  create an appsink manually and for eos have custom way of handler
+    use crate::config::{VIDEO_EXPORT_DST, VIDEO_TEST_FILE_1080};
+    use crate::renderer::renderer::RenderedFrame;
+    use crate::renderer::{FrameSize, RenderMode, RenderResopnse, RendererHandler};
+    use crate::ui::sidebar::{ControlsExportSettings, OutputContainerSettings};
+    use crate::video::export::{export_video, wait_for_eos, TimelineExportSettings};
+    use gst::prelude::ElementExt;
+    use gst::ClockTime;
+    use std::sync::atomic::{AtomicBool, AtomicU64};
+    use std::sync::{mpsc, Arc};
+    use tokio::task::JoinHandle;
 
-    #[test]
-    fn export_basic_video() {
-        // let (handler, texture_receiver) = RendererHandler::new(RenderMode::MostRecentFrame);
-        // let player = Rc::new(RefCell::new(Player::new(
-        //     sender.clone(),
-        //     handler.render_cmd_sender(),
-        //     handler.timer_cmd_sender(),
-        // )));
+    fn render_listner(
+        render_response: mpsc::Receiver<RenderResopnse>,
+        frame_sender: mpsc::Sender<RenderedFrame>,
+        no_more_frames_incoming: Arc<AtomicBool>,
+        frames_to_render: Arc<AtomicU64>,
+    ) -> JoinHandle<()> {
+        tokio::spawn(async move {
+            let mut frames_done = 0;
+            loop {
+                let Ok(response) = render_response.recv() else {
+                    break;
+                };
+
+                frames_done += 1;
+                match response {
+                    RenderResopnse::FrameRendered(frame) => {
+                        frame_sender.send(frame).unwrap();
+                    }
+                }
+
+                if no_more_frames_incoming.load(std::sync::atomic::Ordering::Relaxed)
+                    && frames_to_render.load(std::sync::atomic::Ordering::Relaxed) == frames_done
+                {
+                    break;
+                }
+            }
+        })
+    }
+
+    // fixme: why do appsrc allocs fail due to fd.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn export_basic_video() {
+        gst::init().unwrap();
+
+        let (handler, render_response) = RendererHandler::new(RenderMode::AllFrames);
+        let (frame_sender, frame_recv) = mpsc::channel();
+        let frames_to_render = Arc::new(AtomicU64::new(0));
+        let export_done = Arc::new(AtomicBool::new(false));
+
+        let listener = render_listner(
+            render_response,
+            frame_sender,
+            export_done.clone(),
+            frames_to_render.clone(),
+        );
+
+        let render_sender = handler.render_cmd_sender();
+        let app_sink = gst_app::AppSink::builder()
+            .enable_last_sample(true)
+            .max_buffers(1)
+            .caps(
+                &gst_video::VideoCapsBuilder::new()
+                    .format(gst_video::VideoFormat::Rgba)
+                    .build(),
+            )
+            .callbacks(
+                gst_app::AppSinkCallbacks::builder()
+                    .new_sample(move |appsink| {
+                        let sample = appsink.pull_sample().unwrap();
+                        render_sender
+                            .send(crate::renderer::RenderCmd::RenderSample(sample))
+                            .unwrap();
+                        let a = frames_to_render.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+
+                        // println!("sending sample {}", a + 1);
+                        Ok(gst::FlowSuccess::Ok)
+                    })
+                    .eos(move |_| {
+                        println!("EOS");
+                        export_done.store(true, std::sync::atomic::Ordering::Relaxed);
+                    })
+                    .build(),
+            )
+            .build();
+
+        // todo: get info populated rather than manual
+        let pipeline = export_video(
+            VIDEO_TEST_FILE_1080.to_string(),
+            VIDEO_EXPORT_DST.to_string(),
+            crate::video::metadata::VideoInfo {
+                duration: Default::default(),
+                framerate: gst::Fraction::new(500, 21),
+                width: 1920,
+                height: 1080,
+                aspect_ratio: 1.777,
+                container_info: Default::default(),
+                orientation: Default::default(),
+            },
+            FrameSize::new(1920, 1080),
+            ControlsExportSettings {
+                container: OutputContainerSettings {
+                    no_audio: true,
+                    audio_stream_idx: 0,
+                    audio_codec: crate::video::metadata::AudioCodec::AAC,
+                    audio_bitrate: 0,
+                    container: crate::video::metadata::ContainerFormat::MP4,
+                    video_codec: crate::video::metadata::VideoCodec::X265,
+                    video_bitrate: 0,
+                },
+                container_is_default: true,
+                effect_parameters: Default::default(),
+            },
+            TimelineExportSettings {
+                start: ClockTime::ZERO,
+                end: ClockTime::from_seconds_f64(10f64),
+            },
+            app_sink,
+            frame_recv,
+        );
+
+        listener.await.expect("could not await on listener");
+        wait_for_eos(pipeline.bus().unwrap());
+        pipeline.set_state(gst::State::Null).unwrap();
     }
 }

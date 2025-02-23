@@ -2,20 +2,26 @@ use crate::range::Range;
 use wgpu::util::DeviceExt;
 
 #[repr(C)]
-#[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
+#[derive(Debug, Copy, Clone, PartialEq, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct EffectParameters {
     pub contrast: f32,
     pub brigthness: f32,
     pub saturation: f32,
 }
 
-impl EffectParameters {
-    pub fn new() -> Self {
+impl Default for EffectParameters {
+    fn default() -> Self {
         Self {
             contrast: 1f32,
             brigthness: 0f32,
             saturation: 1f32,
         }
+    }
+}
+
+impl EffectParameters {
+    pub fn new() -> Self {
+        Default::default()
     }
 
     pub fn reset(&mut self) {
@@ -25,7 +31,7 @@ impl EffectParameters {
     }
 
     pub fn is_default(&self) -> bool {
-        self.contrast == 1f32 && self.brigthness == 0f32 && self.saturation == 1f32
+        self == &Default::default()
     }
 
     pub fn buffer(&self, device: &wgpu::Device) -> wgpu::Buffer {
