@@ -585,6 +585,7 @@ impl Renderer {
         self.timer
             .send(TimerCmd::Start(TimerEvent::SampleImport, Instant::now()))
             .unwrap();
+
         let caps = sample.caps().expect("sample without caps");
         let info = gst_video::VideoInfo::from_caps(caps).expect("Failed to parse caps");
 
@@ -745,23 +746,48 @@ fn create_device_queue(
 mod tests {
     use super::*;
     use crate::config::IMG_TEST_LANDSCAPE;
-    use relm4::gtk::prelude::TextureExt;
+    use std::os::fd::{FromRawFd, OwnedFd};
+    use std::path::Path;
+
+    fn save_frame(frame: RenderedFrame, save_path: &Path) {
+        let start = Instant::now();
+        {
+            let owned_fd = unsafe { OwnedFd::from_raw_fd(frame.fd) };
+            let dma_buf = dma_buf::DmaBuf::from(owned_fd);
+            let a = dma_buf.memory_map().unwrap();
+            let _ = a.read(
+                |vals, _| {
+                    let image_buffer = image::ImageBuffer::<image::Rgba<u8>, _>::from_raw(
+                        frame.width,
+                        frame.height,
+                        vals,
+                    )
+                    .unwrap();
+                    image_buffer.save(save_path).unwrap();
+                    Ok(3)
+                },
+                Some(1),
+            );
+        }
+
+        let end = Instant::now();
+        println!("saved to file in: {:?}", end - start);
+    }
 
     #[tokio::test]
     async fn render_to_image() {
-        // fixme: find way to have a gdk display avail for dma output to work
         let (sender, _recv) = mpsc::channel();
         let mut r = Renderer::new(sender).await;
 
         let img = image::open(IMG_TEST_LANDSCAPE).unwrap();
         let mut frame_position = FramePosition::new(FrameSize::new(img.width(), img.height()));
-        frame_position.scale_for_output_size(FrameSize::new(img.width() / 2, img.height() / 2));
+        // frame_position.scale_for_output_size(FrameSize::new(img.width() / 2, img.height() / 2));
         frame_position.orientation = Orientation {
-            angle: 90.0,
+            angle: 0.0,
             base_angle: 0.0,
             mirrored: false,
         };
-        frame_position.straigthen_angle = 31f32.to_radians();
+        // frame_position.straigthen_angle = 31f32.to_radians();
 
         let mut effects = EffectParameters::new();
         effects.saturation = 1.2;
@@ -772,9 +798,6 @@ mod tests {
 
         let frame = r.render_frame().await;
         println!("time to render: {}", r.gpu_timer.frame_time_msg());
-        frame
-            .build_gdk_texture()
-            .save_to_png("test_image.png")
-            .unwrap();
+        save_frame(frame, "test_image.png".as_ref());
     }
 }

@@ -1,4 +1,4 @@
-use crate::renderer::export_buffer::ExportTexture;
+use crate::renderer::export_texture::ExportTexture;
 
 pub struct Presenter {
     textures: Vec<ExportTexture>,

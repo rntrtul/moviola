@@ -4,7 +4,6 @@ use crate::renderer::renderer::{RenderedFrame, Renderer};
 use crate::renderer::timer::Timer;
 use crate::renderer::{EffectParameters, TimerEvent};
 use crate::ui::preview::Orientation;
-use relm4::gtk::gdk;
 use std::cmp::PartialEq;
 use std::collections::VecDeque;
 use std::sync::atomic::AtomicBool;
