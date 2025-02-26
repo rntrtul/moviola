@@ -8,12 +8,14 @@ pub(crate) struct ExportTexture {
     pub texture: wgpu::Texture,
     pub fd: RawFd,
     device: wgpu::Device,
+    pub alignment: vk::DeviceSize,
 }
 
 impl ExportTexture {
     pub fn new(device: &wgpu::Device, instance: &wgpu::Instance, size: wgpu::Extent3d) -> Self {
-        let (raw_buffer, device_memory) = create_image(&device, size);
-        let texture = upgrade_raw_image_to_wgpu(raw_buffer, size, &device);
+        let (raw_texture, device_memory) = create_image(&device, size);
+        let alignment = image_alignment(&raw_texture, device);
+        let texture = upgrade_raw_image_to_wgpu(raw_texture, size, &device);
 
         let mut fd = None;
         unsafe {
@@ -42,11 +44,12 @@ impl ExportTexture {
         };
 
         Self {
-            _raw_texture: raw_buffer,
+            _raw_texture: raw_texture,
             device_memory,
             texture,
             device: device.clone(),
             fd: fd.unwrap(),
+            alignment,
         }
     }
 }
@@ -120,6 +123,20 @@ fn create_image(device: &wgpu::Device, size: wgpu::Extent3d) -> (vk::Image, vk::
     };
 
     (raw_image.unwrap(), allocation.unwrap())
+}
+
+fn image_alignment(image: &vk::Image, device: &wgpu::Device) -> vk::DeviceSize {
+    let mut mem_reqs = None;
+    unsafe {
+        device.as_hal::<hal::api::Vulkan, _, _>(|device| {
+            if let Some(device) = device {
+                let raw_device = device.raw_device();
+                mem_reqs = Some(raw_device.get_image_memory_requirements(*image));
+            }
+        })
+    };
+
+    mem_reqs.unwrap().alignment
 }
 
 fn upgrade_raw_image_to_wgpu(

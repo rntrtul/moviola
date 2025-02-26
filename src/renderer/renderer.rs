@@ -3,7 +3,7 @@ use crate::renderer::handler::TimerCmd;
 use crate::renderer::presenter::Presenter;
 use crate::renderer::texture::Texture;
 use crate::renderer::timer::{GpuTimer, QuerySet};
-use crate::renderer::{texture, EffectParameters, TimerEvent};
+use crate::renderer::{EffectParameters, TimerEvent};
 use crate::ui::preview::Orientation;
 use ash::vk;
 use gst::Sample;
@@ -28,9 +28,22 @@ pub struct RenderedFrame {
     height: u32,
     planes: u32,
     stride: u32,
+    alignment: u32,
 }
 
 impl RenderedFrame {
+    fn padded_width(&self) -> u32 {
+        // todo: use fourcc to get bytes per pixel (replace 4)
+        let pixels_per_block = self.alignment / 4;
+        let blocks_needed = (self.width as f32 / pixels_per_block as f32).ceil() as u32;
+
+        blocks_needed * pixels_per_block
+    }
+
+    fn row_stride(&self) -> u32 {
+        self.padded_width() * 4
+    }
+
     pub fn build_gdk_texture(&self) -> gdk::Texture {
         let builder = gdk::DmabufTextureBuilder::new();
 
@@ -38,7 +51,7 @@ impl RenderedFrame {
         builder.set_fd(0, self.fd as i32);
         builder.set_fourcc(self.fourcc);
         builder.set_modifier(self.modifer);
-        builder.set_width(self.width);
+        builder.set_width(self.padded_width());
         builder.set_height(self.height);
         builder.set_n_planes(self.planes);
         builder.set_offset(0, 0);
@@ -55,7 +68,7 @@ pub struct Renderer {
     output_size: FrameSize,
     frame_position: FramePosition,
     effect_parameters: EffectParameters,
-    video_frame_texture: RefCell<texture::Texture>,
+    input_texture: RefCell<Texture>,
     frame_position_pipeline: wgpu::ComputePipeline,
     frame_position_bind_group_layout: wgpu::BindGroupLayout,
     frame_position_bind_group: wgpu::BindGroup,
@@ -71,7 +84,7 @@ pub struct Renderer {
     timer: mpsc::Sender<TimerCmd>,
     device: wgpu::Device,
     queue: wgpu::Queue,
-    adapter: wgpu::Adapter,
+    _adapter: wgpu::Adapter,
     instance: wgpu::Instance,
 }
 
@@ -245,13 +258,13 @@ impl Renderer {
 
         Self {
             instance,
-            adapter,
+            _adapter: adapter,
             device,
             queue,
             output_size,
             frame_position,
             effect_parameters,
-            video_frame_texture: RefCell::new(input_texture),
+            input_texture: RefCell::new(input_texture),
             frame_position_pipeline,
             frame_position_bind_group_layout,
             frame_position_bind_group,
@@ -410,7 +423,7 @@ impl Renderer {
             &self.effects_bind_group_layout,
             &self.frame_position_bind_group_layout,
             &self.frame_position,
-            &self.video_frame_texture.borrow(),
+            &self.input_texture.borrow(),
             &self.device,
         );
 
@@ -424,12 +437,12 @@ impl Renderer {
     }
 
     pub fn is_size_equal_to_curr_input_size(&self, width: u32, height: u32) -> bool {
-        let texture = &self.video_frame_texture.borrow().texture;
+        let texture = &self.input_texture.borrow().texture;
         width == texture.width() && height == texture.height()
     }
 
     fn update_input_texture_size(&mut self, width: u32, height: u32) {
-        self.video_frame_texture.replace(
+        self.input_texture.replace(
             Texture::new(
                 &self.device,
                 wgpu::Extent3d {
@@ -455,7 +468,7 @@ impl Renderer {
     }
 
     fn sample_to_texture(&self, sample: &Sample) {
-        self.video_frame_texture
+        self.input_texture
             .borrow()
             .write_from_sample(&self.queue, sample);
         self.queue.submit([]);
@@ -558,6 +571,7 @@ impl Renderer {
             height: self.output_size.height,
             planes: 1,
             stride: 4,
+            alignment: output.alignment as u32,
         };
 
         self.timer
@@ -603,7 +617,7 @@ impl Renderer {
         if !self.is_size_equal_to_curr_input_size(img.width(), img.height()) {
             self.update_input_texture_size(img.width(), img.height());
         }
-        self.video_frame_texture
+        self.input_texture
             .borrow()
             .write_from_image(&self.queue, img);
         self.queue.submit([]);
@@ -754,13 +768,21 @@ mod tests {
         {
             let owned_fd = unsafe { OwnedFd::from_raw_fd(frame.fd) };
             let dma_buf = dma_buf::DmaBuf::from(owned_fd);
-            let a = dma_buf.memory_map().unwrap();
-            let _ = a.read(
+            let mapped_buf = dma_buf.memory_map().unwrap();
+
+            let bytes_per_row = (frame.width * 4) as usize;
+            let row_stride = frame.row_stride() as usize;
+            let _ = mapped_buf.read(
                 |vals, _| {
+                    let mut buf = vec![];
+                    for row in vals.chunks_exact(row_stride) {
+                        buf.extend_from_slice(&row[..bytes_per_row]);
+                    }
+
                     let image_buffer = image::ImageBuffer::<image::Rgba<u8>, _>::from_raw(
                         frame.width,
                         frame.height,
-                        vals,
+                        buf,
                     )
                     .unwrap();
                     image_buffer.save(save_path).unwrap();
