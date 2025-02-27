@@ -27,7 +27,7 @@ pub struct RenderedFrame {
     width: u32,
     height: u32,
     planes: u32,
-    stride: u32,
+    pixel_stride: u32,
     alignment: u32,
 }
 
@@ -51,11 +51,11 @@ impl RenderedFrame {
         builder.set_fd(0, self.fd as i32);
         builder.set_fourcc(self.fourcc);
         builder.set_modifier(self.modifer);
-        builder.set_width(self.padded_width());
+        builder.set_width(self.width);
         builder.set_height(self.height);
         builder.set_n_planes(self.planes);
         builder.set_offset(0, 0);
-        builder.set_stride(0, self.stride);
+        builder.set_stride(0, self.row_stride());
 
         unsafe {
             // first build is very slow ~100ms
@@ -570,7 +570,7 @@ impl Renderer {
             width: self.output_size.width,
             height: self.output_size.height,
             planes: 1,
-            stride: 4,
+            pixel_stride: 4,
             alignment: output.alignment as u32,
         };
 
