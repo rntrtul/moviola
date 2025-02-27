@@ -171,15 +171,6 @@ async fn render_loop(
                     drop(guarded_renderer);
 
                     if render_queued.load(std::sync::atomic::Ordering::Relaxed) {
-                        let are_more_renders_queued = match render_mode {
-                            RenderMode::MostRecentFrame => false,
-                            RenderMode::AllFrames => samples.len() != 0,
-                        };
-                        render_queued.store(
-                            are_more_renders_queued,
-                            std::sync::atomic::Ordering::Relaxed,
-                        );
-
                         update_queued(
                             renderer.clone(),
                             &mut samples.pop_front(),
@@ -188,6 +179,13 @@ async fn render_loop(
                             &mut queued_output_resolution,
                         )
                         .await;
+
+                        let more_renders_queued = match render_mode {
+                            RenderMode::MostRecentFrame => false,
+                            RenderMode::AllFrames => !samples.is_empty(),
+                        };
+                        render_queued
+                            .store(more_renders_queued, std::sync::atomic::Ordering::Relaxed);
                     }
 
                     render_frame(
