@@ -4,18 +4,16 @@ use crate::renderer::{FrameSize, RenderCmd, TimerCmd};
 use crate::ui::sidebar::{ControlsExportSettings, OutputContainerSettings};
 use crate::video::metadata::VideoInfo;
 use crate::video::player::{video_appsink, AppSinkUsage, Player};
+use anyhow::Error;
 use gst::prelude::{
-    Cast, ElementExt, ElementExtManual, GstBinExt, GstBinExtManual, GstObjectExt, ObjectExt,
-    PadExt, PadExtManual,
+    Cast, ElementExt, ElementExtManual, GstBinExt, GstBinExtManual, GstObjectExt, ObjectExt, PadExt,
 };
 use gst::ClockTime;
 use gst_app::{AppSink, AppSrc};
-use gst_pbutils::prelude::{EncodingProfileBuilder, EncodingProfileExt};
+use gst_pbutils::prelude::EncodingProfileBuilder;
 use gst_pbutils::EncodingContainerProfile;
-use gst_video::VideoFrameExt;
-use relm4::gtk::prelude::{TextureExt, TextureExtManual};
 use relm4::ComponentSender;
-use std::sync::mpsc;
+use std::sync::{mpsc, Arc, Condvar, Mutex};
 use std::thread;
 use std::time::SystemTime;
 
@@ -53,7 +51,7 @@ impl Player {
             AppSinkUsage::Export,
         );
 
-        let pipeline = export_video(
+        let (decode, encode) = start_export_video(
             source_uri,
             save_uri,
             self.info.clone(),
@@ -65,10 +63,7 @@ impl Player {
         );
 
         thread::spawn(move || {
-            let bus = pipeline.bus().unwrap();
-            wait_for_eos(bus);
-
-            pipeline.set_state(gst::State::Null).unwrap();
+            wait_export_done_and_cleanup(decode, encode);
             app_sender.input(AppMsg::ExportDone);
         });
     }
@@ -79,7 +74,7 @@ fn wait_for_eos(bus: gst::Bus) {
 
     for msg in bus.iter_timed(ClockTime::NONE) {
         use gst::MessageView;
-        println!("msg: {msg:?}");
+        // println!("msg: {msg:?}");
 
         match msg.view() {
             MessageView::Eos(..) => {
@@ -128,7 +123,7 @@ fn build_container_profile(
     }
 }
 
-fn export_video(
+fn start_export_video(
     source_uri: String,
     save_uri: String,
     info: VideoInfo,
@@ -137,7 +132,187 @@ fn export_video(
     timeline_settings: TimelineExportSettings,
     video_appsink: AppSink,
     frame_receiver: mpsc::Receiver<RenderedFrame>,
-) -> gst::Pipeline {
+) -> (gst::Pipeline, gst::Pipeline) {
+    let (audio_sender, audio_recv) = mpsc::channel();
+
+    let decode = launch_decode_pipeline(
+        !encoding_settings.container.no_audio,
+        audio_sender,
+        timeline_settings,
+        source_uri,
+        video_appsink,
+    )
+    .expect("could not launch decode pipeline");
+    let encode = launch_encode_pipeline(
+        frame_receiver,
+        audio_recv,
+        info,
+        output_size,
+        encoding_settings,
+        save_uri,
+    )
+    .expect("could not launch encode pipeline");
+    (decode, encode)
+}
+
+fn launch_decode_pipeline(
+    audio_enabled: bool,
+    audio_sender: mpsc::Sender<Option<gst::Sample>>,
+    timeline_settings: TimelineExportSettings,
+    source_uri: String,
+    video_appsink: AppSink,
+) -> Result<gst::Pipeline, Error> {
+    let pipeline = gst::Pipeline::default();
+    let decode_bin = gst::ElementFactory::make("uridecodebin")
+        .property("uri", source_uri.as_str())
+        .build()?;
+
+    pipeline
+        .add(&decode_bin)
+        .expect("failed to add elements to pipeline");
+
+    let pipeline_weak = pipeline.downgrade();
+    let c = Arc::new((Mutex::new(0), Condvar::new()));
+    let c2 = Arc::clone(&c);
+
+    decode_bin.connect_pad_added(move |_dbin, dbin_src_pad| {
+        let Some(pipeline) = pipeline_weak.upgrade() else {
+            return;
+        };
+
+        let (is_audio, is_video) = {
+            let media_type = dbin_src_pad.current_caps().and_then(|caps| {
+                caps.structure(0).map(|s| {
+                    let name = s.name();
+                    (name.starts_with("audio/"), name.starts_with("video/"))
+                })
+            });
+
+            match media_type {
+                None => {
+                    println!("Failed to get media type from pad {}", dbin_src_pad.name());
+                    return;
+                }
+                Some(media_type) => media_type,
+            }
+        };
+
+        let audio_sample_sender = audio_sender.clone();
+        let audio_eos_sender = audio_sender.clone();
+        let link_to_encode_bin = |is_audio, is_video| -> Result<(), Error> {
+            if is_audio && audio_enabled {
+                // todo: figure out how to connect to a specific audio stream
+                let queue = gst::ElementFactory::make("queue").build()?;
+                let app_sink = AppSink::builder()
+                    .enable_last_sample(true)
+                    .max_buffers(10)
+                    .sync(false)
+                    .callbacks(
+                        gst_app::AppSinkCallbacks::builder()
+                            .new_sample(move |appsink| {
+                                let sample = appsink.pull_sample().unwrap();
+                                audio_sample_sender.send(Some(sample)).unwrap();
+                                Ok(gst::FlowSuccess::Ok)
+                            })
+                            .eos(move |_| {
+                                audio_eos_sender.send(None).unwrap();
+                            })
+                            .build(),
+                    )
+                    .build();
+
+                let elements = &[&queue, app_sink.upcast_ref()];
+                pipeline
+                    .add_many(elements)
+                    .expect("failed to add audio elements to pipeline");
+                gst::Element::link_many(elements)?;
+
+                for e in elements {
+                    e.sync_state_with_parent()?;
+                }
+
+                let sink_pad = queue.static_pad("sink").expect("queue has no sinkpad");
+                dbin_src_pad.link(&sink_pad)?;
+            } else if is_video {
+                let queue = gst::ElementFactory::make("queue").build()?;
+                let convert = gst::ElementFactory::make("videoconvert").build()?;
+
+                let elements = &[&queue, &convert, video_appsink.upcast_ref()];
+                pipeline
+                    .add_many(elements)
+                    .expect("failed to add video elements to pipeline");
+                gst::Element::link_many(elements)?;
+
+                for e in elements {
+                    e.sync_state_with_parent()?
+                }
+
+                let sink_pad = queue.static_pad("sink").expect("queue has no sinkpad");
+                dbin_src_pad.link(&sink_pad)?;
+            }
+
+            Ok(())
+        };
+
+        if let Err(err) = link_to_encode_bin(is_audio, is_video) {
+            println!("failed to insert sink {err}");
+        }
+
+        if is_audio || is_video {
+            //todo: see how it works with multiple audio tracks
+            let (lock, cvar) = &*c2;
+            let mut pads_connected = lock.lock().unwrap();
+            *pads_connected += 1;
+            cvar.notify_one();
+        }
+    });
+
+    pipeline.set_state(gst::State::Paused)?;
+    {
+        let (lock, cvar) = &*c;
+        let mut pads_connected = lock.lock().unwrap();
+        while *pads_connected < 2 {
+            pads_connected = cvar.wait(pads_connected).unwrap();
+        }
+    }
+
+    pipeline
+        .seek(
+            1.0,
+            gst::SeekFlags::FLUSH | gst::SeekFlags::ACCURATE,
+            gst::SeekType::Set,
+            timeline_settings.start,
+            gst::SeekType::Set,
+            timeline_settings.end,
+        )
+        .expect("Could NOT Seek");
+
+    pipeline.set_state(gst::State::Playing)?;
+    Ok(pipeline)
+}
+
+fn launch_encode_pipeline(
+    frame_receiver: mpsc::Receiver<RenderedFrame>,
+    audio_recv: mpsc::Receiver<Option<gst::Sample>>,
+    info: VideoInfo,
+    output_size: FrameSize,
+    encoding_settings: ControlsExportSettings,
+    save_uri: String,
+) -> Result<gst::Pipeline, Error> {
+    // todo: figure out if this is needed?
+    let _dma_caps = gst_video::VideoCapsBuilder::new()
+        .format(gst_video::VideoFormat::DmaDrm)
+        .features([
+            gst_allocator::CAPS_FEATURE_MEMORY_DMABUF,
+            gst_video::CAPS_FEATURE_META_GST_VIDEO_META,
+        ])
+        .field("drm-format", "RA24")
+        .framerate(info.framerate.clone())
+        .width(output_size.width as i32)
+        .height(output_size.height as i32)
+        .pixel_aspect_ratio(gst::Fraction::new(1, 1))
+        .build();
+
     let gst_video_info = gst_video::VideoInfo::builder(
         gst_video::VideoFormat::Rgba,
         output_size.width,
@@ -146,31 +321,24 @@ fn export_video(
     .fps(info.framerate.clone())
     .build()
     .expect("Couldn't build video info");
+
+    let pipeline = gst::Pipeline::default();
+
     let container_profile = build_container_profile(&info, encoding_settings.container);
-
-    let pipeline = gst::Pipeline::with_name("export_pipeline");
-
-    let decodebin = gst::ElementFactory::make("uridecodebin3")
-        .property("instant-uri", true)
-        .property("uri", source_uri.as_str())
-        .build()
-        .unwrap();
     let encode_bin = gst::ElementFactory::make("encodebin")
         .property("profile", &container_profile)
-        .build()
-        .unwrap();
+        .build()?;
     let file_sink = gst::ElementFactory::make("filesink")
         .property("location", save_uri.as_str())
-        .property("sync", false)
-        .build()
-        .unwrap();
+        .build()?;
 
     let mut frame_count = 0;
     let frame_spacing = 1.0 / (info.framerate.numer() as f64 / info.framerate.denom() as f64);
     let alloc = gst_allocator::DmaBufAllocator::new();
-    let video_app_src = AppSrc::builder()
-        .caps(&gst_video_info.to_caps().unwrap())
+    let video_appsrc = AppSrc::builder()
+        .name("video appsrc")
         .format(gst::Format::Time)
+        .caps(&gst_video_info.to_caps().unwrap())
         .callbacks(
             gst_app::AppSrcCallbacks::builder()
                 .need_data(move |appsrc, _| {
@@ -193,6 +361,7 @@ fn export_video(
                     };
 
                     {
+                        // todo: append buffer with meta containing rowstride
                         let buffer = buffer.get_mut().unwrap();
                         buffer.append_memory(mem);
                         buffer.set_pts(ClockTime::from_seconds_f64(
@@ -208,80 +377,72 @@ fn export_video(
         )
         .build();
 
-    pipeline
-        .add_many(&[
-            &decodebin,
-            &encode_bin,
-            &file_sink,
-            video_app_src.upcast_ref(),
-        ])
-        .unwrap();
-    gst::Element::link_many([&encode_bin, &file_sink]).unwrap();
+    let audio_appsrc = AppSrc::builder()
+        .name("audio appsrc")
+        .format(gst::Format::Time)
+        .callbacks(
+            gst_app::AppSrcCallbacks::builder()
+                .need_data(move |appsrc, _| {
+                    let Ok(Some(audio_sample)) = audio_recv.recv() else {
+                        let _ = appsrc.end_of_stream();
+                        return;
+                    };
+                    let _ = appsrc.push_sample(&audio_sample);
+                })
+                .build(),
+        )
+        .build();
 
-    let encode_video_sink = encode_bin.request_pad_simple("video_%u").unwrap();
-    let video_src = &video_app_src
+    let mut elements = vec![video_appsrc.upcast_ref(), &encode_bin, &file_sink];
+
+    if !encoding_settings.container.no_audio {
+        elements.push(audio_appsrc.upcast_ref());
+    }
+
+    pipeline
+        .add_many(elements)
+        .expect("failed to add to encode pipeline");
+    gst::Element::link_many([&encode_bin, &file_sink])?;
+
+    let encode_video_sink_pad = encode_bin
+        .request_pad_simple("video_%u")
+        .expect("Could not get video pad from encodebin");
+    let video_src_pad = video_appsrc
         .static_pad("src")
-        .expect("no src pad for video appsrc");
-    video_src.link(&encode_video_sink).unwrap();
+        .expect("video appsrc has no srcpad");
+    video_src_pad.link(&encode_video_sink_pad)?;
 
-    let pipeline_weak = pipeline.downgrade();
+    if !encoding_settings.container.no_audio {
+        let encode_audio_sink_pad = encode_bin
+            .request_pad_simple("audio_%u")
+            .expect("Could not get audio pad from encodebin");
+        let audio_src_pad = audio_appsrc
+            .static_pad("src")
+            .expect("videoconvert has no srcpad");
+        audio_src_pad.link(&encode_audio_sink_pad)?;
+    }
 
-    let exporting_audio = !encoding_settings.container.no_audio;
-    decodebin.connect_pad_added(move |decode, src_pad| {
-        let Some(pipeline) = pipeline_weak.upgrade() else {
-            return;
-        };
+    pipeline.set_state(gst::State::Playing)?;
+    Ok(pipeline)
+}
 
-        let (is_audio, is_video) = (
-            src_pad.name().starts_with("audio"),
-            src_pad.name().starts_with("video"),
-        );
+fn wait_export_done_and_cleanup(decode: gst::Pipeline, encode: gst::Pipeline) {
+    wait_for_eos(decode.bus().unwrap());
+    wait_for_eos(encode.bus().unwrap());
 
-        if exporting_audio && is_audio {
-            let encode_audio_sink = encode_bin.request_pad_simple("audio_%u").unwrap();
-            src_pad.link(&encode_audio_sink).unwrap();
-        } else if is_video {
-            let queue = gst::ElementFactory::make("queue").build().unwrap();
-            let video_convert = gst::ElementFactory::make("videoconvert").build().unwrap();
-
-            let elements = &[&queue, &video_convert, video_appsink.upcast_ref()];
-            pipeline.add_many(elements).unwrap();
-            gst::Element::link_many(elements).unwrap();
-
-            for e in elements {
-                e.sync_state_with_parent().unwrap();
-            }
-
-            let video_sink = queue.static_pad("sink").unwrap();
-            src_pad.link(&video_sink).unwrap();
-        }
-    });
-
-    pipeline.set_state(gst::State::Paused).unwrap();
-
-    // pipeline
-    //     .seek(
-    //         1.0,
-    //         gst::SeekFlags::FLUSH | gst::SeekFlags::ACCURATE,
-    //         gst::SeekType::Set,
-    //         timeline_settings.start,
-    //         gst::SeekType::Set,
-    //         timeline_settings.end,
-    //     )
-    //     .unwrap();
-
-    pipeline.set_state(gst::State::Playing).unwrap();
-    pipeline
+    decode.set_state(gst::State::Null).unwrap();
+    encode.set_state(gst::State::Null).unwrap();
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::config::{VIDEO_EXPORT_DST, VIDEO_TEST_FILE_1080};
+    use crate::config::*;
     use crate::renderer::renderer::RenderedFrame;
     use crate::renderer::{FrameSize, RenderMode, RenderResopnse, RendererHandler};
     use crate::ui::sidebar::{ControlsExportSettings, OutputContainerSettings};
-    use crate::video::export::{export_video, wait_for_eos, TimelineExportSettings};
-    use gst::prelude::ElementExt;
+    use crate::video::export::{
+        start_export_video, wait_export_done_and_cleanup, TimelineExportSettings,
+    };
     use gst::ClockTime;
     use std::sync::atomic::{AtomicBool, AtomicU64};
     use std::sync::{mpsc, Arc};
@@ -337,6 +498,7 @@ mod tests {
         let app_sink = gst_app::AppSink::builder()
             .enable_last_sample(true)
             .max_buffers(1)
+            .sync(false)
             .caps(
                 &gst_video::VideoCapsBuilder::new()
                     .format(gst_video::VideoFormat::Rgba)
@@ -346,16 +508,16 @@ mod tests {
                 gst_app::AppSinkCallbacks::builder()
                     .new_sample(move |appsink| {
                         let sample = appsink.pull_sample().unwrap();
+                        let a = frames_to_render.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                         render_sender
                             .send(crate::renderer::RenderCmd::RenderSample(sample))
                             .unwrap();
-                        let a = frames_to_render.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 
-                        // println!("sending sample {}", a + 1);
+                        println!("sending video sample {}", a + 1);
                         Ok(gst::FlowSuccess::Ok)
                     })
                     .eos(move |_| {
-                        println!("EOS");
+                        println!("video EOS");
                         export_done.store(true, std::sync::atomic::Ordering::Relaxed);
                     })
                     .build(),
@@ -363,19 +525,19 @@ mod tests {
             .build();
 
         // todo: get info populated rather than manual
-        let pipeline = export_video(
-            VIDEO_TEST_FILE_1080.to_string(),
+        let (decode, encode) = start_export_video(
+            VIDEO_TEST_FILE_SHORT.to_string(),
             VIDEO_EXPORT_DST.to_string(),
             crate::video::metadata::VideoInfo {
                 duration: Default::default(),
-                framerate: gst::Fraction::new(500, 21),
-                width: 1920,
-                height: 1080,
-                aspect_ratio: 1.777,
+                framerate: gst::Fraction::new(30, 1),
+                width: 536,
+                height: 474,
+                aspect_ratio: 1.1308,
                 container_info: Default::default(),
                 orientation: Default::default(),
             },
-            FrameSize::new(1920, 1080),
+            FrameSize::new(536, 474),
             ControlsExportSettings {
                 container: OutputContainerSettings {
                     no_audio: true,
@@ -391,14 +553,13 @@ mod tests {
             },
             TimelineExportSettings {
                 start: ClockTime::ZERO,
-                end: ClockTime::from_seconds_f64(10f64),
+                end: ClockTime::from_seconds_f64(3f64),
             },
             app_sink,
             frame_recv,
         );
 
-        listener.await.expect("could not await on listener");
-        wait_for_eos(pipeline.bus().unwrap());
-        pipeline.set_state(gst::State::Null).unwrap();
+        listener.await.expect("could not await on renderer listne");
+        wait_export_done_and_cleanup(decode, encode);
     }
 }
