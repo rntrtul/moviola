@@ -6,13 +6,16 @@ use crate::video::metadata::VideoInfo;
 use crate::video::player::{video_appsink, AppSinkUsage, Player};
 use anyhow::Error;
 use gst::prelude::{
-    Cast, ElementExt, ElementExtManual, GstBinExt, GstBinExtManual, GstObjectExt, ObjectExt, PadExt,
+    BufferPoolExt, BufferPoolExtManual, Cast, ElementExt, ElementExtManual, GstBinExt,
+    GstBinExtManual, GstObjectExt, ObjectExt, PadExt,
 };
 use gst::ClockTime;
 use gst_app::{AppSink, AppSrc};
 use gst_pbutils::prelude::EncodingProfileBuilder;
 use gst_pbutils::EncodingContainerProfile;
+use gst_video::VideoBufferPoolConfig;
 use relm4::ComponentSender;
+use std::ops::Deref;
 use std::sync::{mpsc, Arc, Condvar, Mutex};
 use std::thread;
 use std::time::SystemTime;
@@ -332,9 +335,12 @@ fn launch_encode_pipeline(
         .property("location", save_uri.as_str())
         .build()?;
 
+    // todo: get padding required by hardware passed in
+    let row_stride = (info.width as f32 / 32.0).ceil() as i32 * 128;
+    let alloc = gst_allocator::DmaBufAllocator::new();
+
     let mut frame_count = 0;
     let frame_spacing = 1.0 / (info.framerate.numer() as f64 / info.framerate.denom() as f64);
-    let alloc = gst_allocator::DmaBufAllocator::new();
     let video_appsrc = AppSrc::builder()
         .name("video appsrc")
         .format(gst::Format::Time)
@@ -361,9 +367,18 @@ fn launch_encode_pipeline(
                     };
 
                     {
-                        // todo: append buffer with meta containing rowstride
                         let buffer = buffer.get_mut().unwrap();
                         buffer.append_memory(mem);
+                        gst_video::VideoMeta::add_full(
+                            buffer,
+                            gst_video::VideoFrameFlags::empty(),
+                            gst_video::VideoFormat::Rgba,
+                            info.width,
+                            info.height,
+                            &[0],
+                            &[row_stride],
+                        )
+                        .unwrap();
                         buffer.set_pts(ClockTime::from_seconds_f64(
                             frame_count as f64 * frame_spacing,
                         ));
