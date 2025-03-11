@@ -239,6 +239,7 @@ impl Player {
             };
 
             let stream_info = AudioStreamInfo {
+                title: "".to_string(),
                 codec: audio_codec,
                 bitrate: audio_bitrate,
                 language,

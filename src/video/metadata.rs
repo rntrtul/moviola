@@ -1,16 +1,53 @@
 use crate::ui::preview::Orientation;
 use gst::caps::{Builder, NoFeature};
 use gst::ClockTime;
+use gst_pbutils::prelude::DiscovererStreamInfoExt;
+use gst_pbutils::{DiscovererAudioInfo, DiscovererInfo};
 use relm4::gtk;
 
 pub static VIDEO_BITRATE_DEFAULT: u32 = 3000000;
 pub static AUDIO_BITRATE_DEFAULT: u32 = 128000;
 
+// todo: add stream title
 #[derive(Debug, Clone)]
 pub struct AudioStreamInfo {
     pub(crate) codec: AudioCodec,
     pub(crate) bitrate: u32,
     pub(crate) language: String,
+    pub(crate) title: String,
+}
+
+impl From<DiscovererAudioInfo> for AudioStreamInfo {
+    fn from(info: DiscovererAudioInfo) -> Self {
+        let mut codec = AudioCodec::Unknown;
+        let mut title = "".to_string();
+
+        if let Some(tags) = info.tags() {
+            for (tag, val) in tags.iter() {
+                // println!("{tag:?}: {val:?}");
+                match tag.as_str() {
+                    "audio-codec" => {
+                        codec = AudioCodec::from_description(val.get::<&str>().unwrap());
+                    }
+                    "title" => {
+                        title = val.get::<&str>().unwrap().to_string();
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        AudioStreamInfo {
+            codec,
+            title,
+            bitrate: info.bitrate(),
+            language: if let Some(lang) = info.language() {
+                lang.to_string()
+            } else {
+                "".to_string()
+            },
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -19,6 +56,44 @@ pub struct VideoContainerInfo {
     pub(crate) video_codec: VideoCodec,
     pub(crate) video_bitrate: u32,
     pub(crate) audio_streams: Vec<AudioStreamInfo>,
+}
+
+impl From<DiscovererInfo> for VideoContainerInfo {
+    fn from(info: DiscovererInfo) -> Self {
+        let mut audio_streams = vec![];
+        for audio_info in info.audio_streams() {
+            audio_streams.push(AudioStreamInfo::from(audio_info));
+        }
+
+        let mut video_codec = VideoCodec::Unknown;
+        let mut container = ContainerFormat::Unknown;
+
+        if let Some(tags) = info.tags() {
+            for (tag, val) in tags.iter() {
+                match tag.as_str() {
+                    "video-codec" => {
+                        video_codec = VideoCodec::from_description(val.get::<&str>().unwrap())
+                    }
+                    "container-format" => {
+                        container = ContainerFormat::from_description(val.get::<&str>().unwrap())
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        let mut video_bitrate = 0;
+        for vidinfo in info.video_streams() {
+            video_bitrate = vidinfo.bitrate();
+        }
+
+        Self {
+            container,
+            video_codec,
+            video_bitrate,
+            audio_streams,
+        }
+    }
 }
 
 impl Default for VideoContainerInfo {
@@ -41,6 +116,53 @@ pub struct VideoInfo {
     pub(crate) aspect_ratio: f64,
     pub(crate) container_info: VideoContainerInfo,
     pub(crate) orientation: Orientation,
+}
+
+impl From<DiscovererInfo> for VideoInfo {
+    fn from(info: DiscovererInfo) -> Self {
+        let mut width = 0;
+        let mut height = 0;
+        let mut framerate = gst::Fraction::new(0, 1);
+        let mut orientation = Orientation::default();
+
+        // todo: handle multiple video streams (need to update struct to match audiostream)
+        for vidinfo in info.video_streams() {
+            width = vidinfo.width();
+            height = vidinfo.height();
+            framerate = vidinfo.framerate();
+
+            if let Some(tags) = vidinfo.tags() {
+                for (tag, val) in tags.iter() {
+                    match tag.as_str() {
+                        "image-orientation" => {
+                            // 7 is length of "rotate-" string
+                            let degrees = val.get::<&str>().unwrap()[7..]
+                                .to_string()
+                                .parse::<u32>()
+                                .unwrap();
+                            println!("degress: {degrees}");
+                            orientation.base_angle = degrees as f32;
+                        }
+                        _ => {}
+                    }
+                }
+            }
+        }
+
+        let aspect_ratio = width as f64 / height as f64;
+        let duration = info.duration().unwrap();
+        let container_info = VideoContainerInfo::from(info);
+
+        Self {
+            duration,
+            framerate,
+            width,
+            height,
+            aspect_ratio,
+            container_info,
+            orientation,
+        }
+    }
 }
 
 impl Default for VideoInfo {
@@ -244,7 +366,7 @@ impl VideoCodec {
             desc if desc.contains("VP8") => VideoCodec::VP8,
             desc if desc.contains("VP9") => VideoCodec::VP9,
             desc if desc.contains("H.264") => VideoCodec::X264,
-            desc if desc.contains("H.265") => VideoCodec::X265,
+            desc if desc.contains("H.265") || desc.contains("HEVC") => VideoCodec::X265,
             _ => VideoCodec::Unknown,
         }
     }
@@ -309,9 +431,9 @@ impl ContainerFormat {
     pub fn from_description(description: &str) -> Self {
         // see webm report as matroska?
         match description {
-            desc if desc == "Matroska" => ContainerFormat::MKV,
-            desc if desc == "ISO MP4/M4A" => ContainerFormat::MP4,
-            desc if desc == "Quicktime" => ContainerFormat::QUICKTIME,
+            "Matroska" => ContainerFormat::MKV,
+            "ISO MP4/M4A" => ContainerFormat::MP4,
+            "Quicktime" => ContainerFormat::QUICKTIME,
             _ => ContainerFormat::Unknown,
         }
     }
