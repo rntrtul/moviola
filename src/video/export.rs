@@ -303,6 +303,8 @@ fn launch_encode_pipeline(
     save_uri: String,
 ) -> Result<gst::Pipeline, Error> {
     // todo: figure out if this is needed?
+    //  encoders don't accept DMABUF so not used right now. They might be downloading the current dmabuf
+    //  which is stored linearly and in RGBA so output fine, if slow.
     let _dma_caps = gst_video::VideoCapsBuilder::new()
         .format(gst_video::VideoFormat::DmaDrm)
         .features([
@@ -458,6 +460,7 @@ mod tests {
     use crate::video::export::{
         start_export_video, wait_export_done_and_cleanup, TimelineExportSettings,
     };
+    use crate::video::metadata::{AudioCodec, ContainerFormat, VideoCodec, VideoInfo};
     use gst::ClockTime;
     use std::sync::atomic::{AtomicBool, AtomicU64};
     use std::sync::{mpsc, Arc};
@@ -492,10 +495,21 @@ mod tests {
         })
     }
 
+    fn discover_metadata(uri: &String) -> VideoInfo {
+        let discoverer = gst_pbutils::Discoverer::new(ClockTime::from_seconds_f64(2.0))
+            .expect("unable to make discoverer");
+        let info = discoverer.discover_uri(uri.as_str()).unwrap();
+        VideoInfo::from(info.clone())
+    }
+
     // fixme: why do appsrc allocs fail due to fd.
     #[tokio::test(flavor = "multi_thread")]
     async fn export_basic_video() {
         gst::init().unwrap();
+
+        let source_uri = VIDEO_TEST_FILE_SHORT.to_string();
+        let video_info = discover_metadata(&source_uri);
+        let frame_size = FrameSize::new(video_info.width, video_info.height);
 
         let (handler, render_response) = RendererHandler::new(RenderMode::AllFrames);
         let (frame_sender, frame_recv) = mpsc::channel();
@@ -539,28 +553,19 @@ mod tests {
             )
             .build();
 
-        // todo: get info populated rather than manual
         let (decode, encode) = start_export_video(
-            VIDEO_TEST_FILE_SHORT.to_string(),
+            source_uri,
             VIDEO_EXPORT_DST.to_string(),
-            crate::video::metadata::VideoInfo {
-                duration: Default::default(),
-                framerate: gst::Fraction::new(30, 1),
-                width: 536,
-                height: 474,
-                aspect_ratio: 1.1308,
-                container_info: Default::default(),
-                orientation: Default::default(),
-            },
-            FrameSize::new(536, 474),
+            video_info,
+            frame_size,
             ControlsExportSettings {
                 container: OutputContainerSettings {
                     no_audio: true,
                     audio_stream_idx: 0,
-                    audio_codec: crate::video::metadata::AudioCodec::AAC,
+                    audio_codec: AudioCodec::AAC,
                     audio_bitrate: 0,
-                    container: crate::video::metadata::ContainerFormat::MP4,
-                    video_codec: crate::video::metadata::VideoCodec::X265,
+                    container: ContainerFormat::MP4,
+                    video_codec: VideoCodec::X265,
                     video_bitrate: 0,
                 },
                 container_is_default: true,
