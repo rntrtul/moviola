@@ -20,7 +20,7 @@ use std::sync::{mpsc, Arc, Condvar, Mutex};
 use std::thread;
 use std::time::SystemTime;
 
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone)]
 pub struct TimelineExportSettings {
     pub start: ClockTime,
     pub end: ClockTime,
@@ -153,6 +153,7 @@ fn start_export_video(
         output_size,
         encoding_settings,
         save_uri,
+        timeline_settings.start,
     )
     .expect("could not launch encode pipeline");
     (decode, encode)
@@ -301,8 +302,8 @@ fn launch_encode_pipeline(
     output_size: FrameSize,
     encoding_settings: ControlsExportSettings,
     save_uri: String,
+    audio_start_offset: gst::ClockTime,
 ) -> Result<gst::Pipeline, Error> {
-    // todo: figure out if this is needed?
     //  encoders don't accept DMABUF so not used right now. They might be downloading the current dmabuf
     //  which is stored linearly and in RGBA so output fine, if slow.
     let _dma_caps = gst_video::VideoCapsBuilder::new()
@@ -362,7 +363,7 @@ fn launch_encode_pipeline(
                         alloc
                             .alloc_with_flags(
                                 frame.fd,
-                                (output_size.width * output_size.height * 4) as usize,
+                                (row_stride as u32 * output_size.height) as usize,
                                 gst_allocator::FdMemoryFlags::DONT_CLOSE,
                             )
                             .expect("Failed to allocate buffer")
@@ -400,10 +401,21 @@ fn launch_encode_pipeline(
         .callbacks(
             gst_app::AppSrcCallbacks::builder()
                 .need_data(move |appsrc, _| {
-                    let Ok(Some(audio_sample)) = audio_recv.recv() else {
+                    let Ok(Some(mut audio_sample)) = audio_recv.recv() else {
                         let _ = appsrc.end_of_stream();
                         return;
                     };
+
+                    let audio_sample_ref = audio_sample.make_mut();
+                    let mut buffer = audio_sample_ref.buffer_owned().unwrap();
+                    audio_sample_ref.set_buffer(None);
+                    {
+                        let buffer_ref = buffer.make_mut();
+                        let new_pts = buffer_ref.pts().unwrap() - audio_start_offset;
+                        buffer_ref.set_pts(new_pts);
+                    }
+                    audio_sample_ref.set_buffer(Some(&buffer));
+
                     let _ = appsrc.push_sample(&audio_sample);
                 })
                 .build(),
@@ -560,7 +572,7 @@ mod tests {
             frame_size,
             ControlsExportSettings {
                 container: OutputContainerSettings {
-                    no_audio: true,
+                    no_audio: false,
                     audio_stream_idx: 0,
                     audio_codec: AudioCodec::AAC,
                     audio_bitrate: 0,
@@ -572,7 +584,7 @@ mod tests {
                 effect_parameters: Default::default(),
             },
             TimelineExportSettings {
-                start: ClockTime::ZERO,
+                start: ClockTime::from_seconds_f64(0.5f64),
                 end: ClockTime::from_seconds_f64(3f64),
             },
             app_sink,
