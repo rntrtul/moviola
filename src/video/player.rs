@@ -10,6 +10,7 @@ use gst::prelude::{ElementExt, ElementExtManual, GstObjectExt, ObjectExt, PadExt
 use gst::{Bus, ClockTime, FlowSuccess, SeekFlags, State};
 use gst_app::AppSink;
 use relm4::ComponentSender;
+use std::cmp::PartialEq;
 use std::fmt::Debug;
 use std::sync::mpsc;
 use std::time::Instant;
@@ -286,6 +287,7 @@ impl Player {
     }
 }
 
+#[derive(PartialEq)]
 pub(crate) enum AppSinkUsage {
     Export,
     Preview,
@@ -303,9 +305,10 @@ pub(crate) fn video_appsink(
 
     let preroll_sender = sample_sender.clone();
     let preroll_timer_sender = timer_sender.clone();
-    gst_app::AppSink::builder()
+    AppSink::builder()
         .enable_last_sample(true)
         .max_buffers(1)
+        .sync(usage == AppSinkUsage::Preview)
         .caps(
             &gst_video::VideoCapsBuilder::new()
                 .format(gst_video::VideoFormat::Rgba)
