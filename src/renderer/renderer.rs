@@ -489,8 +489,8 @@ impl Renderer {
             frame_position_pass.set_pipeline(&self.frame_position_pipeline);
             frame_position_pass.set_bind_group(0, &self.frame_position_bind_group, &[]);
             frame_position_pass.dispatch_workgroups(
-                self.output_size.width.div_ceil(256),
-                self.output_size.height,
+                self.output_size.width.div_ceil(16),
+                self.output_size.height.div_ceil(16),
                 1,
             );
         }
@@ -759,7 +759,7 @@ fn create_device_queue(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::IMG_TEST_LANDSCAPE;
+    use crate::config::*;
     use std::os::fd::{FromRawFd, OwnedFd};
     use std::path::Path;
 
@@ -820,6 +820,53 @@ mod tests {
 
         let frame = r.render_frame().await;
         println!("time to render: {}", r.gpu_timer.frame_time_msg());
-        save_frame(frame, "test_image.png".as_ref());
+        save_frame(frame, "test_render_output.png".as_ref());
+    }
+
+    #[test]
+    fn tiling() {
+        // todo: test with non divisble data size
+        //  have perfect tiles and then mishapen tile at edges
+        // todo: mock global ids (8,8) dispatch
+        let data: Vec<u32> = (0..512).collect();
+        println!("data {data:?}");
+
+        let tile_width = 3;
+        let tile_size = tile_width * tile_width;
+
+        let width = 16;
+        let height = 32;
+
+        // 16x32 with 3x3 tiles should give tiles
+        //  50 full
+        //  10 1x3 on right
+        //  5 3x2 on bottom
+        //  1 1x2 in bottom right
+
+        let dispatch_x = 4;
+        let dispatch_y = 5;
+
+        let ids_in_perfect_tile = tile_width * height;
+        let number_of_perfect_tiles = width / tile_width;
+        let ids_in_all_perfect_tiles = number_of_perfect_tiles * tile_width * height;
+
+        for id in data {
+            let tile_id = id / ids_in_perfect_tile;
+            let tile_cell = id % ids_in_perfect_tile;
+
+            let (tile_x, tile_y) = if ids_in_all_perfect_tiles <= id {
+                // non perfect tile
+                let last_tile_width = width % tile_width;
+                (tile_cell % last_tile_width, tile_cell / last_tile_width)
+            } else {
+                (tile_cell % tile_width, tile_cell / tile_width)
+            };
+
+            let swizzled_id = (tile_id * tile_width) + (tile_y * width) + tile_x;
+
+            let swizzled_group_id = (swizzled_id % width, swizzled_id / width);
+
+            println!("{id} -> {swizzled_group_id:?}");
+        }
     }
 }
