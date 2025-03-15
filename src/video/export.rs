@@ -364,7 +364,7 @@ fn launch_encode_pipeline(
                             .alloc_with_flags(
                                 frame.fd,
                                 (row_stride as u32 * output_size.height) as usize,
-                                gst_allocator::FdMemoryFlags::DONT_CLOSE,
+                                gst_allocator::FdMemoryFlags::empty(),
                             )
                             .expect("Failed to allocate buffer")
                     };

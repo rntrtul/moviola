@@ -1,3 +1,4 @@
+use crate::renderer::export_texture::ExportTexture;
 use crate::renderer::frame_position::{FramePosition, FrameSize};
 use crate::renderer::handler::TimerCmd;
 use crate::renderer::presenter::Presenter;
@@ -22,22 +23,22 @@ static INPUT_TEXTURE_USAGE: LazyLock<wgpu::TextureUsages> =
 #[derive(Debug)]
 pub struct RenderedFrame {
     pub fd: RawFd,
+    pub texture: ExportTexture,
     fourcc: u32,
     modifer: u64,
     width: u32,
     height: u32,
     planes: u32,
     pixel_stride: u32,
-    alignment: u32,
 }
 
 impl RenderedFrame {
     fn padded_width(&self) -> u32 {
         // todo: use fourcc to get bytes per pixel (replace 4)
-        let pixels_per_block = self.alignment / 4;
+        let pixels_per_block = self.texture.alignment / 4;
         let blocks_needed = (self.width as f32 / pixels_per_block as f32).ceil() as u32;
 
-        blocks_needed * pixels_per_block
+        blocks_needed * (pixels_per_block as u32)
     }
 
     fn row_stride(&self) -> u32 {
@@ -80,6 +81,7 @@ pub struct Renderer {
     effects_buffer: wgpu::Buffer,
     post_effects_frame: Texture,
     presenter: Presenter,
+    current_export_frame: Option<ExportTexture>, // should be only used when exporting.
     pub(crate) gpu_timer: GpuTimer,
     timer: mpsc::Sender<TimerCmd>,
     device: wgpu::Device,
@@ -276,6 +278,7 @@ impl Renderer {
             effects_buffer,
             post_effects_frame: effects_output_buffer,
             presenter,
+            current_export_frame: None,
             gpu_timer: timer,
             timer: timer_sender,
         }
@@ -516,7 +519,9 @@ impl Renderer {
             rendered_frame = &self.post_effects_frame;
         }
 
-        let final_output = self.presenter.next_presentation_texture();
+        // let final_output = self.presenter.next_presentation_texture();
+        let final_output =
+            ExportTexture::new(&self.device, &self.instance, self.output_size.into());
 
         encoder.copy_texture_to_texture(
             wgpu::TexelCopyTextureInfo {
@@ -533,6 +538,7 @@ impl Renderer {
             },
             final_output.texture.size(),
         );
+        self.current_export_frame.replace(final_output);
 
         encoder.resolve_query_set(
             &self.gpu_timer.query_set,
@@ -562,16 +568,17 @@ impl Renderer {
             .send(TimerCmd::Start(TimerEvent::TextureCreate, Instant::now()))
             .unwrap();
 
-        let output = self.presenter.current_presentation_texture();
+        // let output = self.presenter.current_presentation_texture();
+        let output = self.current_export_frame.take().unwrap();
         let frame = RenderedFrame {
             fd: output.fd,
+            texture: output,
             fourcc: 875709016,
             modifer: 0,
             width: self.output_size.width,
             height: self.output_size.height,
             planes: 1,
             pixel_stride: 4,
-            alignment: output.alignment as u32,
         };
 
         self.timer

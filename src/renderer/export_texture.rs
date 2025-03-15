@@ -2,6 +2,7 @@ use ash::vk;
 use std::os::fd::RawFd;
 use wgpu::hal;
 
+#[derive(Debug)]
 pub(crate) struct ExportTexture {
     _raw_texture: vk::Image,
     device_memory: vk::DeviceMemory,
