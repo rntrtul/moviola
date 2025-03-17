@@ -77,7 +77,6 @@ fn wait_for_eos(bus: gst::Bus) {
 
     for msg in bus.iter_timed(ClockTime::NONE) {
         use gst::MessageView;
-        // println!("msg: {msg:?}");
 
         match msg.view() {
             MessageView::Eos(..) => {
@@ -364,7 +363,7 @@ fn launch_encode_pipeline(
                             .alloc_with_flags(
                                 frame.fd,
                                 (row_stride as u32 * output_size.height) as usize,
-                                gst_allocator::FdMemoryFlags::empty(),
+                                gst_allocator::FdMemoryFlags::NONE,
                             )
                             .expect("Failed to allocate buffer")
                     };
@@ -376,8 +375,8 @@ fn launch_encode_pipeline(
                             buffer,
                             gst_video::VideoFrameFlags::empty(),
                             gst_video::VideoFormat::Rgba,
-                            info.width,
-                            info.height,
+                            output_size.width,
+                            output_size.height,
                             &[0],
                             &[row_stride],
                         )
