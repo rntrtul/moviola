@@ -54,6 +54,6 @@ fn main() {
         None
     };
 
-    let app = RelmApp::new("org.fareedsh.Moviola").with_args(vec![]);
+    let app = RelmApp::new("io.rntrtul.github.Moviola").with_args(vec![]);
     app.run::<App>(uri);
 }

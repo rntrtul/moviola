@@ -1,7 +1,7 @@
 [Desktop Entry]
 Name=Moviola
 Exec=moviola
-Icon=org.fareedsh.Moviola
+Icon=io.rntrtul.github.Moviola
 Terminal=false
 Type=Application
 Categories=GTK;Video;AudioVideo;
