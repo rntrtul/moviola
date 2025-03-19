@@ -27,7 +27,7 @@ fn initilaize_gresources() {
     gio::resources_register_include!("resources.gresource").unwrap();
 
     let theme = gtk::IconTheme::for_display(&gtk::gdk::Display::default().unwrap());
-    theme.add_resource_path("/org/fareedsh/Moviola/icons");
+    theme.add_resource_path("/io/rntrtul/github/Moviola/icons");
 }
 
 fn main() {
