@@ -2,23 +2,19 @@
 
 ![image showing video editor ui](data/screenshots/basic_ui.png)
 
-Moviola aims to be a surprisingly capable video editor with a pleasing and simple-to-use interface.
+Moviola aims to be a simple-to-use video editor with a pleasing interface.
 
-It is not a timeline based editor, and they are currently no plans for features that will require timing.
+### Moviola is in pre-alpha and not stable.
 
-## Supported Features
-
+## Planned Features
 - Crop Videos
 - Trim video start and end
 - Export current frame
 - Rotate
 - Flip video
 - Remove audio
-
-## Planned New Features
-
 - Basic colour balance (brightness, contrast, hue, saturation)
-- Straigten and Skew
+- Straighten and Skew
 - Loseless encoding when applicable
 - Convert to gif
 - Text overlay
