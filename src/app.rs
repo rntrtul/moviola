@@ -130,13 +130,14 @@ impl App {
     }
 
     fn export_frame_position(&self) -> FramePosition {
-        // todo: convert crop percents into pixel values.
         let crop_settings = self.preview_frame.model().export_settings();
         let (orientation, angel) = self.sidebar_panel.model().orientation_and_angle();
         let info = self.player.borrow().info();
         let size = FrameSize::new(info.width, info.height);
 
         let mut position = FramePosition::new(size);
+        // todo: apply crop accurately when rotated.
+        position.set_crop_edges_from_percent(crop_settings.bounding_box);
         position.orientation = orientation;
         position.straigthen_angle = angel.to_radians();
 

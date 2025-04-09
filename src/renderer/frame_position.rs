@@ -1,4 +1,4 @@
-use crate::ui::preview::Orientation;
+use crate::ui::preview::{BoundingBoxDimensions, Orientation};
 use encase::{ShaderType, UniformBuffer};
 use wgpu::util::DeviceExt;
 
@@ -61,6 +61,18 @@ impl FramePosition {
 
     pub fn scale_for_output_size(&mut self, output_size: FrameSize) {
         self.scale = self.original_frame_size.width as f32 / output_size.width as f32;
+    }
+
+    pub fn set_crop_edges_from_percent(&mut self, bounding_box: BoundingBoxDimensions) {
+        let width = self.original_frame_size.width as f32;
+        let height = self.original_frame_size.height as f32;
+
+        self.crop_edges = [
+            (width * bounding_box.left_x) as u32,
+            (height * bounding_box.top_y) as u32,
+            (width * (1.0 - bounding_box.right_x)) as u32,
+            (height * (1.0 - bounding_box.bottom_y)) as u32,
+        ];
     }
 
     pub fn output_frame_size(&self) -> FrameSize {

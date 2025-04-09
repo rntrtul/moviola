@@ -146,6 +146,7 @@ impl Component for CropPageModel {
                 widgets.crop_mode_row.set_selected(0);
                 self.straighten_slider.emit(AdjustRowMsg::SilentReset);
 
+                // todo: reset crop box
                 sender.output(CropPageOutput::Straighten(0f64)).unwrap();
                 sender
                     .output(CropPageOutput::OrientVideo(self.orientation))
